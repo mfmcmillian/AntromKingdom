@@ -1,8 +1,6 @@
 import {
   Animator,
   AudioSource,
-  Billboard,
-  BillboardMode,
   ColliderLayer,
   Entity,
   GltfContainer,
@@ -12,7 +10,6 @@ import {
   MeshRenderer,
   PointerEventType,
   PrimaryPointerInfo,
-  TextAlignMode,
   TextShape,
   Transform,
   engine,
@@ -32,7 +29,49 @@ import {
   SCENE,
   SOLDIER_DEFINITION
 } from './rts/config'
+import {
+  addSupplyUsed,
+  addResources,
+  addSupplyCap,
+  getConstructionRefund,
+  getSupplyCap,
+  getSupplyUsed,
+  hasResources,
+  resetEconomy,
+  spendResources
+} from './rts/economy'
+import {
+  createBoxEntity,
+  createLabel,
+  createModelColliderEntity,
+  createModelEntity,
+  createRallyMarker,
+  createVisualBoxEntity,
+  hideEntity,
+  type RallyMarker
+} from './rts/entities'
+import { formatNumber, formatPosition, formatVectorForPaste } from './rts/format'
+import { clamp, cloneVector, distanceToPoint, distanceToPosition, getFormationPosition, offsetSpawn } from './rts/math'
 import { gameState } from './rts/state'
+import { updateSoldiers as updateSoldiersSystem } from './rts/systems/combat'
+import { resetEnemyAiTimers, updateEnemyAi as updateEnemyAiSystem } from './rts/systems/enemyAi'
+import { updateSoldierProduction as updateSoldierProductionSystem, updateWorkerProduction as updateWorkerProductionSystem } from './rts/systems/production'
+import { updateWorkers as updateWorkersSystem } from './rts/systems/workers'
+import {
+  buildings,
+  createEntityId,
+  getAvailableWorkersForTeam,
+  getTeam,
+  getTeamSoldierCount,
+  getTeamWorkerCount,
+  resources,
+  resetWorld,
+  selectables,
+  soldierProductionOrders,
+  soldiers,
+  workerProductionOrders,
+  workers
+} from './rts/world'
 import type {
   BoxConfig,
   BuildableKind,
@@ -49,26 +88,14 @@ import type {
   SelectedSummary,
   Soldier,
   Team,
-  UnitGroupKind,
-  UnitProductionOrder,
-  Worker,
-  WorkerProductionOrder
+  Worker
 } from './rts/types'
 export type { SelectedSummary } from './rts/types'
 export { gameState }
 
-const selectables = new Map<string, Selectable>()
-const workers: Worker[] = []
-const soldiers: Soldier[] = []
-const resources: ResourceNode[] = []
-const buildings: Building[] = []
-const workerProductionOrders: WorkerProductionOrder[] = []
-const soldierProductionOrders: UnitProductionOrder[] = []
-type RallyMarker = { root: Entity; pole: Entity; flag: Entity; base: Entity }
 type BuildingPreview = { ghostEntity: Entity; ghostFootprintEntity: Entity; ghostModelEntity: Entity }
 
 let placementState: PlacementState = { state: 'none' }
-let nextId = 1
 let selectionMarker: Entity | undefined
 let rallyMarker: RallyMarker | undefined
 let coordinateLogTimer = 0
@@ -89,14 +116,19 @@ const BUILDING_PLACEMENT_PADDING = 0.6
 const BUILDING_FOOTPRINT_VALID = Color4.create(0.2, 0.95, 0.35, 0.45)
 const BUILDING_FOOTPRINT_BLOCKED = Color4.create(0.95, 0.15, 0.12, 0.5)
 const DEPLETED_MEAT_HIDE_DELAY = 180
+const PLAYER_ATTACK_ALERT_DURATION = 4
 const SOLDIER_MOVE_COMMAND_CLICK_COOLDOWN = 0.2
 const SOLDIER_MOVE_FORMATION_RADIUS = 0.9
 const SOLDIER_ATTACK_SPACING = 0.7
+const ENEMY_DEFENSE_RADIUS = 20
+const TEMPLE_ATTACK_DISTANCE_PADDING = 3
+const RESOURCE_ANIMATION_RESET_DELAY = 1.2
+const MATCH_NOT_STARTED = 'notStarted'
+const MATCH_ACTIVE = 'active'
+const MATCH_ENDED = 'ended'
 
 let soldierCommandMode: 'none' | 'move' = 'none'
 let soldierCommandCooldown = 0
-let enemyAiDecisionTimer = 0
-let enemyAiAttackTimer = 25
 
 export function initRtsGame(): void {
   createStaticScene()
@@ -104,7 +136,28 @@ export function initRtsGame(): void {
   engine.addSystem(rtsTickSystem)
 }
 
+export function startRtsMatch(): void {
+  if (gameState.matchStatus === MATCH_ACTIVE) return
+
+  if (gameState.matchStatus === MATCH_ENDED) {
+    resetRtsGame()
+    return
+  }
+
+  gameState.matchStatus = MATCH_ACTIVE
+  gameState.matchResult = 'none'
+  gameState.status = 'Match started. Select a worker to gather resources.'
+}
+
+export function endRtsMatch(): void {
+  if (gameState.matchStatus === MATCH_ENDED) return
+
+  endMatch('loss')
+}
+
 export function queueWorker(): void {
+  if (!isMatchActive()) return
+
   const selected = getSelected()
   const homestead = selected?.kind === 'supplyHouse' ? (selected as Building) : undefined
 
@@ -130,6 +183,8 @@ export function queueWorker(): void {
 }
 
 export function setWorkerSpawnPoint(): void {
+  if (!isMatchActive()) return
+
   const selected = getSelected()
 
   if (selected?.kind !== 'supplyHouse') {
@@ -155,6 +210,8 @@ export function setWorkerSpawnPoint(): void {
 }
 
 export function setBarracksSpawnPoint(): void {
+  if (!isMatchActive()) return
+
   const selected = getSelected()
 
   if (selected?.kind !== 'barracks') {
@@ -180,6 +237,8 @@ export function setBarracksSpawnPoint(): void {
 }
 
 export function startWorkerBuildingPlacement(kind: BuildableKind): void {
+  if (!isMatchActive()) return
+
   const selected = getSelected()
   const worker = selected?.kind === 'worker' ? (selected as Worker) : undefined
   const definition = BUILDING_DEFINITIONS[kind]
@@ -222,6 +281,8 @@ export function cancelBuildingPlacement(): void {
 }
 
 export function queueSoldier(): void {
+  if (!isMatchActive()) return
+
   const selected = getSelected()
   const barracks = selected?.kind === 'barracks' ? (selected as Building) : undefined
 
@@ -381,6 +442,26 @@ function getResourcePlacementPosition(resource: ResourceKind, position: Vector3)
   return Vector3.create(position.x, RESOURCE_DEFINITIONS[resource].placementY, position.z)
 }
 
+function resetMatchState(status: typeof MATCH_NOT_STARTED | typeof MATCH_ACTIVE = MATCH_NOT_STARTED): void {
+  gameState.matchTime = 0
+  gameState.matchStatus = status
+  gameState.matchResult = 'none'
+  gameState.matchStats.player.unitsProduced = 0
+  gameState.matchStats.player.unitsKilled = 0
+  gameState.matchStats.player.resourcesGathered = 0
+  gameState.matchStats.enemy.unitsProduced = 0
+  gameState.matchStats.enemy.unitsKilled = 0
+  gameState.matchStats.enemy.resourcesGathered = 0
+}
+
+function formatRuntimeMatchTime(seconds: number): string {
+  const totalSeconds = Math.max(0, Math.floor(seconds))
+  const minutes = Math.floor(totalSeconds / 60)
+  const remainingSeconds = totalSeconds % 60
+
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
+}
+
 function getPlacedResourceCount(resource: ResourceKind): number {
   return resources.filter((node) => node.resource === resource).length
 }
@@ -393,22 +474,14 @@ function saveResourcePlacement(resource: ResourceKind, position: Vector3): void 
 }
 
 export function resetRtsGame(): void {
-  gameState.rocks = CONFIG.rocksStart
-  gameState.wood = CONFIG.woodStart
-  gameState.meat = CONFIG.meatStart
-  gameState.supplyUsed = 0
-  gameState.supplyCap = CONFIG.startSupplyCap
-  gameState.enemyRocks = CONFIG.rocksStart
-  gameState.enemyWood = CONFIG.woodStart
-  gameState.enemyMeat = CONFIG.meatStart
-  gameState.enemySupplyUsed = 0
-  gameState.enemySupplyCap = CONFIG.startSupplyCap
-  gameState.enemyWorkerQueue = 0
-  gameState.enemySoldierQueue = 0
+  resetEconomy()
+  resetMatchState(MATCH_ACTIVE)
   gameState.selectedId = ''
   gameState.selectedKind = ''
   gameState.selectedGroupKind = ''
   gameState.status = 'Reset complete. Select a worker to start gathering.'
+  gameState.attackAlert = ''
+  gameState.attackAlertTimer = 0
   gameState.workerQueue = 0
   gameState.soldierQueue = 0
   gameState.placementMode = 'none'
@@ -421,20 +494,13 @@ export function resetRtsGame(): void {
   cancelSoldierCommand()
   cancelPlacement()
 
-  for (const worker of workers) removeSelectable(worker)
-  for (const soldier of soldiers) removeSelectable(soldier)
-  for (const resource of resources) removeSelectable(resource)
-  for (const building of buildings) removeSelectable(building)
+  for (const worker of workers) destroySelectable(worker)
+  for (const soldier of soldiers) destroySelectable(soldier)
+  for (const resource of resources) destroySelectable(resource)
+  for (const building of buildings) destroySelectable(building)
 
-  workers.length = 0
-  soldiers.length = 0
-  resources.length = 0
-  buildings.length = 0
-  workerProductionOrders.length = 0
-  soldierProductionOrders.length = 0
-  enemyAiDecisionTimer = 0
-  enemyAiAttackTimer = 25
-  nextId = 1
+  resetWorld()
+  resetEnemyAiTimers()
 
   if (selectionMarker) {
     Transform.getMutable(selectionMarker).position = Vector3.create(0, -10, 0)
@@ -543,12 +609,14 @@ function createStartingBase(): void {
   for (const position of POSITIONS.workers) {
     workers.push(createWorker(position, 'player'))
     gameState.supplyUsed += 1
+    gameState.matchStats.player.unitsProduced += 1
   }
 
   for (let i = 0; i < POSITIONS.workers.length; i++) {
     const offset = getFormationPosition(Vector3.create(POSITIONS.enemyTemple.x, 0.25, POSITIONS.enemyTemple.z + 5), i, 1)
     workers.push(createWorker(offset, 'enemy'))
     gameState.enemySupplyUsed += 1
+    gameState.matchStats.enemy.unitsProduced += 1
   }
 }
 
@@ -615,7 +683,7 @@ function createResourceNode(resource: ResourceKind, name: string, position: Vect
     scale: Vector3.create(1, 1, 1),
     src: definition.src,
     colliderScale: definition.colliderScale,
-    animations: definition.animations,
+    animations: definition.animations.map((animation) => ({ ...animation })),
     audioClipUrl: definition.audioClipUrl
   }, false) as ResourceNode
 
@@ -698,7 +766,7 @@ function getBuildingColor(kind: Building['kind'], definition?: BuildingDefinitio
 }
 
 function createSelectableBox(kind: SelectableKind, name: string, box: BoxConfig, team: Team = 'player'): Selectable {
-  const id = `${kind}-${nextId++}`
+  const id = createEntityId(kind)
   const entity = createBoxEntity(box)
   const selectable: Selectable = { id, kind, name, entity, alive: true, team }
 
@@ -708,7 +776,7 @@ function createSelectableBox(kind: SelectableKind, name: string, box: BoxConfig,
 }
 
 function createSelectableModel(kind: SelectableKind, name: string, model: ModelConfig, registerOnCreate = true, team: Team = 'player'): Selectable {
-  const id = `${kind}-${nextId++}`
+  const id = createEntityId(kind)
   const entity = createModelEntity(model)
   const selectable: Selectable = { id, kind, name, entity, alive: true, team }
 
@@ -720,114 +788,6 @@ function createSelectableModel(kind: SelectableKind, name: string, model: ModelC
     registerSelectable(selectable)
   }
   return selectable
-}
-
-function createModelEntity(config: ModelConfig): Entity {
-  const entity = engine.addEntity()
-
-  Transform.create(entity, {
-    position: cloneVector(config.position),
-    rotation: Quaternion.fromEulerDegrees(0, config.rotationY ?? 0, 0),
-    scale: cloneVector(config.scale)
-  })
-  GltfContainer.create(entity, {
-    src: config.src,
-    visibleMeshesCollisionMask: ColliderLayer.CL_POINTER | ColliderLayer.CL_PHYSICS,
-    invisibleMeshesCollisionMask: ColliderLayer.CL_PHYSICS
-  })
-
-  if (config.animations) {
-    Animator.create(entity, { states: config.animations })
-  }
-
-  if (config.audioClipUrl) {
-    AudioSource.create(entity, {
-      audioClipUrl: config.audioClipUrl,
-      playing: false,
-      loop: false,
-      volume: 0.55
-    })
-  }
-
-  return entity
-}
-
-function createModelColliderEntity(parent: Entity, config: ModelConfig): Entity {
-  const collider = engine.addEntity()
-  const colliderScale = Vector3.create(
-    config.colliderScale?.x ?? config.scale.x,
-    config.colliderScale?.y ?? config.scale.y,
-    config.colliderScale?.z ?? config.scale.z
-  )
-
-  Transform.create(collider, {
-    parent,
-    position: Vector3.create(0, colliderScale.y / (2 * config.scale.y), 0),
-    scale: Vector3.create(colliderScale.x / config.scale.x, colliderScale.y / config.scale.y, colliderScale.z / config.scale.z)
-  })
-  MeshCollider.setBox(collider)
-
-  return collider
-}
-
-function createBoxEntity(config: BoxConfig): Entity {
-  const entity = createVisualBoxEntity(config)
-
-  MeshCollider.setBox(entity)
-  return entity
-}
-
-function createVisualBoxEntity(config: BoxConfig): Entity {
-  const entity = engine.addEntity()
-
-  Transform.create(entity, {
-    position: cloneVector(config.position),
-    scale: cloneVector(config.scale)
-  })
-  MeshRenderer.setBox(entity)
-  Material.setPbrMaterial(entity, {
-    albedoColor: config.color,
-    emissiveColor: config.emissive ?? Color4.Black(),
-    transparencyMode: config.transparent ? 1 : 0
-  })
-
-  return entity
-}
-
-function createRallyMarker(): RallyMarker {
-  const root = engine.addEntity()
-
-  Transform.create(root, {
-    position: Vector3.create(0, -10, 0),
-    scale: Vector3.create(1, 1, 1)
-  })
-
-  return {
-    root,
-    pole: createRallyMarkerPart(root, Vector3.create(0, 0.75, 0), Vector3.create(0.08, 1.5, 0.08), UIColors.rallyPole),
-    flag: createRallyMarkerPart(root, Vector3.create(0.34, 1.35, 0), Vector3.create(0.68, 0.34, 0.06), UIColors.rallyFlag),
-    base: createRallyMarkerPart(root, Vector3.create(0, 0.03, 0), Vector3.create(0.55, 0.06, 0.55), UIColors.rallyBase)
-  }
-}
-
-const UIColors = {
-  rallyPole: Color4.create(0.95, 0.9, 0.65, 1),
-  rallyFlag: Color4.create(0.2, 0.85, 0.35, 0.95),
-  rallyBase: Color4.create(0.2, 0.6, 1, 0.45)
-}
-
-function createRallyMarkerPart(parent: Entity, position: Vector3, scale: Vector3, color: Color4): Entity {
-  const entity = engine.addEntity()
-
-  Transform.create(entity, { parent, position, scale })
-  MeshRenderer.setBox(entity)
-  Material.setPbrMaterial(entity, {
-    albedoColor: color,
-    emissiveColor: color,
-    transparencyMode: color.a < 1 ? 1 : 0
-  })
-
-  return entity
 }
 
 function createGhostBuilding(definition: BuildingDefinition, position: Vector3): BuildingPreview {
@@ -870,27 +830,6 @@ function getBuildableModelSrc(kind: BuildableKind): string {
   if (kind === 'temple') return ASSETS.hq
   if (kind === 'fireplace') return ASSETS.fireplace
   return kind === 'supplyHouse' ? ASSETS.supply : ASSETS.barracks
-}
-
-function createLabel(parent: Entity, text: string, offsetY: number): Entity {
-  const label = engine.addEntity()
-
-  Transform.create(label, {
-    parent,
-    position: Vector3.create(0, offsetY, 0),
-    scale: Vector3.create(1, 1, 1)
-  })
-  TextShape.create(label, {
-    text,
-    fontSize: 2,
-    textColor: Color4.White(),
-    outlineColor: Color4.Black(),
-    outlineWidth: 0.15,
-    textAlign: TextAlignMode.TAM_MIDDLE_CENTER
-  })
-  Billboard.create(label, { billboardMode: BillboardMode.BM_Y })
-
-  return label
 }
 
 function registerSelectable(selectable: Selectable): void {
@@ -1043,12 +982,13 @@ function sendSoldierToRally(soldier: Soldier, rallyPoint: Vector3): void {
   setSoldierAnimation(soldier, 'walk')
 }
 
-function assignSoldierToAttack(soldier: Soldier, target: Building, slot = 0): void {
+function assignSoldierToAttack(soldier: Soldier, target: Building | Soldier, slot = 0): void {
   if (!soldier.alive || !target.alive) return
+  if (getTeam(soldier) === getTeam(target)) return
 
   soldier.state = 'movingToAttack'
   soldier.targetId = target.id
-  soldier.attackPosition = getSoldierAttackPosition(target, slot)
+  soldier.attackPosition = target.kind === 'soldier' ? undefined : getSoldierAttackPosition(target, slot)
   soldier.rallyPoint = undefined
   soldier.attackTimer = 0
   setSoldierAnimation(soldier, 'walk')
@@ -1149,20 +1089,85 @@ function cancelPlacement(): void {
   placementConfirmCooldown = 0
 }
 
+const productionDeps = {
+  getBuildingById,
+  createWorker,
+  createSoldier,
+  getHomesteadExitPosition,
+  getBarracksExitPosition,
+  getHomesteadRallyPoint: (homesteadId: string) => homesteadRallyPoints.get(homesteadId),
+  getBarracksRallyPoint: (barracksId: string) => barracksRallyPoints.get(barracksId),
+  sendWorkerToRally,
+  sendSoldierToRally,
+  setStatus
+}
+
+const enemyAiDeps = {
+  assignWorkerToResource,
+  createConstructionSite,
+  canPlaceBuildingAt,
+  setWorkerAnimation,
+  assignSoldierToAttack,
+  getNearestTemple,
+  getSnappedPlacementPosition,
+  setStatus
+}
+
+const workerSystemDeps = {
+  getBuildingById,
+  getWorkerGatherPosition,
+  getNearestTemple,
+  getTempleDropoffPosition,
+  getBuilderWorkPosition,
+  getWorkerRallyPosition,
+  setWorkerAnimation,
+  playResourceGatherFeedback,
+  depleteResourceNode,
+  updateLabel,
+  setStatus
+}
+
+const combatSystemDeps = {
+  getCombatTargetById,
+  getSoldierAttackPosition,
+  setSoldierAnimation,
+  damageCombatTarget,
+  setStatus
+}
+
 function rtsTickSystem(dt: number): void {
+  updateMatchTimer(dt)
+  updateAttackAlert(dt)
+  if (gameState.matchStatus !== MATCH_ACTIVE) return
+
   updateCoordinateLogger(dt)
   updateGhostPreview()
   updatePlacementConfirmInput(dt)
   updateSoldierMoveCommandInput(dt)
   updateCancelInput()
   updateRallyMarker()
-  updateWorkerProduction(dt)
-  updateSoldierProduction(dt)
-  updateEnemyAi(dt)
-  updateWorkers(dt)
-  updateSoldiers(dt)
+  updatePlayerGuardDefense()
+  updateWorkerProductionSystem(dt, productionDeps)
+  updateSoldierProductionSystem(dt, productionDeps)
+  updateEnemyAiSystem(dt, enemyAiDeps)
+  updateWorkersSystem(dt, workerSystemDeps)
+  updateSoldiersSystem(dt, combatSystemDeps)
   updateConstructionSites(dt)
   updateDepletedResources(dt)
+  updateMatchEndState()
+}
+
+function updateMatchTimer(dt: number): void {
+  if (gameState.matchStatus === MATCH_ACTIVE) {
+    gameState.matchTime += dt
+  }
+}
+
+function isMatchActive(): boolean {
+  if (gameState.matchStatus === MATCH_ACTIVE) return true
+
+  setStatus('The match is over. Use Replay to start again.')
+  return false
 }
 
 function updateCoordinateLogger(dt: number): void {
@@ -1175,6 +1180,42 @@ function updateCoordinateLogger(dt: number): void {
 
   gameState.currentPlayerLocation = formatPosition(position)
   console.log(`[coords] player ${gameState.currentPlayerLocation}`)
+}
+
+function updateAttackAlert(dt: number): void {
+  if (gameState.attackAlertTimer <= 0) return
+
+  gameState.attackAlertTimer = Math.max(0, gameState.attackAlertTimer - dt)
+  if (gameState.attackAlertTimer === 0) {
+    gameState.attackAlert = ''
+  }
+}
+
+function updateMatchEndState(): void {
+  if (gameState.matchStatus === MATCH_ENDED) return
+
+  const playerTemplesAlive = buildings.some((building) => building.alive && building.kind === 'temple' && getTeam(building) === 'player')
+  const enemyTemplesAlive = buildings.some((building) => building.alive && building.kind === 'temple' && getTeam(building) === 'enemy')
+
+  if (!playerTemplesAlive) {
+    endMatch('loss')
+  } else if (!enemyTemplesAlive) {
+    endMatch('win')
+  }
+}
+
+function endMatch(result: 'win' | 'loss'): void {
+  if (gameState.matchStatus === MATCH_ENDED) return
+
+  gameState.matchStatus = MATCH_ENDED
+  gameState.matchResult = result
+  gameState.attackAlert = ''
+  gameState.attackAlertTimer = 0
+  cancelSoldierCommand()
+  cancelPlacement()
+  clearSelection()
+  const time = formatRuntimeMatchTime(gameState.matchTime)
+  setStatus(result === 'win' ? `You destroyed every AI Temple in ${time}. Victory!` : `All player Temples were destroyed after ${time}. You lose.`)
 }
 
 function updateGhostPreview(): void {
@@ -1262,340 +1303,38 @@ function updateRallyMarker(): void {
   Transform.getMutable(rallyMarker.root).position = Vector3.create(position.x, 0, position.z)
 }
 
-function updateWorkerProduction(dt: number): void {
-  for (let i = workerProductionOrders.length - 1; i >= 0; i--) {
-    const order = workerProductionOrders[i]
-    const homestead = getBuildingById(order.homesteadId)
+function updatePlayerGuardDefense(): void {
+  const playerTemples = buildings.filter((building) => building.alive && building.kind === 'temple' && getTeam(building) === 'player')
+  if (playerTemples.length === 0) return
 
-    if (!homestead?.alive || !homestead.isComplete) {
-      workerProductionOrders.splice(i, 1)
-      decrementWorkerQueue(order.team)
-      if (order.team === 'player') setStatus('Worker production cancelled: Homestead unavailable.')
-      continue
-    }
+  for (const guard of soldiers) {
+    if (!guard.alive || getTeam(guard) !== 'player') continue
+    if (guard.targetId || (guard.state !== 'idle' && guard.state !== 'movingToRally')) continue
 
-    order.timer += dt
-    if (order.timer < CONFIG.productionTime) continue
+    const guardPosition = Transform.get(guard.entity).position
+    const defendedTemple = playerTemples.find((temple) => distanceToPoint(guardPosition, Transform.get(temple.entity).position) <= ENEMY_DEFENSE_RADIUS)
+    if (!defendedTemple) continue
 
-    const worker = createWorker(getHomesteadExitPosition(homestead, getTeamWorkerCount(order.team)), order.team)
-    const rallyPoint = homesteadRallyPoints.get(homestead.id)
+    const attacker = getIncomingTempleAttacker(defendedTemple, guardPosition)
+    if (!attacker) continue
 
-    workers.push(worker)
-    if (rallyPoint) {
-      sendWorkerToRally(worker, rallyPoint)
-    }
-    addSupplyUsed(order.team, 1)
-    decrementWorkerQueue(order.team)
-    workerProductionOrders.splice(i, 1)
-    if (order.team === 'player') setStatus(rallyPoint ? 'Worker ready and moving to Homestead spawn point.' : 'Worker ready outside Homestead.')
-  }
-}
-
-function updateSoldierProduction(dt: number): void {
-  for (let i = soldierProductionOrders.length - 1; i >= 0; i--) {
-    const order = soldierProductionOrders[i]
-    const barracks = getBuildingById(order.barracksId)
-
-    if (!barracks?.alive || !barracks.isComplete) {
-      soldierProductionOrders.splice(i, 1)
-      decrementSoldierQueue(order.team)
-      if (order.team === 'player') setStatus(`${SOLDIER_DEFINITION.name} production cancelled: Barracks unavailable.`)
-      continue
-    }
-
-    order.timer += dt
-    if (order.timer < SOLDIER_DEFINITION.productionTime) continue
-
-    const soldier = createSoldier(getBarracksExitPosition(barracks, getTeamSoldierCount(order.team)), order.team)
-    const rallyPoint = barracksRallyPoints.get(barracks.id)
-
-    soldiers.push(soldier)
-    if (rallyPoint) {
-      sendSoldierToRally(soldier, rallyPoint)
-    }
-    addSupplyUsed(order.team, SOLDIER_DEFINITION.supply)
-    decrementSoldierQueue(order.team)
-    soldierProductionOrders.splice(i, 1)
-    if (order.team === 'player') setStatus(rallyPoint ? `${SOLDIER_DEFINITION.name} ready and moving to Barracks spawn point.` : `${SOLDIER_DEFINITION.name} ready outside Barracks.`)
-  }
-}
-
-function updateWorkers(dt: number): void {
-  for (const worker of workers) {
-    if (!worker.alive) continue
-
-    updateWorkerGathering(worker, dt)
-    updateWorkerBuildMovement(worker, dt)
-    updateWorkerRallyMovement(worker, dt)
-  }
-}
-
-function updateSoldiers(dt: number): void {
-  for (const soldier of soldiers) {
-    if (!soldier.alive) continue
-
-    if (soldier.state === 'movingToRally') {
-      updateSoldierRallyMovement(soldier, dt)
-      continue
-    }
-
-    if (!soldier.targetId) continue
-
-    const target = getBuildingById(soldier.targetId)
-
-    if (!target?.alive) {
-      soldier.state = 'idle'
-      soldier.targetId = undefined
-      soldier.attackPosition = undefined
-      setSoldierAnimation(soldier, 'idle')
-      continue
-    }
-
-    if (soldier.state === 'movingToAttack') {
-      const attackPosition = soldier.attackPosition ?? getSoldierAttackPosition(target, 0)
-      soldier.attackPosition = attackPosition
-      moveTowardPosition(soldier.entity, attackPosition, CONFIG.soldierMoveSpeed, dt)
-      setSoldierAnimation(soldier, 'walk')
-      if (distanceToPosition(soldier.entity, attackPosition) <= 0.25) {
-        soldier.state = 'attacking'
-        soldier.attackTimer = 0
-        setSoldierAnimation(soldier, 'attack')
-      }
-    } else if (soldier.state === 'attacking') {
-      soldier.attackTimer += dt
-      if (soldier.attackTimer >= CONFIG.soldierAttackRate) {
-        soldier.attackTimer = 0
-        setSoldierAnimation(soldier, 'attack', true)
-        damageBuilding(target, CONFIG.soldierDamage)
-      }
+    assignSoldierToAttack(guard, attacker)
+    if (attacker.targetId === defendedTemple.id || attacker.state === 'idle') {
+      assignSoldierToAttack(attacker, guard)
     }
   }
 }
 
-function updateEnemyAi(dt: number): void {
-  enemyAiAttackTimer += dt
-  enemyAiDecisionTimer += dt
+function getIncomingTempleAttacker(temple: Building, guardPosition: Vector3): Soldier | undefined {
+  const templePosition = Transform.get(temple.entity).position
 
-  if (enemyAiAttackTimer >= CONFIG.enemyAiAttackInterval) {
-    enemyAiAttackTimer = 0
-    sendEnemyAttackWave()
-  }
-
-  if (enemyAiDecisionTimer < CONFIG.enemyAiDecisionRate) return
-  enemyAiDecisionTimer = 0
-
-  assignIdleEnemyWorkers()
-  runEnemyBuildOrder()
-  queueEnemyProduction()
-}
-
-function assignIdleEnemyWorkers(): void {
-  for (const worker of getIdleWorkersForTeam('enemy')) {
-    const resourceKind = getEnemyWorkerResourcePriority()
-    const resource = getNearestResourceOfKind(Transform.get(worker.entity).position, resourceKind)
-
-    if (resource) {
-      assignWorkerToResource(worker, resource, false)
-    }
-  }
-}
-
-function runEnemyBuildOrder(): void {
-  const enemyHomesteads = getCompletedTeamBuildings('enemy', 'supplyHouse')
-  const enemyBarracks = getCompletedTeamBuildings('enemy', 'barracks')
-  const enemyTemples = getCompletedTeamBuildings('enemy', 'temple')
-  const enemyWorkers = getTeamWorkerCount('enemy')
-  const enemyGuards = getTeamSoldierCount('enemy')
-
-  if (shouldBuildEnemyHomestead(enemyHomesteads.length)) {
-    tryStartEnemyConstruction('supplyHouse')
-    return
-  }
-
-  if (enemyWorkers >= 6 && enemyBarracks.length === 0) {
-    tryStartEnemyConstruction('barracks')
-    return
-  }
-
-  if (enemyWorkers >= 8 && enemyGuards >= CONFIG.enemyAiDefenderCount && enemyTemples.length < 3) {
-    tryStartEnemyConstruction('temple')
-    return
-  }
-
-  if (getSupplyCap('enemy') - getSupplyUsed('enemy') <= 2 && enemyHomesteads.length < 4) {
-    tryStartEnemyConstruction('supplyHouse')
-  }
-}
-
-function queueEnemyProduction(): void {
-  const enemyWorkers = getTeamWorkerCount('enemy') + gameState.enemyWorkerQueue
-  const enemyGuards = getTeamSoldierCount('enemy') + gameState.enemySoldierQueue
-  const enemyHomestead = getCompletedTeamBuildings('enemy', 'supplyHouse')[0]
-  const enemyBarracks = getCompletedTeamBuildings('enemy', 'barracks')[0]
-
-  if (enemyHomestead && enemyWorkers < CONFIG.enemyAiTargetWorkers && canQueueUnit('enemy', 1) && spendResources('enemy', { meat: CONFIG.workerCost })) {
-    workerProductionOrders.push({ homesteadId: enemyHomestead.id, timer: 0, team: 'enemy' })
-    gameState.enemyWorkerQueue += 1
-  }
-
-  if (enemyBarracks && enemyGuards < CONFIG.enemyAiTargetGuards && canQueueUnit('enemy', SOLDIER_DEFINITION.supply) && spendResources('enemy', SOLDIER_DEFINITION.cost)) {
-    soldierProductionOrders.push({ barracksId: enemyBarracks.id, timer: 0, team: 'enemy' })
-    gameState.enemySoldierQueue += 1
-  }
-}
-
-function tryStartEnemyConstruction(kind: BuildableKind): boolean {
-  const definition = BUILDING_DEFINITIONS[kind]
-  const builder = getEnemyBuilder()
-  const position = getEnemyBuildPosition(kind)
-
-  if (!builder || !position || !hasResources('enemy', definition.cost)) return false
-  if (!canPlaceBuildingAt(definition, position)) return false
-  if (!spendResources('enemy', definition.cost)) return false
-
-  const site = createConstructionSite(kind, Vector3.create(position.x, definition.placementY, position.z), builder.id, 180, 'enemy')
-  builder.state = 'movingToBuild'
-  builder.targetResourceId = undefined
-  builder.buildSiteId = site.id
-  builder.rallyPoint = undefined
-  builder.timer = 0
-  builder.carrying = 0
-  builder.carryingResource = undefined
-  setWorkerAnimation(builder, 'walk')
-  return true
-}
-
-function sendEnemyAttackWave(): void {
-  const playerTemple = getNearestTemple(POSITIONS.base, 'player')
-  if (!playerTemple) return
-
-  const availableAttackers = soldiers.filter((soldier) => soldier.alive && getTeam(soldier) === 'enemy' && soldier.state === 'idle')
-  const attackers = availableAttackers.slice(CONFIG.enemyAiDefenderCount)
-
-  if (attackers.length < 3) return
-
-  for (let i = 0; i < attackers.length; i++) {
-    assignSoldierToAttack(attackers[i], playerTemple, i)
-  }
-
-  setStatus(`Enemy attack wave incoming: ${attackers.length} guards.`)
-}
-
-function updateWorkerGathering(worker: Worker, dt: number): void {
-  const resource = worker.targetResourceId ? resources.find((patch) => patch.id === worker.targetResourceId && patch.alive) : undefined
-
-  if (worker.state === 'movingToResource' && resource) {
-    const gatherPosition = getWorkerGatherPosition(worker, resource)
-    moveTowardPosition(worker.entity, gatherPosition, CONFIG.workerMoveSpeed, dt)
-    if (distanceToPosition(worker.entity, gatherPosition) < 0.35) {
-      worker.state = 'gathering'
-      worker.timer = 0
-      setWorkerAnimation(worker, 'idle')
-      playResourceGatherFeedback(resource)
-    }
-  } else if (worker.state === 'gathering' && resource) {
-    worker.timer += dt
-    if (worker.timer >= CONFIG.workerMineTime) {
-      const gathered = Math.min(CONFIG.workerCarryAmount, resource.amount)
-      resource.amount -= gathered
-      worker.carrying = gathered
-      worker.carryingResource = resource.resource
-      worker.state = 'returning'
-      worker.timer = 0
-      setWorkerAnimation(worker, 'walk')
-
-      if (resource.amount <= 0) {
-        depleteResourceNode(resource)
-      } else {
-        updateLabel(resource, `${resource.name}\n${resource.amount}`)
-      }
-    }
-  } else if (worker.state === 'returning') {
-    const temple = getNearestTemple(Transform.get(worker.entity).position, getTeam(worker))
-    if (!temple) {
-      worker.state = 'idle'
-      worker.carrying = 0
-      worker.carryingResource = undefined
-      setWorkerAnimation(worker, 'idle')
-      if (getTeam(worker) === 'player') setStatus(`${worker.name} cannot deliver: no Temple is available.`)
-      return
-    }
-
-    const dropoffPosition = getTempleDropoffPosition(temple, worker)
-    moveTowardPosition(worker.entity, dropoffPosition, CONFIG.workerMoveSpeed, dt)
-    if (distanceToPosition(worker.entity, dropoffPosition) < 0.35) {
-      const deliveredResource = worker.carryingResource ?? 'rocks'
-      addResource(getTeam(worker), deliveredResource, worker.carrying)
-      worker.carrying = 0
-      worker.carryingResource = undefined
-      worker.state = resource?.alive ? 'movingToResource' : 'idle'
-      setWorkerAnimation(worker, worker.state === 'idle' ? 'idle' : 'walk')
-      if (getTeam(worker) === 'player') setStatus(`${worker.name} delivered ${deliveredResource}. Total: ${getResourceAmount(getTeam(worker), deliveredResource)}.`)
-    }
-  } else if (!resource && ['movingToResource', 'gathering', 'returning'].includes(worker.state)) {
-    worker.state = 'idle'
-    worker.targetResourceId = undefined
-    worker.carrying = 0
-    worker.carryingResource = undefined
-    setWorkerAnimation(worker, 'idle')
-  }
-}
-
-function updateWorkerBuildMovement(worker: Worker, dt: number): void {
-  if (worker.state !== 'movingToBuild' || !worker.buildSiteId) return
-
-  const site = getBuildingById(worker.buildSiteId)
-  if (!site?.alive || site.isComplete) {
-    worker.state = 'idle'
-    worker.buildSiteId = undefined
-    return
-  }
-
-  const workPosition = getBuilderWorkPosition(site, Transform.get(worker.entity).position)
-  moveTowardPosition(worker.entity, workPosition, CONFIG.builderMoveSpeed, dt)
-  if (distanceToPosition(worker.entity, workPosition) <= 0.25) {
-    worker.state = 'constructing'
-    site.constructionState = 'building'
-    setWorkerAnimation(worker, 'expression')
-    if (getTeam(worker) === 'player') setStatus(`${worker.name} started constructing ${site.name}.`)
-  }
-}
-
-function updateWorkerRallyMovement(worker: Worker, dt: number): void {
-  if (worker.state !== 'movingToRally') return
-
-  if (!worker.rallyPoint) {
-    worker.state = 'idle'
-    setWorkerAnimation(worker, 'idle')
-    return
-  }
-
-  const rallyPosition = getWorkerRallyPosition(worker)
-  moveTowardPosition(worker.entity, rallyPosition, CONFIG.workerMoveSpeed, dt)
-  if (distanceToPosition(worker.entity, rallyPosition) <= 0.35) {
-    worker.state = 'idle'
-    worker.rallyPoint = undefined
-    setWorkerAnimation(worker, 'idle')
-    if (getTeam(worker) === 'player') setStatus(`${worker.name} reached the spawn point.`)
-  }
-}
-
-function updateSoldierRallyMovement(soldier: Soldier, dt: number): void {
-  if (!soldier.rallyPoint) {
-    soldier.state = 'idle'
-    soldier.attackPosition = undefined
-    setSoldierAnimation(soldier, 'idle')
-    return
-  }
-
-  moveTowardPosition(soldier.entity, soldier.rallyPoint, CONFIG.soldierMoveSpeed, dt)
-  if (distanceToPosition(soldier.entity, soldier.rallyPoint) <= 0.35) {
-    soldier.state = 'idle'
-    soldier.rallyPoint = undefined
-    soldier.attackPosition = undefined
-    setSoldierAnimation(soldier, 'idle')
-    setStatus(`${soldier.name} reached destination.`)
-  }
+  return soldiers
+    .filter((soldier) => {
+      if (!soldier.alive || getTeam(soldier) !== 'enemy') return false
+      if (soldier.targetId !== temple.id && distanceToPoint(Transform.get(soldier.entity).position, templePosition) > ENEMY_DEFENSE_RADIUS) return false
+      return distanceToPoint(Transform.get(soldier.entity).position, guardPosition) <= ENEMY_DEFENSE_RADIUS
+    })
+    .sort((a, b) => distanceToPoint(Transform.get(a.entity).position, guardPosition) - distanceToPoint(Transform.get(b.entity).position, guardPosition))[0]
 }
 
 function updateConstructionSites(dt: number): void {
@@ -1627,6 +1366,14 @@ function updateConstructionSites(dt: number): void {
 
 function updateDepletedResources(dt: number): void {
   for (const resource of resources) {
+    if (resource.animationResetTimer !== undefined) {
+      resource.animationResetTimer -= dt
+      if (resource.animationResetTimer <= 0) {
+        resource.animationResetTimer = undefined
+        resetResourceAnimation(resource)
+      }
+    }
+
     if (resource.depletionTimer === undefined) continue
 
     resource.depletionTimer -= dt
@@ -1671,17 +1418,31 @@ function completeConstruction(site: Building, builder: Worker): void {
   }
 }
 
-function damageBuilding(building: Building, amount: number): void {
+function damageCombatTarget(target: Building | Soldier, amount: number, attacker: Soldier): void {
+  if (target.kind === 'soldier') {
+    damageSoldier(target, amount, attacker)
+    return
+  }
+
+  damageBuilding(target, amount, attacker)
+}
+
+function damageBuilding(building: Building, amount: number, attacker?: Soldier): void {
   building.hp = Math.max(0, building.hp - amount)
+  if (attacker && isPlayerTempleUnderAttack(building, attacker)) {
+    showPlayerAttackAlert()
+  }
+  if (attacker) alertDefenders(building, attacker)
 
   if (building.hp > 0) {
     if (building.kind === 'enemyBuilding') playAnimation(building.entity, 'impact')
-    setStatus(`${building.name} HP: ${building.hp}/${building.maxHp}.`)
+    if (!isPlayerTempleUnderAttack(building, attacker)) setStatus(`${building.name} HP: ${building.hp}/${building.maxHp}.`)
     return
   }
 
   if (building.kind === 'enemyBuilding') playAnimation(building.entity, 'die')
   removeSelectable(building)
+  removeBuilding(building)
 
   for (const soldier of soldiers) {
     if (soldier.targetId === building.id) {
@@ -1692,6 +1453,57 @@ function damageBuilding(building: Building, amount: number): void {
   }
 
   setStatus(`${building.name} destroyed.`)
+  updateMatchEndState()
+}
+
+function isPlayerTempleUnderAttack(building: Building, attacker?: Soldier): boolean {
+  return building.kind === 'temple' && getTeam(building) === 'player' && attacker !== undefined && getTeam(attacker) === 'enemy'
+}
+
+function showPlayerAttackAlert(): void {
+  gameState.attackAlert = 'Your HQ is under attack!'
+  gameState.attackAlertTimer = PLAYER_ATTACK_ALERT_DURATION
+  setStatus(gameState.attackAlert)
+}
+
+function damageSoldier(soldier: Soldier, amount: number, attacker?: Soldier): void {
+  soldier.hp = Math.max(0, soldier.hp - amount)
+
+  if (soldier.hp > 0) return
+
+  if (attacker && getTeam(attacker) !== getTeam(soldier)) {
+    gameState.matchStats[getTeam(attacker)].unitsKilled += 1
+  }
+  soldier.state = 'dead'
+  soldier.targetId = undefined
+  soldier.attackPosition = undefined
+  soldier.rallyPoint = undefined
+  addSupplyUsed(getTeam(soldier), -SOLDIER_DEFINITION.supply)
+  removeSelectable(soldier)
+
+  for (const attacker of soldiers) {
+    if (attacker.targetId === soldier.id) {
+      attacker.targetId = undefined
+      attacker.attackPosition = undefined
+      attacker.state = 'idle'
+      setSoldierAnimation(attacker, 'idle')
+    }
+  }
+}
+
+function alertDefenders(building: Building, attacker: Soldier): void {
+  if (getTeam(building) !== 'enemy' || getTeam(attacker) !== 'player' || !attacker.alive) return
+
+  const buildingPosition = Transform.get(building.entity).position
+  const defenders = soldiers.filter((soldier) => {
+    if (!soldier.alive || getTeam(soldier) !== 'enemy') return false
+    if (soldier.state !== 'idle' && soldier.state !== 'movingToRally') return false
+    return distanceToPoint(Transform.get(soldier.entity).position, buildingPosition) <= ENEMY_DEFENSE_RADIUS
+  })
+
+  for (let i = 0; i < defenders.length; i++) {
+    assignSoldierToAttack(defenders[i], attacker, i)
+  }
 }
 
 function cancelConstruction(site: Building): void {
@@ -1769,159 +1581,16 @@ function getCommandableSoldiers(): Soldier[] {
   return selected?.kind === 'soldier' && selected.alive ? [selected as Soldier] : []
 }
 
-function getTeam(selectable: Selectable): Team {
-  return selectable.team ?? 'player'
-}
-
 function isEnemyAttackTarget(selectable: Selectable): selectable is Building {
   return selectable.kind !== 'resource' && selectable.kind !== 'worker' && selectable.kind !== 'soldier' && getTeam(selectable) === 'enemy'
 }
 
-function getTeamWorkerCount(team: Team): number {
-  return workers.filter((worker) => worker.alive && getTeam(worker) === team).length
-}
-
-function getTeamSoldierCount(team: Team): number {
-  return soldiers.filter((soldier) => soldier.alive && getTeam(soldier) === team).length
-}
-
-function getAvailableWorkersForTeam(team: Team): Worker[] {
-  return workers.filter((worker) => worker.alive && getTeam(worker) === team && worker.state !== 'movingToBuild' && worker.state !== 'constructing' && worker.state !== 'movingToRally')
-}
-
-function getIdleWorkersForTeam(team: Team): Worker[] {
-  return workers.filter((worker) => worker.alive && getTeam(worker) === team && worker.state === 'idle')
-}
-
-function getTeamBuildings(team: Team, kind?: BuildableKind): Building[] {
-  return buildings.filter((building) => building.alive && getTeam(building) === team && (!kind || building.kind === kind))
-}
-
-function getCompletedTeamBuildings(team: Team, kind: BuildableKind): Building[] {
-  return getTeamBuildings(team, kind).filter((building) => building.isComplete)
-}
-
-function canQueueUnit(team: Team, supply: number): boolean {
-  const queuedSupply = team === 'enemy' ? gameState.enemyWorkerQueue + gameState.enemySoldierQueue : gameState.workerQueue + gameState.soldierQueue
-  return getSupplyUsed(team) + queuedSupply + supply <= getSupplyCap(team)
-}
-
-function shouldBuildEnemyHomestead(completedHomesteadCount: number): boolean {
-  if (completedHomesteadCount === 0) return true
-  return getSupplyCap('enemy') - getSupplyUsed('enemy') <= 2 && completedHomesteadCount < 4
-}
-
-function getEnemyBuilder(): Worker | undefined {
-  return getIdleWorkersForTeam('enemy')[0] ?? getAvailableWorkersForTeam('enemy')[0]
-}
-
-function getEnemyWorkerResourcePriority(): ResourceKind {
-  const assigned = {
-    rocks: getEnemyAssignedResourceCount('rocks'),
-    wood: getEnemyAssignedResourceCount('wood'),
-    meat: getEnemyAssignedResourceCount('meat')
-  }
-
-  if (assigned.rocks < 2) return 'rocks'
-  if (assigned.wood < 2) return 'wood'
-  if (assigned.meat < 1) return 'meat'
-  if (getResourceAmount('enemy', 'meat') < CONFIG.workerCost) return 'meat'
-  if (getResourceAmount('enemy', 'wood') < 100) return 'wood'
-  return 'rocks'
-}
-
-function getEnemyAssignedResourceCount(resource: ResourceKind): number {
-  return workers.filter((worker) => worker.alive && getTeam(worker) === 'enemy' && worker.targetResourceId && resources.find((node) => node.id === worker.targetResourceId)?.resource === resource).length
-}
-
-function getNearestResourceOfKind(position: Vector3, resource: ResourceKind): ResourceNode | undefined {
-  let nearest: ResourceNode | undefined
-  let nearestDistance = Number.POSITIVE_INFINITY
-
-  for (const node of resources) {
-    if (!node.alive || node.resource !== resource || node.amount <= 0) continue
-
-    const distance = distanceToPoint(position, Transform.get(node.entity).position)
-    if (distance < nearestDistance) {
-      nearest = node
-      nearestDistance = distance
-    }
-  }
-
-  return nearest
-}
-
-function getEnemyBuildPosition(kind: BuildableKind): Vector3 | undefined {
-  const definition = BUILDING_DEFINITIONS[kind]
-  const enemyTemple = getNearestTemple(POSITIONS.enemyTemple, 'enemy')
-  const center = enemyTemple ? Transform.get(enemyTemple.entity).position : POSITIONS.enemyTemple
-  const existingKindCount = getTeamBuildings('enemy', kind).length
-  const offsets = getEnemyBuildOffsets(kind)
-
-  for (let i = 0; i < offsets.length; i++) {
-    const offset = offsets[(existingKindCount + i) % offsets.length]
-    const position = getSnappedPlacementPosition(Vector3.create(center.x + offset.x, 0, center.z + offset.z))
-    if (canPlaceBuildingAt(definition, position)) return position
-  }
-
-  return undefined
-}
-
-function getEnemyBuildOffsets(kind: BuildableKind): Vector3[] {
-  if (kind === 'temple') {
-    return [
-      Vector3.create(-24, 0, -16),
-      Vector3.create(18, 0, -24),
-      Vector3.create(-28, 0, 14)
-    ]
-  }
-
-  if (kind === 'barracks') {
-    return [
-      Vector3.create(-14, 0, 8),
-      Vector3.create(12, 0, 10),
-      Vector3.create(-18, 0, -4)
-    ]
-  }
-
-  return [
-    Vector3.create(-10, 0, 0),
-    Vector3.create(10, 0, 0),
-    Vector3.create(0, 0, -10),
-    Vector3.create(0, 0, 10)
-  ]
-}
-
-function getSupplyUsed(team: Team): number {
-  return team === 'enemy' ? gameState.enemySupplyUsed : gameState.supplyUsed
-}
-
-function getSupplyCap(team: Team): number {
-  return team === 'enemy' ? gameState.enemySupplyCap : gameState.supplyCap
-}
-
-function addSupplyUsed(team: Team, amount: number): void {
-  if (team === 'enemy') gameState.enemySupplyUsed += amount
-  else gameState.supplyUsed += amount
-}
-
-function addSupplyCap(team: Team, amount: number): void {
-  if (team === 'enemy') gameState.enemySupplyCap += amount
-  else gameState.supplyCap += amount
-}
-
-function decrementWorkerQueue(team: Team): void {
-  if (team === 'enemy') gameState.enemyWorkerQueue = Math.max(0, gameState.enemyWorkerQueue - 1)
-  else gameState.workerQueue = Math.max(0, gameState.workerQueue - 1)
-}
-
-function decrementSoldierQueue(team: Team): void {
-  if (team === 'enemy') gameState.enemySoldierQueue = Math.max(0, gameState.enemySoldierQueue - 1)
-  else gameState.soldierQueue = Math.max(0, gameState.soldierQueue - 1)
-}
-
 function getBuildingById(id: string): Building | undefined {
   return buildings.find((building) => building.id === id)
+}
+
+function getCombatTargetById(id: string): Building | Soldier | undefined {
+  return getBuildingById(id) ?? soldiers.find((soldier) => soldier.id === id)
 }
 
 function getSelectedAdjustableBuilding(): Building | undefined {
@@ -1981,58 +1650,6 @@ function getHoverText(selectable: Selectable): string {
   return `Select ${selectable.name}`
 }
 
-function hasResources(team: Team, cost: ResourceCost): boolean {
-  return (cost.rocks ?? 0) <= getResourceAmount(team, 'rocks') && (cost.wood ?? 0) <= getResourceAmount(team, 'wood') && (cost.meat ?? 0) <= getResourceAmount(team, 'meat')
-}
-
-function spendResources(team: Team, cost: ResourceCost): boolean {
-  if (!hasResources(team, cost)) return false
-
-  addResource(team, 'rocks', -(cost.rocks ?? 0))
-  addResource(team, 'wood', -(cost.wood ?? 0))
-  addResource(team, 'meat', -(cost.meat ?? 0))
-  return true
-}
-
-function addResource(team: Team, resource: ResourceKind, amount: number): void {
-  if (resource === 'rocks') {
-    if (team === 'enemy') gameState.enemyRocks += amount
-    else gameState.rocks += amount
-    return
-  }
-
-  if (resource === 'wood') {
-    if (team === 'enemy') gameState.enemyWood += amount
-    else gameState.wood += amount
-    return
-  }
-
-  if (team === 'enemy') gameState.enemyMeat += amount
-  else gameState.meat += amount
-}
-
-function addResources(team: Team, cost: ResourceCost): void {
-  addResource(team, 'rocks', cost.rocks ?? 0)
-  addResource(team, 'wood', cost.wood ?? 0)
-  addResource(team, 'meat', cost.meat ?? 0)
-}
-
-function getConstructionRefund(cost: ResourceCost, progress: number): ResourceCost {
-  const refundMultiplier = 1 - clamp(progress, 0, 1)
-
-  return {
-    rocks: Math.floor((cost.rocks ?? 0) * refundMultiplier),
-    wood: Math.floor((cost.wood ?? 0) * refundMultiplier),
-    meat: Math.floor((cost.meat ?? 0) * refundMultiplier)
-  }
-}
-
-function getResourceAmount(team: Team, resource: ResourceKind): number {
-  if (resource === 'rocks') return team === 'enemy' ? gameState.enemyRocks : gameState.rocks
-  if (resource === 'wood') return team === 'enemy' ? gameState.enemyWood : gameState.wood
-  return team === 'enemy' ? gameState.enemyMeat : gameState.meat
-}
-
 function formatCost(cost: ResourceCost): string {
   const parts = []
 
@@ -2044,6 +1661,7 @@ function formatCost(cost: ResourceCost): string {
 
 function depleteResourceNode(resource: ResourceNode): void {
   resource.amount = 0
+  resource.animationResetTimer = undefined
   if (resource.resource === 'meat') {
     resource.alive = false
     resource.depletionTimer = DEPLETED_MEAT_HIDE_DELAY
@@ -2080,12 +1698,19 @@ function playAnimation(entity: Entity, clipName: string): void {
 
 function playResourceGatherFeedback(resource: ResourceNode): void {
   playAnimation(resource.entity, RESOURCE_DEFINITIONS[resource.resource].gatherClip)
+  resource.animationResetTimer = RESOURCE_ANIMATION_RESET_DELAY
 
   const audio = AudioSource.getMutableOrNull(resource.entity)
   if (!audio) return
 
   audio.playing = false
   audio.playing = true
+}
+
+function resetResourceAnimation(resource: ResourceNode): void {
+  if (!resource.alive || !Animator.has(resource.entity)) return
+
+  Animator.playSingleAnimation(resource.entity, 'idle', true)
 }
 
 function updateLabel(selectable: Selectable, text: string): void {
@@ -2247,13 +1872,6 @@ function isPlacementInsideMap(position: Vector3, footprintRadius: number): boole
   )
 }
 
-function distanceToPoint(a: Vector3, b: Vector3): number {
-  const dx = a.x - b.x
-  const dz = a.z - b.z
-
-  return Math.sqrt(dx * dx + dz * dz)
-}
-
 function printResourcePlacementLists(): void {
   const trees = gameState.savedTreeLocations.map((location) => `  ${location}`).join(',\n')
   const rocks = gameState.savedRockLocations.map((location) => `  ${location}`).join(',\n')
@@ -2276,47 +1894,6 @@ function getSavedResourceLocations(resource: ResourceKind): string[] {
   if (resource === 'wood') return gameState.savedTreeLocations
   if (resource === 'meat') return gameState.savedMeatLocations
   return gameState.savedRockLocations
-}
-
-function formatPosition(position: Vector3): string {
-  return `x:${formatNumber(position.x)} y:${formatNumber(position.y)} z:${formatNumber(position.z)}`
-}
-
-function formatVectorForPaste(position: Vector3): string {
-  return `Vector3.create(${formatNumber(position.x)}, ${formatNumber(position.y)}, ${formatNumber(position.z)})`
-}
-
-function formatNumber(value: number): string {
-  return value.toFixed(2)
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
-}
-
-function moveTowardPosition(entity: Entity, target: Vector3, speed: number, dt: number): void {
-  const transform = Transform.getMutable(entity)
-  const current = transform.position
-  const direction = Vector3.create(target.x - current.x, 0, target.z - current.z)
-  const distance = Math.sqrt(direction.x * direction.x + direction.z * direction.z)
-
-  if (distance <= 0.01) return
-
-  const step = Math.min(distance, speed * dt)
-  transform.position = Vector3.create(current.x + (direction.x / distance) * step, current.y, current.z + (direction.z / distance) * step)
-  transform.rotation = Quaternion.fromEulerDegrees(0, (Math.atan2(direction.x, direction.z) * 180) / Math.PI, 0)
-}
-
-function distanceBetween(a: Entity, b: Entity): number {
-  return distanceToPosition(a, Transform.get(b).position)
-}
-
-function distanceToPosition(entity: Entity, position: Vector3): number {
-  const current = Transform.get(entity).position
-  const dx = current.x - position.x
-  const dz = current.z - position.z
-
-  return Math.sqrt(dx * dx + dz * dz)
 }
 
 function getWorkerGatherPosition(worker: Worker, resource: ResourceNode): Vector3 {
@@ -2395,35 +1972,19 @@ function getBuilderWorkPosition(site: Building, workerPosition: Vector3): Vector
 
 function getSoldierAttackPosition(target: Building, slot: number): Vector3 {
   const targetTransform = Transform.get(target.entity)
-  const targetRadius = Math.max(targetTransform.scale.x, targetTransform.scale.z) * 0.5
-  const attackRadius = Math.max(CONFIG.soldierAttackRange * 0.75, targetRadius + SOLDIER_ATTACK_SPACING)
+  const definition = isBuildableKind(target.kind) ? BUILDING_DEFINITIONS[target.kind] : undefined
+  const modelRadius = Math.max(targetTransform.scale.x, targetTransform.scale.z) * 0.5
+  const footprintRadius = definition ? Math.max(definition.scale.x, definition.scale.z) * 0.5 : modelRadius
+  const buildingPadding = target.kind === 'temple' ? TEMPLE_ATTACK_DISTANCE_PADDING : 1
+  const attackRadius = Math.max(CONFIG.soldierAttackRange + buildingPadding, footprintRadius + SOLDIER_ATTACK_SPACING + buildingPadding)
   const position = getFormationPosition(targetTransform.position, slot, attackRadius)
 
   return Vector3.create(position.x, 0.25, position.z)
 }
 
-function getFormationPosition(center: Vector3, slot: number, radius: number): Vector3 {
-  const angle = slot * 2.399963229728653
-  const ring = Math.floor(slot / 6)
-  const slotRadius = radius + ring * 0.45
-
-  return Vector3.create(center.x + Math.cos(angle) * slotRadius, center.y, center.z + Math.sin(angle) * slotRadius)
-}
-
 function cancelSoldierCommand(): void {
   soldierCommandMode = 'none'
   soldierCommandCooldown = 0
-}
-
-function offsetSpawn(position: Vector3, index: number): Vector3 {
-  const offset = (index % 5) * 0.35
-
-  return Vector3.create(position.x + offset, position.y, position.z + Math.floor(index / 5) * 0.35)
-}
-
-function hideEntity(entity: Entity): void {
-  const transform = Transform.getMutable(entity)
-  transform.position = Vector3.create(transform.position.x, -10, transform.position.z)
 }
 
 function removeSelectable(selectable: Selectable): void {
@@ -2443,6 +2004,14 @@ function removeSelectable(selectable: Selectable): void {
   }
 }
 
+function destroySelectable(selectable: Selectable): void {
+  selectable.alive = false
+  removeSelectableInteractivity(selectable)
+  if (selectable.labelEntity) engine.removeEntity(selectable.labelEntity)
+  engine.removeEntity(selectable.entity)
+  selectables.delete(selectable.id)
+}
+
 function removeBuilding(building: Building): void {
   const index = buildings.findIndex((candidate) => candidate.id === building.id)
   if (index >= 0) buildings.splice(index, 1)
@@ -2460,6 +2029,3 @@ function removeSelectableInteractivity(selectable: Selectable): void {
   MeshRenderer.deleteFrom(selectable.entity)
 }
 
-function cloneVector(vector: Vector3): Vector3 {
-  return Vector3.create(vector.x, vector.y, vector.z)
-}

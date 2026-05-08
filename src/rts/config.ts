@@ -40,7 +40,7 @@ export const ASSETS = {
   fireplace: 'models/Fireplace.glb',
   workers: ['models/FarmerFemale2.glb', 'models/FarmerMale1.glb'],
   playerFighter: 'models/KnightwSwordNPC.glb',
-  enemyFighter: 'models/dark-knight.glb',
+  enemyFighter: 'models/ExecutionerAxe.glb',
   rock: 'models/mining.glb',
   tree: 'models/Pine.glb',
   pig: 'models/Pig.glb',

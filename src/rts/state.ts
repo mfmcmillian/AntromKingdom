@@ -18,6 +18,23 @@ export const gameState = {
   selectedKind: '' as SelectableKind | '',
   selectedGroupKind: '' as UnitGroupKind | '',
   status: 'Select a worker, then click a rock or tree.',
+  attackAlert: '',
+  attackAlertTimer: 0,
+  matchTime: 0,
+  matchStatus: 'notStarted' as 'notStarted' | 'active' | 'ended',
+  matchResult: 'none' as 'none' | 'win' | 'loss',
+  matchStats: {
+    player: {
+      unitsProduced: 0,
+      unitsKilled: 0,
+      resourcesGathered: 0
+    },
+    enemy: {
+      unitsProduced: 0,
+      unitsKilled: 0,
+      resourcesGathered: 0
+    }
+  },
   workerQueue: 0,
   soldierQueue: 0,
   placementMode: 'none' as PlacementState['state'],

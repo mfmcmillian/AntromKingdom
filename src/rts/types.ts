@@ -87,6 +87,7 @@ export type ResourceNode = Selectable & {
   resource: ResourceKind
   amount: number
   depletionTimer?: number
+  animationResetTimer?: number
 }
 
 export type Building = Selectable & {
