@@ -758,7 +758,8 @@ function createWorker(position: Vector3, team: Team = 'player'): Worker {
     `${team === 'enemy' ? 'Enemy ' : ''}${definition.name} ${getTeamWorkerCount(team) + 1}`,
     position,
     team,
-    Vector3.create(0.55, 1.6, 0.55)
+    // Generous click box: units are small targets from the overhead camera.
+    Vector3.create(1.1, 1.8, 1.1)
   ) as Worker
 
   worker.hp = definition.hp
@@ -777,7 +778,8 @@ function createSoldier(position: Vector3, team: Team = 'player', variant: Soldie
     `${team === 'enemy' ? 'Enemy ' : ''}${definition.name} ${getTeamSoldierCount(team) + 1}`,
     position,
     team,
-    Vector3.create(0.7, 1.7, 0.7),
+    // Generous click box: units are small targets from the overhead camera.
+    Vector3.create(1.4, 2, 1.4),
     variant
   ) as Soldier
 
@@ -2079,6 +2081,7 @@ function getHoverText(selectable: Selectable): string {
     const resource = selectable as ResourceNode
     return resource.resource ? RESOURCE_DEFINITIONS[resource.resource].hoverText : `Select ${selectable.name}`
   }
+  if (getTeam(selectable) === 'enemy') return `Attack ${selectable.name}`
   return `Select ${selectable.name}`
 }
 
