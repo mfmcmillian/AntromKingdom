@@ -5,7 +5,7 @@ import { canQueueUnit, getResourceAmount, getSupplyCap, getSupplyUsed, hasResour
 import { distanceToPoint } from '../math'
 import { getSoldierDefinition, getWorkerDefinition } from '../races'
 import { gameState } from '../state'
-import type { BuildableKind, Building, ResourceKind, ResourceNode, Soldier, Worker } from '../types'
+import type { BuildableKind, Building, ResourceKind, ResourceNode, Soldier, SoldierVariant, Worker } from '../types'
 import {
   getAvailableWorkersForTeam,
   getCompletedTeamBuildings,
@@ -102,16 +102,25 @@ function queueEnemyProduction(): void {
   const enemyBarracks = getCompletedTeamBuildings('enemy', 'barracks')[0]
 
   const workerDef = getWorkerDefinition('enemy')
-  const soldierDef = getSoldierDefinition('enemy')
 
   if (enemyHomestead && enemyWorkers < CONFIG.enemyAiTargetWorkers && canQueueUnit('enemy', workerDef.supply) && spendResources('enemy', workerDef.cost)) {
     workerProductionOrders.push({ homesteadId: enemyHomestead.id, timer: 0, productionTime: workerDef.productionTime, team: 'enemy' })
     gameState.enemyWorkerQueue += 1
   }
 
-  if (enemyBarracks && enemyGuards < CONFIG.enemyAiTargetGuards && canQueueUnit('enemy', soldierDef.supply) && spendResources('enemy', soldierDef.cost)) {
-    soldierProductionOrders.push({ barracksId: enemyBarracks.id, timer: 0, productionTime: soldierDef.productionTime, team: 'enemy' })
-    gameState.enemySoldierQueue += 1
+  if (enemyBarracks && enemyGuards < CONFIG.enemyAiTargetGuards) {
+    // Roughly one ranged unit for every two melee; fall back to melee if gas is short.
+    let variant: SoldierVariant = enemyGuards % 3 === 2 ? 'ranged' : 'melee'
+    let soldierDef = getSoldierDefinition('enemy', variant)
+    if (variant === 'ranged' && !hasResources('enemy', soldierDef.cost)) {
+      variant = 'melee'
+      soldierDef = getSoldierDefinition('enemy', variant)
+    }
+
+    if (canQueueUnit('enemy', soldierDef.supply) && spendResources('enemy', soldierDef.cost)) {
+      soldierProductionOrders.push({ barracksId: enemyBarracks.id, timer: 0, productionTime: soldierDef.productionTime, team: 'enemy', variant })
+      gameState.enemySoldierQueue += 1
+    }
   }
 }
 
@@ -170,7 +179,7 @@ function getEnemyWorkerResourcePriority(): ResourceKind {
 
   if (assigned.minerals < 3) return 'minerals'
   if (assigned.gas < 1) return 'gas'
-  if (getResourceAmount('enemy', 'gas') < (getSoldierDefinition('enemy').cost.gas ?? 0) * 2) return 'gas'
+  if (getResourceAmount('enemy', 'gas') < (getSoldierDefinition('enemy', 'ranged').cost.gas ?? 0) * 2) return 'gas'
   return 'minerals'
 }
 

@@ -1,14 +1,17 @@
 import { Color4 } from '@dcl/sdk/math'
 import { gameState } from './state'
-import type { BuildableKind, RaceId, RaceUnitStats, ResourceCost, Team } from './types'
+import type { BuildableKind, RaceId, RaceUnitStats, ResourceCost, SoldierVariant, Team } from './types'
 
 // The three playable races. Buildings share models for now (names + beacon color
 // differ per race); units are fully distinct procedural models with their own stats.
+// Every race fields a melee bruiser and a long-range attacker.
 //
 // Balance identity:
 //   human - baseline all-rounder.
 //   alien - expensive, durable, hard-hitting, slow to produce.
 //   bio   - cheap, fast, fragile, swarms out of quick production cycles.
+
+const MELEE_RANGE = 1.8
 
 export type RaceDefinition = {
   id: RaceId
@@ -17,7 +20,8 @@ export type RaceDefinition = {
   color: Color4
   accent: Color4
   worker: RaceUnitStats
-  soldier: RaceUnitStats
+  melee: RaceUnitStats
+  ranged: RaceUnitStats
   buildingNames: Record<BuildableKind, string>
 }
 
@@ -29,7 +33,8 @@ export const RACES: Record<RaceId, RaceDefinition> = {
     color: Color4.create(0.35, 0.55, 0.85, 1),
     accent: Color4.create(0.45, 0.7, 1, 1),
     worker: { name: 'Miner', hp: 35, cost: { minerals: 50 }, productionTime: 2, supply: 1 },
-    soldier: { name: 'Marine', hp: 80, damage: 10, moveSpeed: 3, cost: { minerals: 100, gas: 25 }, productionTime: 2, supply: 1 },
+    melee: { name: 'Vanguard', hp: 100, damage: 11, moveSpeed: 3, attackRange: MELEE_RANGE, cost: { minerals: 100 }, productionTime: 2, supply: 1 },
+    ranged: { name: 'Gunner', hp: 70, damage: 9, moveSpeed: 2.9, attackRange: 6, cost: { minerals: 80, gas: 25 }, productionTime: 2.2, supply: 1 },
     buildingNames: {
       temple: 'Command Post',
       supplyHouse: 'Habitat',
@@ -44,7 +49,8 @@ export const RACES: Record<RaceId, RaceDefinition> = {
     color: Color4.create(0.75, 0.6, 0.25, 1),
     accent: Color4.create(0.85, 0.65, 1, 1),
     worker: { name: 'Probe', hp: 30, cost: { minerals: 50 }, productionTime: 2.5, supply: 1 },
-    soldier: { name: 'Stalker', hp: 115, damage: 15, moveSpeed: 2.8, cost: { minerals: 125, gas: 50 }, productionTime: 3, supply: 1 },
+    melee: { name: 'Stalker', hp: 125, damage: 16, moveSpeed: 2.8, attackRange: MELEE_RANGE, cost: { minerals: 125, gas: 50 }, productionTime: 3, supply: 1 },
+    ranged: { name: 'Disruptor', hp: 85, damage: 13, moveSpeed: 2.7, attackRange: 7, cost: { minerals: 100, gas: 75 }, productionTime: 3.2, supply: 1 },
     buildingNames: {
       temple: 'Nexus',
       supplyHouse: 'Pylon',
@@ -59,7 +65,8 @@ export const RACES: Record<RaceId, RaceDefinition> = {
     color: Color4.create(0.65, 0.25, 0.3, 1),
     accent: Color4.create(1, 0.45, 0.3, 1),
     worker: { name: 'Drone', hp: 40, cost: { minerals: 50 }, productionTime: 1.5, supply: 1 },
-    soldier: { name: 'Ravager', hp: 55, damage: 7, moveSpeed: 3.6, cost: { minerals: 60, gas: 10 }, productionTime: 1.2, supply: 1 },
+    melee: { name: 'Ravager', hp: 55, damage: 7, moveSpeed: 3.6, attackRange: MELEE_RANGE, cost: { minerals: 60, gas: 10 }, productionTime: 1.2, supply: 1 },
+    ranged: { name: 'Spitter', hp: 45, damage: 6, moveSpeed: 3.2, attackRange: 5.5, cost: { minerals: 50, gas: 25 }, productionTime: 1.4, supply: 1 },
     buildingNames: {
       temple: 'Hive',
       supplyHouse: 'Growth Pod',
@@ -79,8 +86,8 @@ export function getWorkerDefinition(team: Team): RaceUnitStats {
   return getRace(team).worker
 }
 
-export function getSoldierDefinition(team: Team): RaceUnitStats {
-  return getRace(team).soldier
+export function getSoldierDefinition(team: Team, variant: SoldierVariant): RaceUnitStats {
+  return variant === 'ranged' ? getRace(team).ranged : getRace(team).melee
 }
 
 export function getBuildingDisplayName(kind: BuildableKind, team: Team): string {

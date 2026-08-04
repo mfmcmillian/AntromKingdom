@@ -120,12 +120,13 @@ export const uiMenu = () => {
           {isPlayerSelection && selected.kind === 'worker' ? actionButton(`Build ${getBuildingDisplayName('barracks', 'player')}`, formatRaceCost(BUILDING_DEFINITIONS.barracks.cost), () => startWorkerBuildingPlacement('barracks'), UI.green) : null}
           {isPlayerSelection && selected.kind === 'worker' ? actionButton(`Build ${getBuildingDisplayName('fireplace', 'player')}`, formatRaceCost(BUILDING_DEFINITIONS.fireplace.cost), () => startWorkerBuildingPlacement('fireplace'), UI.red) : null}
           {isPlayerSelection && selected.kind === 'worker' ? actionButton('Select All', `${getWorkerDefinition('player').name.toLowerCase()}s`, selectAllLikeSelected, UI.card) : null}
-          {isPlayerSelection && selected.kind === 'barracks' ? actionButton(`Create ${getSoldierDefinition('player').name}`, formatRaceCost(getSoldierDefinition('player').cost), queueSoldier, UI.green) : null}
+          {isPlayerSelection && selected.kind === 'barracks' ? actionButton(`Create ${getSoldierDefinition('player', 'melee').name}`, formatRaceCost(getSoldierDefinition('player', 'melee').cost), () => queueSoldier('melee'), UI.green) : null}
+          {isPlayerSelection && selected.kind === 'barracks' ? actionButton(`Create ${getSoldierDefinition('player', 'ranged').name}`, formatRaceCost(getSoldierDefinition('player', 'ranged').cost), () => queueSoldier('ranged'), UI.accent) : null}
           {isPlayerSelection && selected.kind === 'barracks' ? actionButton('Set Spawn', 'current position', setBarracksSpawnPoint, UI.card) : null}
           {showCancelBuild ? actionButton('Cancel Build', 'refund unbuilt cost', cancelSelectedConstruction, UI.red) : null}
           {isPlayerSelection && selected.kind === 'soldier' ? actionButton('Attack', 'click enemy', startSoldierAttackCommand, UI.red) : null}
           {isPlayerSelection && selected.kind === 'soldier' ? actionButton('Move', 'click ground', startSoldierMoveCommand, UI.accent) : null}
-          {isPlayerSelection && selected.kind === 'soldier' ? actionButton('Select All', `${getSoldierDefinition('player').name.toLowerCase()}s`, selectAllLikeSelected, UI.card) : null}
+          {isPlayerSelection && selected.kind === 'soldier' ? actionButton('Select All', 'fighters', selectAllLikeSelected, UI.card) : null}
           {selected.kind !== 'temple' && selected.kind !== 'worker' ? infoCard(getContextHint(selected.kind)) : null}
         </UiEntity>
       </UiEntity>
@@ -165,7 +166,7 @@ function raceCard(raceId: RaceId) {
       <UiEntity uiTransform={{ width: '100%', height: 3, margin: { bottom: 10 } }} uiBackground={{ color: isSelected ? race.accent : Color4.create(0.25, 0.26, 0.3, 0.8) }} />
       <Label value={race.name} fontSize={17} color={isSelected ? Color4.White() : Color4.create(0.7, 0.7, 0.72, 1)} textAlign="middle-center" />
       <Label
-        value={`${race.worker.name}s + ${race.soldier.name}s`}
+        value={`${race.worker.name} + ${race.melee.name} + ${race.ranged.name}`}
         fontSize={11}
         color={isSelected ? race.accent : Color4.create(0.5, 0.5, 0.54, 0.9)}
         textAlign="middle-center"
@@ -529,23 +530,23 @@ function getCommandTitle(kind: string): string {
   if (kind === 'supplyHouse') return 'HOMESTEAD'
   if (kind === 'barracks') return 'BARRACKS'
   if (kind === 'fireplace') return 'FIREPLACE'
-  if (kind === 'soldier') return 'ANTROM GAURD'
+  if (kind === 'soldier') return 'FIGHTER'
   if (kind === 'enemyBuilding') return 'ENEMY'
   if (kind === 'none') return 'COMMANDS'
   return 'COMMANDS'
 }
 
 function getContextHint(kind: string): string {
+  const race = getRace('player')
   const workerName = getWorkerDefinition('player').name
-  const soldierName = getSoldierDefinition('player').name
   const supplyName = getBuildingDisplayName('supplyHouse', 'player')
 
   if (kind === 'resource') return `Select a ${workerName}, then click this resource.`
   if (kind === 'supplyHouse') return `${supplyName}s create ${workerName}s and increase your unit cap.`
-  if (kind === 'barracks') return `Create ${soldierName}s here.`
+  if (kind === 'barracks') return `Create ${race.melee.name}s (melee) and ${race.ranged.name}s (ranged) here.`
   if (kind === 'fireplace') return 'A camp utility building.'
   if (kind === 'soldier') return 'Click an enemy building to attack.'
-  if (kind === 'enemyBuilding') return `Select a ${soldierName}, then click this building to attack.`
+  if (kind === 'enemyBuilding') return 'Select a fighter, then click this building to attack.'
   return `Select a ${supplyName} to create ${workerName}s, or a ${workerName} to build.`
 }
 

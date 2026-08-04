@@ -7,7 +7,7 @@ type CombatTarget = Building | Soldier | Worker
 
 export type CombatSystemDeps = {
   getCombatTargetById(id: string): CombatTarget | undefined
-  getSoldierAttackPosition(target: Building, slot: number): { x: number; y: number; z: number }
+  getSoldierAttackPosition(target: Building, slot: number, attacker: Soldier): { x: number; y: number; z: number }
   getUnitAttackPosition(target: Soldier | Worker, attacker: Soldier): { x: number; y: number; z: number }
   setSoldierAnimation(soldier: Soldier, clipName: string, restart?: boolean): void
   damageCombatTarget(target: CombatTarget, amount: number, attacker: Soldier): void
@@ -79,5 +79,5 @@ function getAttackPosition(soldier: Soldier, target: CombatTarget, deps: CombatS
     return deps.getUnitAttackPosition(target, soldier)
   }
 
-  return soldier.attackPosition ?? deps.getSoldierAttackPosition(target, 0)
+  return soldier.attackPosition ?? deps.getSoldierAttackPosition(target, 0, soldier)
 }

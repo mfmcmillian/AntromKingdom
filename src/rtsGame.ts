@@ -66,6 +66,7 @@ import { buildUnitModel, disposeUnit, isProceduralUnit, setUnitAnimation, update
 import { getBuildingDisplayName, getRace, getSoldierDefinition, getWorkerDefinition, pickEnemyRace } from './rts/races'
 import { buildResourceModel, disposeResourceModel, playResourceDepletion, playResourceGatherPulse } from './rts/resourceModels'
 import { showMoveMarker } from './rts/moveMarker'
+import { fireProjectile } from './rts/projectiles'
 import { disableTopDownView, enableTopDownView, getCameraFocus, isTopDownViewActive } from './rts/topDownCamera'
 import { createBuildingDamageVfx, removeBuildingDamageVfx, updateBuildingDamageVfx } from './rts/vfx'
 import {
@@ -98,6 +99,7 @@ import type {
   SelectableKind,
   SelectedSummary,
   Soldier,
+  SoldierVariant,
   Team,
   Worker
 } from './rts/types'
@@ -314,12 +316,12 @@ export function cancelBuildingPlacement(): void {
   setStatus(`Cancelled ${getBuildingDisplayName(kind, 'player')} placement.`)
 }
 
-export function queueSoldier(): void {
+export function queueSoldier(variant: SoldierVariant = 'melee'): void {
   if (!isMatchActive()) return
 
   const selected = getSelected()
   const barracks = selected?.kind === 'barracks' ? (selected as Building) : undefined
-  const soldierDef = getSoldierDefinition('player')
+  const soldierDef = getSoldierDefinition('player', variant)
   const barracksName = getBuildingDisplayName('barracks', 'player')
 
   if (!barracks?.alive || !barracks.isComplete) {
@@ -337,7 +339,7 @@ export function queueSoldier(): void {
     return
   }
 
-  soldierProductionOrders.push({ barracksId: barracks.id, timer: 0, productionTime: soldierDef.productionTime, team: 'player' })
+  soldierProductionOrders.push({ barracksId: barracks.id, timer: 0, productionTime: soldierDef.productionTime, team: 'player', variant })
   gameState.soldierQueue += 1
   setStatus(`${soldierDef.name} queued at the ${barracksName}.`)
 }
@@ -346,13 +348,13 @@ export function selectAllLikeSelected(): void {
   const selected = getSelected()
 
   if (selected?.kind !== 'worker' && selected?.kind !== 'soldier') {
-    setStatus(`Select a ${getWorkerDefinition('player').name} or ${getSoldierDefinition('player').name} first.`)
+    setStatus(`Select a ${getWorkerDefinition('player').name} or fighter first.`)
     return
   }
 
   const units = selected.kind === 'worker' ? getAvailableWorkers() : getAvailableSoldiers()
   setUnitSelection(units)
-  const unitLabel = selected.kind === 'worker' ? `${getWorkerDefinition('player').name}s` : `${getSoldierDefinition('player').name}s`
+  const unitLabel = selected.kind === 'worker' ? `${getWorkerDefinition('player').name}s` : 'fighters'
   setStatus(`Selected all ${unitLabel} (${units.length}). Click a valid target to command them.`)
 }
 
@@ -360,26 +362,26 @@ export function startSoldierMoveCommand(): void {
   const commandableSoldiers = getCommandableSoldiers()
 
   if (commandableSoldiers.length === 0) {
-    setStatus(`Select a ${getSoldierDefinition('player').name} first.`)
+    setStatus('Select a fighter first.')
     return
   }
 
   soldierCommandMode = 'move'
   soldierCommandCooldown = SOLDIER_MOVE_COMMAND_CLICK_COOLDOWN
-  setStatus(`Move ${commandableSoldiers.length} ${getSoldierDefinition('player').name}${commandableSoldiers.length === 1 ? '' : 's'}: click open ground.`)
+  setStatus(`Move ${commandableSoldiers.length} fighter${commandableSoldiers.length === 1 ? '' : 's'}: click open ground.`)
 }
 
 export function startSoldierAttackCommand(): void {
   const commandableSoldiers = getCommandableSoldiers()
 
   if (commandableSoldiers.length === 0) {
-    setStatus(`Select a ${getSoldierDefinition('player').name} first.`)
+    setStatus('Select a fighter first.')
     return
   }
 
   soldierCommandMode = 'attack'
   soldierCommandCooldown = SOLDIER_MOVE_COMMAND_CLICK_COOLDOWN
-  setStatus(`Attack with ${commandableSoldiers.length} ${getSoldierDefinition('player').name}${commandableSoldiers.length === 1 ? '' : 's'}: click an enemy.`)
+  setStatus(`Attack with ${commandableSoldiers.length} fighter${commandableSoldiers.length === 1 ? '' : 's'}: click an enemy.`)
 }
 
 export function selectIdleWorker(): void {
@@ -574,7 +576,7 @@ function getGroupSelectionPrefix(): string {
 
   const parts: string[] = []
   if (workerCount > 0) parts.push(`${workerCount} ${getWorkerDefinition('player').name}${workerCount === 1 ? '' : 's'}`)
-  if (soldierCount > 0) parts.push(`${soldierCount} ${getSoldierDefinition('player').name}${soldierCount === 1 ? '' : 's'}`)
+  if (soldierCount > 0) parts.push(`${soldierCount} fighter${soldierCount === 1 ? '' : 's'}`)
   return `Selected ${parts.join(' + ')}. `
 }
 
@@ -799,20 +801,23 @@ function createWorker(position: Vector3, team: Team = 'player'): Worker {
   return worker
 }
 
-function createSoldier(position: Vector3, team: Team = 'player'): Soldier {
-  const definition = getSoldierDefinition(team)
+function createSoldier(position: Vector3, team: Team = 'player', variant: SoldierVariant = 'melee'): Soldier {
+  const definition = getSoldierDefinition(team, variant)
   const soldier = createProceduralUnitSelectable(
     'soldier',
     `${team === 'enemy' ? 'Enemy ' : ''}${definition.name} ${getTeamSoldierCount(team) + 1}`,
     position,
     team,
-    Vector3.create(0.7, 1.7, 0.7)
+    Vector3.create(0.7, 1.7, 0.7),
+    variant
   ) as Soldier
 
+  soldier.variant = variant
   soldier.hp = definition.hp
   soldier.maxHp = definition.hp
   soldier.damage = definition.damage ?? CONFIG.soldierDamage
   soldier.moveSpeed = definition.moveSpeed ?? CONFIG.soldierMoveSpeed
+  soldier.attackRange = definition.attackRange ?? CONFIG.soldierAttackRange
   soldier.state = 'idle'
   soldier.attackTimer = 0
   soldier.activeAnimation = 'idle'
@@ -820,11 +825,11 @@ function createSoldier(position: Vector3, team: Team = 'player'): Soldier {
 }
 
 /** Units are procedurally built per race (no GLBs), so this replaces createSelectableModel for them. */
-function createProceduralUnitSelectable(kind: 'worker' | 'soldier', name: string, position: Vector3, team: Team, colliderScale: Vector3): Selectable {
+function createProceduralUnitSelectable(kind: 'worker' | 'soldier', name: string, position: Vector3, team: Team, colliderScale: Vector3, variant?: SoldierVariant): Selectable {
   const id = createEntityId(kind)
   const entity = engine.addEntity()
   Transform.create(entity, { position: cloneVector(position) })
-  buildUnitModel(entity, getRace(team).id, kind, team)
+  buildUnitModel(entity, getRace(team).id, kind === 'worker' ? 'worker' : variant ?? 'melee', team)
 
   const selectable: Selectable = { id, kind, name, entity, alive: true, team }
   selectable.colliderEntity = createModelColliderEntity(entity, {
@@ -1210,7 +1215,7 @@ function assignSoldierToAttack(soldier: Soldier, target: Building | Soldier | Wo
 
   soldier.state = 'movingToAttack'
   soldier.targetId = target.id
-  soldier.attackPosition = target.kind === 'soldier' || target.kind === 'worker' ? undefined : getSoldierAttackPosition(target, slot)
+  soldier.attackPosition = target.kind === 'soldier' || target.kind === 'worker' ? undefined : getSoldierAttackPosition(target, slot, soldier)
   soldier.rallyPoint = undefined
   soldier.attackTimer = 0
   setSoldierAnimation(soldier, 'walk')
@@ -1246,7 +1251,7 @@ function assignCommandableSoldiersToAttack(target: Building | Soldier | Worker):
   const assignedSoldiers = getCommandableSoldiers()
 
   if (assignedSoldiers.length === 0) {
-    setStatus(`Select a ${getSoldierDefinition('player').name} first.`)
+    setStatus('Select a fighter first.')
     return
   }
 
@@ -1255,7 +1260,7 @@ function assignCommandableSoldiersToAttack(target: Building | Soldier | Worker):
   }
 
   clearSelection()
-  setStatus(`${assignedSoldiers.length} ${getSoldierDefinition('player').name}s attacking ${target.name}.`)
+  setStatus(`${assignedSoldiers.length} fighter${assignedSoldiers.length === 1 ? '' : 's'} attacking ${target.name}.`)
 }
 
 function moveCommandableSoldiersTo(destination: Vector3): void {
@@ -1263,7 +1268,7 @@ function moveCommandableSoldiersTo(destination: Vector3): void {
 
   if (assignedSoldiers.length === 0) {
     cancelSoldierCommand()
-    setStatus(`Select a ${getSoldierDefinition('player').name} first.`)
+    setStatus('Select a fighter first.')
     return
   }
 
@@ -1275,7 +1280,7 @@ function moveCommandableSoldiersTo(destination: Vector3): void {
 
   showMoveMarker(destination)
   clearSelection()
-  setStatus(`${assignedSoldiers.length} ${getSoldierDefinition('player').name}${assignedSoldiers.length === 1 ? '' : 's'} moving.`)
+  setStatus(`${assignedSoldiers.length} fighter${assignedSoldiers.length === 1 ? '' : 's'} moving.`)
 }
 
 function confirmBuildingPlacement(hitPosition?: Vector3): void {
@@ -1683,7 +1688,7 @@ function updateCancelInput(): void {
 
   if (soldierCommandMode !== 'none') {
     cancelSoldierCommand()
-    setStatus(`${getSoldierDefinition('player').name} command cancelled.`)
+    setStatus('Fighter command cancelled.')
     return
   }
 
@@ -1836,6 +1841,11 @@ function completeConstruction(site: Building, builder: Worker): void {
 }
 
 function damageCombatTarget(target: Building | Soldier | Worker, amount: number, attacker: Soldier): void {
+  // Ranged attackers fire a visible tracer toward whatever they hit.
+  if (attacker.variant === 'ranged' && attacker.alive && target.alive) {
+    fireProjectile(Transform.get(attacker.entity).position, Transform.get(target.entity).position, getTeam(attacker))
+  }
+
   if (target.kind === 'soldier') {
     damageSoldier(target, amount, attacker)
     return
@@ -1891,7 +1901,7 @@ function damageSoldier(soldier: Soldier, amount: number, attacker?: Soldier): vo
   soldier.targetId = undefined
   soldier.attackPosition = undefined
   soldier.rallyPoint = undefined
-  addSupplyUsed(getTeam(soldier), -getSoldierDefinition(getTeam(soldier)).supply)
+  addSupplyUsed(getTeam(soldier), -getSoldierDefinition(getTeam(soldier), soldier.variant).supply)
   removeSelectable(soldier)
   clearAttackersTargeting(soldier.id)
 }
@@ -2100,8 +2110,9 @@ function getBuildingDetail(building: Building): string {
   }
   if (building.kind === 'barracks') {
     const rallyPoint = barracksRallyPoints.get(building.id)
-    const soldierName = getSoldierDefinition(getTeam(building)).name
-    return rallyPoint ? `Complete: creates ${soldierName}s. Spawn ${formatPosition(rallyPoint)}.` : `Complete: creates ${soldierName}s`
+    const race = getRace(getTeam(building))
+    const soldierNames = `${race.melee.name}s and ${race.ranged.name}s`
+    return rallyPoint ? `Complete: creates ${soldierNames}. Spawn ${formatPosition(rallyPoint)}.` : `Complete: creates ${soldierNames}`
   }
   if (building.kind === 'fireplace') return 'Complete: camp utility building.'
   if (building.kind === 'enemyBuilding') return 'Enemy structure'
@@ -2396,13 +2407,15 @@ function getBuilderWorkPosition(site: Building, workerPosition: Vector3): Vector
   return Vector3.create(siteTransform.position.x + direction.x * stopDistance, 0.25, siteTransform.position.z + direction.z * stopDistance)
 }
 
-function getSoldierAttackPosition(target: Building, slot: number): Vector3 {
+function getSoldierAttackPosition(target: Building, slot: number, attacker?: Soldier): Vector3 {
   const targetTransform = Transform.get(target.entity)
   const definition = isBuildableKind(target.kind) ? BUILDING_DEFINITIONS[target.kind] : undefined
   const modelRadius = Math.max(targetTransform.scale.x, targetTransform.scale.z) * 0.5
   const footprintRadius = definition ? Math.max(definition.scale.x, definition.scale.z) * 0.5 : modelRadius
   const buildingPadding = target.kind === 'temple' ? TEMPLE_ATTACK_DISTANCE_PADDING : 1
-  const attackRadius = Math.max(CONFIG.soldierAttackRange + buildingPadding, footprintRadius + SOLDIER_ATTACK_SPACING + buildingPadding)
+  // Ranged units stand off at their attack range; melee closes to the footprint edge.
+  const attackerRange = attacker?.attackRange ?? CONFIG.soldierAttackRange
+  const attackRadius = Math.max(footprintRadius + buildingPadding + Math.max(attackerRange - CONFIG.soldierAttackRange, 0), footprintRadius + SOLDIER_ATTACK_SPACING + buildingPadding)
   const position = getFormationPosition(targetTransform.position, slot, attackRadius)
 
   return Vector3.create(position.x, 0.25, position.z)
@@ -2411,7 +2424,8 @@ function getSoldierAttackPosition(target: Building, slot: number): Vector3 {
 function getUnitAttackPosition(target: Soldier | Worker, attacker: Soldier): Vector3 {
   const targetPosition = Transform.get(target.entity).position
   const slot = getAttackSlotForTarget(target.id, attacker.id)
-  const position = getFormationPosition(targetPosition, slot, SOLDIER_UNIT_ATTACK_SPACING)
+  const standoff = Math.max(SOLDIER_UNIT_ATTACK_SPACING, attacker.attackRange)
+  const position = getFormationPosition(targetPosition, slot, standoff)
 
   return Vector3.create(position.x, 0.25, position.z)
 }

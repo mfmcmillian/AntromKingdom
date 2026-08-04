@@ -17,6 +17,7 @@ export type WorkerState =
   | 'movingToRally'
   | 'dead'
 export type SoldierState = 'idle' | 'movingToAttack' | 'attacking' | 'movingToRally' | 'dead'
+export type SoldierVariant = 'melee' | 'ranged'
 export type BuildableKind = 'temple' | 'supplyHouse' | 'barracks' | 'fireplace'
 export type ConstructionState = 'none' | 'placing' | 'movingBuilder' | 'building' | 'paused' | 'complete'
 
@@ -75,10 +76,12 @@ export type Worker = Selectable & {
 
 export type Soldier = Selectable & {
   kind: 'soldier'
+  variant: SoldierVariant
   hp: number
   maxHp: number
   damage: number
   moveSpeed: number
+  attackRange: number
   state: SoldierState
   targetId?: string
   attackPosition?: Vector3
@@ -139,6 +142,7 @@ export type RaceUnitStats = {
   supply: number
   damage?: number
   moveSpeed?: number
+  attackRange?: number
 }
 
 export type ResourceDefinition = {
@@ -155,6 +159,7 @@ export type UnitProductionOrder = {
   timer: number
   productionTime: number
   team: Team
+  variant: SoldierVariant
 }
 
 export type WorkerProductionOrder = {
