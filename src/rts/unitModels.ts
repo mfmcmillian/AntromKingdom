@@ -8,7 +8,7 @@ import { RaceId, ResourceKind, Team } from './types'
 // per-state motion (hover bob, tilt, spinners, attack lunges) to mirror the
 // animation clips the game logic requests (idle / walk / talk / attack / impact).
 
-export type UnitRole = 'worker' | 'melee' | 'ranged' | 'caster' | 'flyer' | 'titan'
+export type UnitRole = 'worker' | 'melee' | 'ranged' | 'caster' | 'flyer' | 'titan' | 'hero'
 
 type UnitAnimState = 'idle' | 'walk' | 'talk' | 'attack' | 'impact'
 
@@ -133,6 +133,7 @@ export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team:
     else if (role === 'ranged') buildHumanGunner(rig, addPart, glow)
     else if (role === 'caster') buildHumanStormcaller(rig, addPart, glow)
     else if (role === 'flyer') buildHumanRaptor(rig, addPart, glow)
+    else if (role === 'hero') buildHumanHero(rig, addPart, glow)
     else buildHumanColossus(rig, addPart, glow)
   } else if (race === 'alien') {
     if (role === 'worker') buildAlienProbe(rig, addPart, glow)
@@ -140,6 +141,7 @@ export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team:
     else if (role === 'ranged') buildAlienDisruptor(rig, addPart, glow)
     else if (role === 'caster') buildAlienOracle(rig, addPart, glow)
     else if (role === 'flyer') buildAlienTempest(rig, addPart, glow)
+    else if (role === 'hero') buildAlienHero(rig, addPart, glow)
     else buildAlienAvatar(rig, addPart, glow)
   } else {
     if (role === 'worker') buildBioDrone(rig, addPart, glow)
@@ -147,6 +149,7 @@ export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team:
     else if (role === 'ranged') buildBioSpitter(rig, addPart, glow)
     else if (role === 'caster') buildBioPlagueWeaver(rig, addPart, glow)
     else if (role === 'flyer') buildBioShrieker(rig, addPart, glow)
+    else if (role === 'hero') buildBioHero(rig, addPart, glow)
     else buildBioBehemoth(rig, addPart, glow)
   }
 
@@ -978,6 +981,62 @@ function buildBioBehemoth(rig: UnitRig, addPart: PartAdder, glow: Color4): void 
     attack: { amplitude: 0.08, speed: 9, tilt: 12, spin: 0, lunge: 0.3 },
     impact: { amplitude: 0.09, speed: 16, tilt: -7, spin: 0, lunge: 0 }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Heroes: one-of-a-kind champions built on the titan chassis, scaled up with
+// unique regalia so they read instantly as "the" unit on the field.
+// ---------------------------------------------------------------------------
+
+/** Heroes tower over titans; the animation system never touches scale, so this sticks. */
+function applyHeroScale(rig: UnitRig, scale = 1.3): void {
+  Transform.getMutable(rig.bodyRoot).scale = Vector3.create(scale, scale, scale)
+}
+
+/** Warmaster Kael: a Juggernaut chassis flying a glowing command banner. */
+function buildHumanHero(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  buildHumanColossus(rig, addPart, glow)
+
+  // Command banner rising off the left shoulder tower.
+  addPart(Vector3.create(-0.72, 3.35, -0.15), Vector3.create(0.07, 1.8, 0.07), METAL_LIGHT, { cylinder: true })
+  addPart(Vector3.create(-0.47, 3.95, -0.15), Vector3.create(0.55, 0.38, 0.04), glow, { emissive: glow, emissiveIntensity: 2.6 })
+  // Gilded crest along the helm.
+  addPart(Vector3.create(0, 2.72, 0.05), Vector3.create(0.1, 0.28, 0.46), Color4.create(0.9, 0.75, 0.3, 1), { metallic: 0.9, roughness: 0.2 })
+
+  applyHeroScale(rig)
+}
+
+/** Riftlord Auren: an Avatar shell crowned by a floating rift halo. */
+function buildAlienHero(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  buildAlienAvatar(rig, addPart, glow)
+
+  // Floating halo hovering above the crown, with a bright inner rift.
+  addPart(Vector3.create(0, 3.75, 0), Vector3.create(1.15, 0.06, 1.15), ALIEN_CRYSTAL, { cylinder: true, emissive: ALIEN_CRYSTAL, emissiveIntensity: 3 })
+  addPart(Vector3.create(0, 3.75, 0), Vector3.create(0.7, 0.1, 0.7), ALIEN_DARK, { cylinder: true })
+  // Ward crystals riding the pauldrons.
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 1.05, 2.85, 0), Vector3.create(0.14, 0.55, 0.14), ALIEN_CRYSTAL, { cone: true, emissive: ALIEN_CRYSTAL, emissiveIntensity: 2.2 })
+  }
+
+  applyHeroScale(rig)
+}
+
+/** Broodmother Szel: a Behemoth frame with a tusk crown and glowing egg sacs. */
+function buildBioHero(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  buildBioBehemoth(rig, addPart, glow)
+
+  // Crown of great tusks flanking the shell spikes.
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.55, 2.5, -0.25), Vector3.create(0.13, 0.85, 0.13), BIO_BONE, {
+      cone: true,
+      rotation: Quaternion.fromEulerDegrees(0, 0, side * 28)
+    })
+  }
+  // Egg sacs on the haunches, glowing with the next brood.
+  addPart(Vector3.create(-0.5, 1.5, -0.85), Vector3.create(0.42, 0.42, 0.42), BIO_FLESH, { sphere: true, emissive: glow, emissiveIntensity: 0.9, roughness: 0.9 })
+  addPart(Vector3.create(0.45, 1.4, -0.9), Vector3.create(0.34, 0.34, 0.34), BIO_FLESH, { sphere: true, emissive: glow, emissiveIntensity: 0.9, roughness: 0.9 })
+
+  applyHeroScale(rig)
 }
 
 /** Cargo strapped to a worker's back: faceted mineral crystals or a banded gas barrel. */

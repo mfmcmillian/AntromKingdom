@@ -26,7 +26,7 @@ export type WorkerState =
 export type SoldierState = 'idle' | 'movingToAttack' | 'attacking' | 'movingToRally' | 'attackMoving' | 'dead'
 /** aggressive: chase forever; defensive: chase a short leash then return; hold: never move, only fire in range. */
 export type SoldierStance = 'aggressive' | 'defensive' | 'hold'
-export type SoldierVariant = 'melee' | 'ranged' | 'caster' | 'flyer' | 'titan'
+export type SoldierVariant = 'melee' | 'ranged' | 'caster' | 'flyer' | 'titan' | 'hero'
 export type BuildableKind = 'temple' | 'supplyHouse' | 'barracks' | 'techLab' | 'forge' | 'fireplace' | 'turret'
 export type UpgradeKind = 'damage' | 'speed'
 export type ConstructionState = 'none' | 'placing' | 'movingBuilder' | 'building' | 'paused' | 'complete'

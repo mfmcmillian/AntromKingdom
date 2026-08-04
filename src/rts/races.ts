@@ -25,6 +25,10 @@ export type RaceDefinition = {
   caster: RaceUnitStats
   flyer: RaceUnitStats
   titan: RaceUnitStats
+  /** Signature hero: one per match, granted at the start, cannot be rebuilt. */
+  hero: RaceUnitStats
+  /** Short trait blurb shown when the hero is selected. */
+  heroTrait: string
   buildingNames: Record<BuildableKind, string>
 }
 
@@ -41,6 +45,8 @@ export const RACES: Record<RaceId, RaceDefinition> = {
     caster: { name: 'Stormcaller', hp: 60, damage: 14, moveSpeed: 2.7, attackRange: 7, attackRate: 1.7, splashRadius: 2.8, cost: { minerals: 100, gas: 100 }, productionTime: 3.5, supply: 2 },
     flyer: { name: 'Kestrel Gunship', hp: 90, damage: 12, moveSpeed: 4.2, attackRange: 6.5, attackRate: 0.9, cost: { minerals: 120, gas: 80 }, productionTime: 3.5, supply: 2 },
     titan: { name: 'Juggernaut', hp: 380, damage: 40, moveSpeed: 2.2, attackRange: 2.8, attackRate: 1.7, splashRadius: 2.2, cost: { minerals: 300, gas: 200 }, productionTime: 8, supply: 4 },
+    hero: { name: 'Warmaster Kael', hp: 550, damage: 26, moveSpeed: 3, attackRange: 6.5, attackRate: 1.1, cost: {}, productionTime: 0, supply: 0 },
+    heroTrait: 'Battle Standard: allied fighters near Kael deal +25% damage.',
     buildingNames: {
       temple: 'Command Post',
       supplyHouse: 'Habitat',
@@ -63,6 +69,8 @@ export const RACES: Record<RaceId, RaceDefinition> = {
     caster: { name: 'Riftweaver', hp: 70, damage: 18, moveSpeed: 2.6, attackRange: 8, attackRate: 1.9, splashRadius: 3.2, cost: { minerals: 125, gas: 125 }, productionTime: 4, supply: 2 },
     flyer: { name: 'Zephyr', hp: 110, damage: 15, moveSpeed: 3.9, attackRange: 7, attackRate: 1.1, cost: { minerals: 150, gas: 100 }, productionTime: 4, supply: 2 },
     titan: { name: 'Avatar', hp: 450, damage: 50, moveSpeed: 2, attackRange: 3, attackRate: 1.9, splashRadius: 2.4, cost: { minerals: 350, gas: 250 }, productionTime: 9, supply: 4 },
+    hero: { name: 'Riftlord Auren', hp: 650, damage: 34, moveSpeed: 2.6, attackRange: 7.5, attackRate: 1.6, splashRadius: 3.5, cost: {}, productionTime: 0, supply: 0 },
+    heroTrait: 'Aetheric Ward: Auren constantly regenerates 4 HP per second.',
     buildingNames: {
       temple: 'Monolith',
       supplyHouse: 'Conduit',
@@ -85,6 +93,8 @@ export const RACES: Record<RaceId, RaceDefinition> = {
     caster: { name: 'Plague Weaver', hp: 50, damage: 10, moveSpeed: 3, attackRange: 6, attackRate: 1.5, splashRadius: 2.6, cost: { minerals: 80, gas: 60 }, productionTime: 2.5, supply: 2 },
     flyer: { name: 'Shrieker', hp: 70, damage: 9, moveSpeed: 4.5, attackRange: 5.5, attackRate: 0.8, cost: { minerals: 90, gas: 50 }, productionTime: 2.2, supply: 2 },
     titan: { name: 'Behemoth', hp: 320, damage: 30, moveSpeed: 2.6, attackRange: 2.6, attackRate: 1.5, splashRadius: 2, cost: { minerals: 250, gas: 150 }, productionTime: 6, supply: 4 },
+    hero: { name: 'Broodmother Szel', hp: 750, damage: 24, moveSpeed: 3.2, attackRange: 2.2, attackRate: 1.4, splashRadius: 1.6, cost: {}, productionTime: 0, supply: 0 },
+    heroTrait: 'Endless Brood: Szel births a free Mauler every 35 seconds.',
     buildingNames: {
       temple: 'Brood Heart',
       supplyHouse: 'Growth Pod',
@@ -113,6 +123,7 @@ export function getSoldierDefinition(team: Team, variant: SoldierVariant): RaceU
   if (variant === 'caster') return race.caster
   if (variant === 'flyer') return race.flyer
   if (variant === 'titan') return race.titan
+  if (variant === 'hero') return race.hero
   return race.melee
 }
 

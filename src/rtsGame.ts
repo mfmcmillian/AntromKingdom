@@ -746,6 +746,7 @@ export function resetRtsGame(): void {
   barracksRallyPoints.clear()
   controlGroups.clear()
   turretFireTimers.clear()
+  broodTimers.clear()
   incomeSampleTimer = 0
   cancelRallyPlacement()
   cancelAttackMove()
@@ -926,6 +927,8 @@ export function getSelectedSummary(): SelectedSummary {
 
   if (selected.kind === 'soldier') {
     const soldier = selected as Soldier
+    // A lone hero shows its signature trait so the perk is discoverable in-game.
+    const heroLine = selectedUnitCount <= 1 && soldier.variant === 'hero' ? `${getRace(getTeam(soldier)).heroTrait} ` : ''
     return {
       name: selectedUnitCount > 1 ? `${selectedUnitCount} Units` : soldier.name,
       kind: soldier.kind,
@@ -933,7 +936,7 @@ export function getSelectedSummary(): SelectedSummary {
       hp: soldier.hp,
       maxHp: soldier.maxHp,
       variant: soldier.variant,
-      detail: `${getGroupSelectionPrefix()}State: ${soldier.state}`
+      detail: `${getGroupSelectionPrefix()}${heroLine}State: ${soldier.state}`
     }
   }
 
@@ -979,6 +982,9 @@ function createStartingBase(): void {
     if (startingDeposit) assignWorkerToResource(worker, startingDeposit, false)
   }
 
+  // Every faction opens with its unique hero standing guard by the main base.
+  spawnStartingHero('player', Vector3.create(POSITIONS.base.x + 3.5, 0.25, POSITIONS.base.z + 8.5))
+
   for (const team of gameState.activeEnemyTeams) {
     const seat = COMPUTER_SEATS[gameState.enemySeatIndex[team]]
     buildings.push(createBuilding('temple', `${teamNamePrefix(team)}${getBuildingDisplayName('temple', team)}`, seat.temple, CONFIG.templeHp, 'complete', seat.rotationY, team))
@@ -995,7 +1001,17 @@ function createStartingBase(): void {
       const startingDeposit = getNearestResourceOfKind(offset, 'minerals')
       if (startingDeposit) assignWorkerToResource(worker, startingDeposit, false)
     }
+
+    const towardCenterZ = seat.temple.z < SCENE.center ? 8 : -8
+    spawnStartingHero(team, Vector3.create(seat.temple.x + towardCenter, 0.25, seat.temple.z + towardCenterZ))
   }
+}
+
+/** Heroes are free and take no supply, but they never come back once slain. */
+function spawnStartingHero(team: Team, position: Vector3): void {
+  const hero = createSoldier(position, team, 'hero')
+  soldiers.push(hero)
+  gameState.matchStats[team].unitsProduced += 1
 }
 
 /** "Ally " / "Enemy " label prefix so computer units read as friend or foe. */
@@ -1080,9 +1096,11 @@ function createWorker(position: Vector3, team: Team = 'player'): Worker {
 
 function createSoldier(position: Vector3, team: Team = 'player', variant: SoldierVariant = 'melee'): Soldier {
   const definition = getSoldierDefinition(team, variant)
+  // Heroes are one-of-a-kind, so they carry their name without a roster number.
+  const displayName = variant === 'hero' ? `${teamNamePrefix(team)}${definition.name}` : `${teamNamePrefix(team)}${definition.name} ${getTeamSoldierCount(team) + 1}`
   const soldier = createProceduralUnitSelectable(
     'soldier',
-    `${teamNamePrefix(team)}${definition.name} ${getTeamSoldierCount(team) + 1}`,
+    displayName,
     position,
     team,
     getSoldierColliderScale(variant),
@@ -1106,6 +1124,7 @@ function createSoldier(position: Vector3, team: Team = 'player', variant: Soldie
 
 /** Generous click boxes sized to each silhouette: flyers hover high, titans are huge. */
 function getSoldierColliderScale(variant: SoldierVariant): Vector3 {
+  if (variant === 'hero') return Vector3.create(3, 4.2, 3)
   if (variant === 'titan') return Vector3.create(2.4, 3.2, 2.4)
   if (variant === 'flyer') return Vector3.create(1.8, 3.2, 1.8)
   return Vector3.create(1.4, 2, 1.4)
@@ -1866,6 +1885,7 @@ function rtsTickSystem(dt: number): void {
   updateConstructionSites(dt)
   updateTurrets(dt)
   updateBioRegeneration(dt)
+  updateHeroBrood(dt)
   updateIncomeSampling(dt)
   updateBuildingDamageVfxSystem()
   updateDepletedResources(dt)
@@ -2050,6 +2070,63 @@ const BIO_REGEN_PER_SECOND = 1
 let bioRegenTimer = 0
 
 // ---------------------------------------------------------------------------
+// Heroes: each faction fields one unique champion from the opening second.
+//   VANGUARD  - Warmaster Kael: nearby allied fighters deal bonus damage.
+//   AETHYR    - Riftlord Auren: constantly regenerates.
+//   MYRIAD    - Broodmother Szel: periodically births a free Mauler.
+// Heroes cost nothing, take no supply, and cannot be rebuilt once slain.
+// ---------------------------------------------------------------------------
+
+const HERO_AURA_RANGE = 9
+const HERO_AURA_MULTIPLIER = 1.25
+const AETHYR_HERO_REGEN_PER_SECOND = 4
+const BROOD_SPAWN_INTERVAL = 35
+
+const broodTimers = new Map<string, number>()
+
+/** VANGUARD hero perk: fighters standing near Kael's battle standard hit harder. */
+function getHeroAuraMultiplier(attacker: Soldier | Worker): number {
+  if (attacker.kind !== 'soldier') return 1
+  const team = getTeam(attacker)
+  if (getRace(team).id !== 'human') return 1
+
+  const attackerPosition = Transform.get(attacker.entity).position
+  for (const soldier of soldiers) {
+    if (!soldier.alive || soldier.variant !== 'hero' || getTeam(soldier) !== team) continue
+    if (distanceToPoint(Transform.get(soldier.entity).position, attackerPosition) <= HERO_AURA_RANGE) {
+      return HERO_AURA_MULTIPLIER
+    }
+  }
+  return 1
+}
+
+/** MYRIAD hero perk: the Broodmother births free Maulers as long as supply allows. */
+function updateHeroBrood(dt: number): void {
+  for (const hero of soldiers) {
+    if (!hero.alive || hero.variant !== 'hero') continue
+    const team = getTeam(hero)
+    if (getRace(team).id !== 'bio') continue
+
+    const timer = (broodTimers.get(hero.id) ?? 0) + dt
+    const meleeDef = getSoldierDefinition(team, 'melee')
+
+    // Hold the timer at "ready" while supply-blocked so a freed slot pops instantly.
+    if (timer < BROOD_SPAWN_INTERVAL || getSupplyUsed(team) + meleeDef.supply > getSupplyCap(team)) {
+      broodTimers.set(hero.id, Math.min(timer, BROOD_SPAWN_INTERVAL))
+      continue
+    }
+
+    broodTimers.set(hero.id, 0)
+    const heroPosition = Transform.get(hero.entity).position
+    const spawn = createSoldier(Vector3.create(heroPosition.x + 1.5, 0.25, heroPosition.z + 1.5), team, 'melee')
+    soldiers.push(spawn)
+    addSupplyUsed(team, meleeDef.supply)
+    gameState.matchStats[team].unitsProduced += 1
+    if (team === 'player') setStatus(`${hero.name} birthed a free ${meleeDef.name}.`)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Defense towers: completed turrets automatically fire on hostile units in range.
 // ---------------------------------------------------------------------------
 
@@ -2131,8 +2208,12 @@ function updateBioRegeneration(dt: number): void {
     worker.hp = Math.min(worker.maxHp, worker.hp + BIO_REGEN_PER_SECOND)
   }
   for (const soldier of soldiers) {
-    if (!soldier.alive || soldier.hp >= soldier.maxHp || getRace(getTeam(soldier)).id !== 'bio') continue
-    soldier.hp = Math.min(soldier.maxHp, soldier.hp + BIO_REGEN_PER_SECOND)
+    if (!soldier.alive || soldier.hp >= soldier.maxHp) continue
+    const raceId = getRace(getTeam(soldier)).id
+    let regen = raceId === 'bio' ? BIO_REGEN_PER_SECOND : 0
+    // AETHYR hero perk: Riftlord Auren's ward constantly knits him back together.
+    if (soldier.variant === 'hero' && raceId === 'alien') regen += AETHYR_HERO_REGEN_PER_SECOND
+    if (regen > 0) soldier.hp = Math.min(soldier.maxHp, soldier.hp + regen)
   }
 }
 
@@ -2281,12 +2362,17 @@ function completeConstruction(site: Building, builder?: Worker): void {
 function damageCombatTarget(target: Building | Soldier | Worker, amount: number, attacker: Soldier | Worker): void {
   const attackerTeam = getTeam(attacker)
   const targetPosition = cloneVector(Transform.get(target.entity).position)
-  // Weapon upgrades scale every fighter's damage team-wide the moment research lands.
-  const damage = attacker.kind === 'soldier' ? Math.round(amount * getDamageMultiplier(attackerTeam)) : amount
+  // Weapon upgrades scale every fighter's damage team-wide the moment research lands,
+  // and the VANGUARD hero's banner boosts anyone fighting beside him.
+  const damage = attacker.kind === 'soldier' ? Math.round(amount * getDamageMultiplier(attackerTeam) * getHeroAuraMultiplier(attacker)) : amount
 
   if (attacker.kind === 'soldier' && attacker.alive && target.alive) {
     const accent = getRace(attackerTeam).accent
-    const isRangedShot = attacker.variant === 'ranged' || attacker.variant === 'caster' || attacker.variant === 'flyer'
+    const isRangedShot =
+      attacker.variant === 'ranged' ||
+      attacker.variant === 'caster' ||
+      attacker.variant === 'flyer' ||
+      (attacker.variant === 'hero' && attacker.attackRange > 3)
 
     if (isRangedShot) {
       // Visible tracer plus a flash where the shot lands.
@@ -2381,9 +2467,12 @@ function damageSoldier(soldier: Soldier, amount: number, attacker?: Soldier | Wo
   }
 
   creditUnitKill(attacker, soldier)
-  const deathScale = soldier.variant === 'titan' ? 2.2 : soldier.variant === 'flyer' || soldier.variant === 'caster' ? 1.2 : 1
+  const deathScale = soldier.variant === 'hero' ? 2.6 : soldier.variant === 'titan' ? 2.2 : soldier.variant === 'flyer' || soldier.variant === 'caster' ? 1.2 : 1
   spawnDeathBurst(cloneVector(Transform.get(soldier.entity).position), getRace(getTeam(soldier)).accent, deathScale)
   playExplosion(Transform.get(soldier.entity).position)
+  if (soldier.variant === 'hero') {
+    setStatus(getTeam(soldier) === 'player' ? `${soldier.name} has fallen! Heroes do not return.` : `${soldier.name} has been slain.`)
+  }
   soldier.state = 'dead'
   soldier.targetId = undefined
   soldier.attackPosition = undefined

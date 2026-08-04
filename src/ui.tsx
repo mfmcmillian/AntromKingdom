@@ -79,7 +79,8 @@ const UNIT_ICON_FILES: Record<SoldierVariant | 'worker', string> = {
   ranged: 'icon-unit-ranged',
   caster: 'icon-unit-caster',
   flyer: 'icon-unit-flyer',
-  titan: 'icon-unit-titan'
+  titan: 'icon-unit-titan',
+  hero: 'icon-unit-hero'
 }
 
 const RACE_ICON_SUFFIX: Record<RaceId, string> = { human: '', alien: '-alien', bio: '-bio' }
@@ -312,7 +313,7 @@ function infoPanel(selected: SelectedSummary) {
       ) : null}
 
       <UiEntity uiTransform={{ flexDirection: 'column', width: 380, height: '100%', padding: { top: 24 } }}>
-        <Label value={getCommandTitle(selected.kind)} fontSize={13} color={isAlly ? ALLY_UI_COLOR : isEnemy ? UI.red : UI.dim} textAlign="middle-left" />
+        <Label value={!multi && selected.variant === 'hero' ? 'HERO' : getCommandTitle(selected.kind)} fontSize={13} color={isAlly ? ALLY_UI_COLOR : isEnemy ? UI.red : UI.dim} textAlign="middle-left" />
         <Label value={selected.name} fontSize={30} color={UI.text} textAlign="middle-left" uiTransform={{ margin: { top: 2, bottom: 8 } }} />
 
         {!multi && hpRatio !== undefined ? (
