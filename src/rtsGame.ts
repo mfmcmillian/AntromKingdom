@@ -2416,7 +2416,7 @@ function getSoldierAttackPosition(target: Building, slot: number, attacker?: Sol
   // Ranged units stand off at their attack range; melee closes to the footprint edge.
   const attackerRange = attacker?.attackRange ?? CONFIG.soldierAttackRange
   const attackRadius = Math.max(footprintRadius + buildingPadding + Math.max(attackerRange - CONFIG.soldierAttackRange, 0), footprintRadius + SOLDIER_ATTACK_SPACING + buildingPadding)
-  const position = getFormationPosition(targetTransform.position, slot, attackRadius)
+  const position = getApproachSidePosition(targetTransform.position, attacker ? Transform.get(attacker.entity).position : undefined, slot, attackRadius)
 
   return Vector3.create(position.x, 0.25, position.z)
 }
@@ -2425,9 +2425,27 @@ function getUnitAttackPosition(target: Soldier | Worker, attacker: Soldier): Vec
   const targetPosition = Transform.get(target.entity).position
   const slot = getAttackSlotForTarget(target.id, attacker.id)
   const standoff = Math.max(SOLDIER_UNIT_ATTACK_SPACING, attacker.attackRange)
-  const position = getFormationPosition(targetPosition, slot, standoff)
+  const position = getApproachSidePosition(targetPosition, Transform.get(attacker.entity).position, slot, standoff)
 
   return Vector3.create(position.x, 0.25, position.z)
+}
+
+/**
+ * Ring position on the attacker's side of the target, so units stop where they
+ * approach from instead of marching past (or through) the target to a fixed slot.
+ * Slots fan out left/right of the approach line; every 6 slots start a wider ring.
+ */
+function getApproachSidePosition(center: Vector3, attackerPosition: Vector3 | undefined, slot: number, radius: number): Vector3 {
+  if (!attackerPosition) return getFormationPosition(center, slot, radius)
+
+  const dx = attackerPosition.x - center.x
+  const dz = attackerPosition.z - center.z
+  const baseAngle = dx * dx + dz * dz > 0.001 ? Math.atan2(dz, dx) : slot * 2.399963229728653
+  const fan = Math.ceil(slot / 2) * 0.45 * (slot % 2 === 0 ? -1 : 1)
+  const ringRadius = radius + Math.floor(slot / 6) * 0.45
+  const angle = baseAngle + fan
+
+  return Vector3.create(center.x + Math.cos(angle) * ringRadius, center.y, center.z + Math.sin(angle) * ringRadius)
 }
 
 function getAttackSlotForTarget(targetId: string, attackerId: string): number {
