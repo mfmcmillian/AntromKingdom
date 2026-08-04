@@ -649,8 +649,12 @@ function createGround(): void {
     scale: Vector3.create(SCENE.size, 0.02, SCENE.size)
   })
   MeshRenderer.setBox(ground)
+  // Fully matte so the noon sun doesn't wash the whole surface out from the overhead camera.
   Material.setPbrMaterial(ground, {
     albedoColor: COLORS.ground,
+    metallic: 0,
+    roughness: 1,
+    specularIntensity: 0,
     castShadows: false
   })
 
@@ -682,7 +686,9 @@ function scatterGroundDecorations(): void {
       MeshRenderer.setBox(entity)
       Material.setPbrMaterial(entity, {
         albedoColor: Color4.create(0.53, 0.54, 0.59, 1),
+        metallic: 0,
         roughness: 1,
+        specularIntensity: 0,
         castShadows: false
       })
     } else if (roll < 0.85) {
@@ -695,7 +701,9 @@ function scatterGroundDecorations(): void {
       MeshRenderer.setCylinder(entity)
       Material.setPbrMaterial(entity, {
         albedoColor: Color4.create(0.33, 0.33, 0.38, 1),
+        metallic: 0,
         roughness: 1,
+        specularIntensity: 0,
         castShadows: false
       })
     } else {
