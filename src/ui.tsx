@@ -43,6 +43,7 @@ import { isTopDownViewActive, toggleTopDownView } from './rts/topDownCamera'
 import { CONSOLE_HEIGHT } from './rts/hud'
 import { DIFFICULTY_IDS, AI_DIFFICULTY } from './rts/config'
 import { isPlayerAlly } from './rts/state'
+import { hideHeroShowcase, showHeroShowcase } from './rts/heroShowcase'
 import type { BuildableKind, GameMode, RaceId, ResourceCost, SelectedSummary, SoldierVariant, Team, UpgradeKind } from './rts/types'
 
 const UI = {
@@ -1236,12 +1237,16 @@ function startScreenOverlay() {
 }
 
 // ---------------------------------------------------------------------------
-// Match setup screen: computers and game mode on the left half, the selected
-// race's hero showcase (portrait, trait, stats) on the right half.
+// Match setup screen: computers and game mode on the left, hero stats on the
+// right, and the middle left transparent so the actual 3D hero model (spun on
+// a camera-parented turntable, see rts/heroShowcase.ts) shows through.
 // ---------------------------------------------------------------------------
 
 function matchSetupOverlay() {
   const race = RACES[gameState.playerRace]
+
+  // Idempotent world-side call: builds the model once per race, swaps on change.
+  showHeroShowcase(gameState.playerRace)
 
   return (
     <UiEntity
@@ -1251,34 +1256,32 @@ function matchSetupOverlay() {
         width: '100%',
         height: '100%'
       }}
-      uiBackground={{ textureMode: 'stretch', texture: { src: 'images/ui/title-bg-decentracraft.png' } }}
     >
-      {titleSkyAmbience()}
-
-      {/* Full-screen scrim so both halves read over the artwork. */}
+      {/* Centered header on its own translucent band so it reads over the sky. */}
       <UiEntity
-        uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%' }}
-        uiBackground={{ color: Color4.create(0, 0, 0, 0.62) }}
-      />
-
-      <UiEntity
-        uiTransform={{ positionType: 'absolute', position: { top: 54, left: 0 }, width: '100%', flexDirection: 'column', alignItems: 'center' }}
+        uiTransform={{ positionType: 'absolute', position: { top: 44, left: 0 }, width: '100%', flexDirection: 'column', alignItems: 'center' }}
       >
-        <Label value="MATCH SETUP" fontSize={44} color={UI.gold} textAlign="middle-center" />
-        <Label value={`Playing as ${race.name}`} fontSize={16} color={Color4.create(0.75, 0.78, 0.85, 0.9)} textAlign="middle-center" uiTransform={{ margin: { top: 8 } }} />
+        <Label value="MATCH SETUP" fontSize={44} color={UI.gold} textAlign="middle-center" uiTransform={{ width: '100%' }} />
+        <Label
+          value={`Playing as ${race.name}  ·  ${race.hero.name}`}
+          fontSize={16}
+          color={Color4.create(0.75, 0.78, 0.85, 0.9)}
+          textAlign="middle-center"
+          uiTransform={{ width: '100%', margin: { top: 8 } }}
+        />
       </UiEntity>
 
-      {/* Left half: game mode + computer roster. */}
+      {/* Left panel: game mode + computer roster. */}
       <UiEntity
         uiTransform={{
           positionType: 'absolute',
-          position: { top: 190, left: 150 },
-          width: 620,
-          height: 640,
+          position: { top: 200, left: 70 },
+          width: 540,
+          height: 600,
           flexDirection: 'column',
           padding: { top: 26, bottom: 26, left: 30, right: 30 }
         }}
-        uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.88) }}
+        uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.9) }}
       >
         <Label value="OPPONENTS" fontSize={22} color={UI.text} textAlign="middle-left" uiTransform={{ margin: { bottom: 18 } }} />
         <Label value="GAME MODE" fontSize={14} color={Color4.create(0.75, 0.78, 0.85, 0.9)} textAlign="middle-left" uiTransform={{ margin: { bottom: 8 } }} />
@@ -1299,14 +1302,14 @@ function matchSetupOverlay() {
         ) : null}
       </UiEntity>
 
-      {/* Right half: the selected race's hero showcase. */}
-      {heroShowcase()}
+      {/* Right panel: hero name, trait and stat sheet (the model itself spins mid-screen). */}
+      {heroStatsPanel()}
 
       {/* Bottom bar: back to race select, or launch the match. */}
       <UiEntity
         uiTransform={{
           positionType: 'absolute',
-          position: { bottom: 60, left: 0 },
+          position: { bottom: 46, left: 0 },
           width: '100%',
           flexDirection: 'row',
           justifyContent: 'center'
@@ -1316,6 +1319,7 @@ function matchSetupOverlay() {
           uiTransform={{ width: 220, height: 60, margin: { right: 16 }, padding: 3, justifyContent: 'center', alignItems: 'center' }}
           uiBackground={{ color: Color4.create(0.3, 0.36, 0.48, 1) }}
           onMouseDown={() => {
+            hideHeroShowcase()
             titleStage = 'title'
           }}
         >
@@ -1327,6 +1331,7 @@ function matchSetupOverlay() {
           uiTransform={{ width: 320, height: 60, margin: { left: 16 }, padding: 3, justifyContent: 'center', alignItems: 'center' }}
           uiBackground={{ color: Color4.create(0.35, 0.65, 1, 1) }}
           onMouseDown={() => {
+            hideHeroShowcase()
             titleStage = 'title'
             startRtsMatch()
           }}
@@ -1340,7 +1345,7 @@ function matchSetupOverlay() {
   )
 }
 
-/** One stat line in the hero showcase: label left, value right. */
+/** One stat line in the hero panel: label left, value right. */
 function heroStatRow(label: string, value: string) {
   return (
     <UiEntity uiTransform={{ width: '100%', height: 30, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1350,32 +1355,34 @@ function heroStatRow(label: string, value: string) {
   )
 }
 
-function heroShowcase() {
+function heroStatsPanel() {
   const race = RACES[gameState.playerRace]
   const hero = race.hero
-  const portrait = `images/icons/icon-unit-hero${RACE_ICON_SUFFIX[gameState.playerRace]}.png`
 
   return (
     <UiEntity
       uiTransform={{
         positionType: 'absolute',
-        position: { top: 190, right: 150 },
-        width: 620,
-        height: 640,
+        position: { top: 200, right: 70 },
+        width: 540,
+        height: 600,
         flexDirection: 'column',
         alignItems: 'center',
         padding: { top: 26, bottom: 26, left: 40, right: 40 }
       }}
-      uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.88) }}
+      uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.9) }}
     >
       <Label value="YOUR HERO" fontSize={22} color={UI.text} textAlign="middle-center" />
 
-      <UiEntity uiTransform={{ width: 300, height: 300, margin: { top: 16 }, padding: 3 }} uiBackground={{ color: race.accent }}>
-        <UiEntity uiTransform={{ width: '100%', height: '100%' }} uiBackground={{ textureMode: 'stretch', texture: { src: portrait } }} />
-      </UiEntity>
-
-      <Label value={hero.name.toUpperCase()} fontSize={26} color={race.accent} textAlign="middle-center" uiTransform={{ margin: { top: 14 } }} />
-      <Label value={race.heroTrait} fontSize={14} color={Color4.create(0.85, 0.87, 0.92, 0.95)} textAlign="middle-center" textWrap="wrap" uiTransform={{ width: 520, margin: { top: 8, bottom: 14 } }} />
+      <Label value={hero.name.toUpperCase()} fontSize={30} color={race.accent} textAlign="middle-center" uiTransform={{ margin: { top: 20 } }} />
+      <Label
+        value={race.heroTrait}
+        fontSize={14}
+        color={Color4.create(0.85, 0.87, 0.92, 0.95)}
+        textAlign="middle-center"
+        textWrap="wrap"
+        uiTransform={{ width: 440, margin: { top: 12, bottom: 24 } }}
+      />
 
       <UiEntity uiTransform={{ width: 420, flexDirection: 'column' }}>
         {heroStatRow('HIT POINTS', `${hero.hp}`)}
@@ -1391,7 +1398,7 @@ function heroShowcase() {
         fontSize={12}
         color={Color4.create(0.55, 0.58, 0.66, 0.9)}
         textAlign="middle-center"
-        uiTransform={{ margin: { top: 16 } }}
+        uiTransform={{ width: '100%', margin: { top: 26 } }}
       />
     </UiEntity>
   )
