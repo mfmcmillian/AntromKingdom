@@ -1157,7 +1157,7 @@ function sendSoldierToRally(soldier: Soldier, rallyPoint: Vector3): void {
   setSoldierAnimation(soldier, 'walk')
 }
 
-function assignSoldierToAttack(soldier: Soldier, target: Building | Soldier | Worker, slot = 0): void {
+function assignSoldierToAttack(soldier: Soldier, target: Building | Soldier | Worker, slot = 0, announce = true): void {
   if (!soldier.alive || !target.alive) return
   if (getTeam(soldier) === getTeam(target)) return
 
@@ -1167,7 +1167,7 @@ function assignSoldierToAttack(soldier: Soldier, target: Building | Soldier | Wo
   soldier.rallyPoint = undefined
   soldier.attackTimer = 0
   setSoldierAnimation(soldier, 'walk')
-  if (getTeam(soldier) === 'player') setStatus(`${soldier.name} attacking ${target.name}.`)
+  if (announce && getTeam(soldier) === 'player') setStatus(`${soldier.name} attacking ${target.name}.`)
 }
 
 function assignWorkerToRepair(worker: Worker, building: Building): void {
@@ -1316,6 +1316,7 @@ const combatSystemDeps = {
   getUnitAttackPosition,
   setSoldierAnimation,
   damageCombatTarget,
+  assignSoldierToAttack,
   setStatus
 }
 
@@ -1795,7 +1796,12 @@ function showPlayerAttackAlert(): void {
 function damageSoldier(soldier: Soldier, amount: number, attacker?: Soldier): void {
   soldier.hp = Math.max(0, soldier.hp - amount)
 
-  if (soldier.hp > 0) return
+  if (soldier.hp > 0) {
+    if (attacker?.alive && shouldRetaliate(soldier)) {
+      assignSoldierToAttack(soldier, attacker, 0, false)
+    }
+    return
+  }
 
   creditUnitKill(attacker, soldier)
   soldier.state = 'dead'
@@ -1805,6 +1811,19 @@ function damageSoldier(soldier: Soldier, amount: number, attacker?: Soldier): vo
   addSupplyUsed(getTeam(soldier), -getSoldierDefinition(getTeam(soldier), soldier.variant).supply)
   removeSelectable(soldier)
   clearAttackersTargeting(soldier.id)
+}
+
+/**
+ * Idle victims always fight back. Units busy hitting a building turn on the unit
+ * shooting them; units already fighting another unit stay locked on. Move orders
+ * (movingToRally) are never interrupted.
+ */
+function shouldRetaliate(victim: Soldier): boolean {
+  if (victim.state === 'idle') return true
+  if (victim.state !== 'movingToAttack' && victim.state !== 'attacking') return false
+
+  const currentTarget = victim.targetId ? getCombatTargetById(victim.targetId) : undefined
+  return !currentTarget || (currentTarget.kind !== 'soldier' && currentTarget.kind !== 'worker')
 }
 
 function damageWorker(worker: Worker, amount: number, attacker?: Soldier): void {

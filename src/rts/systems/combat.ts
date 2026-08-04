@@ -1,9 +1,16 @@
+import { Transform } from '@dcl/sdk/ecs'
 import { CONFIG } from '../config'
-import { distanceToPosition, moveTowardPosition } from '../math'
+import { distanceToPoint, distanceToPosition, moveTowardPosition } from '../math'
 import type { Building, Soldier, Worker } from '../types'
-import { soldiers } from '../world'
+import { buildings, getTeam, soldiers, workers } from '../world'
 
 type CombatTarget = Building | Soldier | Worker
+
+/** Idle combat units engage anything hostile that wanders inside this radius. */
+const AUTO_ACQUIRE_RANGE = 12
+const AUTO_ACQUIRE_INTERVAL = 0.5
+
+let autoAcquireTimer = 0
 
 export type CombatSystemDeps = {
   getCombatTargetById(id: string): CombatTarget | undefined
@@ -11,16 +18,26 @@ export type CombatSystemDeps = {
   getUnitAttackPosition(target: Soldier | Worker, attacker: Soldier): { x: number; y: number; z: number }
   setSoldierAnimation(soldier: Soldier, clipName: string, restart?: boolean): void
   damageCombatTarget(target: CombatTarget, amount: number, attacker: Soldier): void
+  assignSoldierToAttack(soldier: Soldier, target: CombatTarget, slot?: number, announce?: boolean): void
   setStatus(message: string): void
 }
 
 export function updateSoldiers(dt: number, deps: CombatSystemDeps): void {
+  autoAcquireTimer += dt
+  const scanForTargets = autoAcquireTimer >= AUTO_ACQUIRE_INTERVAL
+  if (scanForTargets) autoAcquireTimer = 0
+
   for (const soldier of soldiers) {
     if (!soldier.alive) continue
 
     if (soldier.state === 'movingToRally') {
       updateSoldierRallyMovement(soldier, dt, deps)
       continue
+    }
+
+    if (scanForTargets && soldier.state === 'idle') {
+      const target = findNearestEnemyInRange(soldier)
+      if (target) deps.assignSoldierToAttack(soldier, target, 0, false)
     }
 
     if (!soldier.targetId) continue
@@ -80,4 +97,32 @@ function getAttackPosition(soldier: Soldier, target: CombatTarget, deps: CombatS
   }
 
   return soldier.attackPosition ?? deps.getSoldierAttackPosition(target, 0, soldier)
+}
+
+/** Nearest hostile within acquisition range: enemy fighters first, then workers, then buildings. */
+function findNearestEnemyInRange(soldier: Soldier): CombatTarget | undefined {
+  const team = getTeam(soldier)
+  const position = Transform.get(soldier.entity).position
+
+  return (
+    nearestInRange(position, soldiers, (candidate) => candidate.alive && getTeam(candidate) !== team) ??
+    nearestInRange(position, workers, (candidate) => candidate.alive && getTeam(candidate) !== team) ??
+    nearestInRange(position, buildings, (candidate) => candidate.alive && getTeam(candidate) !== team)
+  )
+}
+
+function nearestInRange<T extends CombatTarget>(position: { x: number; y: number; z: number }, candidates: T[], isValid: (candidate: T) => boolean): T | undefined {
+  let best: T | undefined
+  let bestDistance = AUTO_ACQUIRE_RANGE
+
+  for (const candidate of candidates) {
+    if (!isValid(candidate)) continue
+    const distance = distanceToPoint(position, Transform.get(candidate.entity).position)
+    if (distance <= bestDistance) {
+      best = candidate
+      bestDistance = distance
+    }
+  }
+
+  return best
 }
