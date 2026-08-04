@@ -1,6 +1,7 @@
 import { Entity, Material, MeshRenderer, Transform, VisibilityComponent, engine } from '@dcl/sdk/ecs'
 import { Color4, Vector3 } from '@dcl/sdk/math'
 import { SCENE } from './config'
+import { isHostileToPlayer } from './state'
 import { isProceduralBuilding, setBuildingModelVisible } from './buildingModels'
 import { isProceduralResource, setResourceModelVisible } from './resourceModels'
 import { isProceduralUnit, setUnitVisible } from './unitModels'
@@ -83,18 +84,19 @@ function collectPlayerVisionSources(): VisionSource[] {
     }
   }
 
+  // Allied computers share vision with the player, like team games in classic RTS.
   for (const worker of workers) {
-    if (!worker.alive || getTeam(worker) !== 'player') continue
+    if (!worker.alive || isHostileToPlayer(getTeam(worker))) continue
     const position = Transform.get(worker.entity).position
     sources.push({ x: position.x, z: position.z, radius: UNIT_VISION_RADIUS })
   }
   for (const soldier of soldiers) {
-    if (!soldier.alive || getTeam(soldier) !== 'player') continue
+    if (!soldier.alive || isHostileToPlayer(getTeam(soldier))) continue
     const position = Transform.get(soldier.entity).position
     sources.push({ x: position.x, z: position.z, radius: UNIT_VISION_RADIUS })
   }
   for (const building of buildings) {
-    if (!building.alive || getTeam(building) !== 'player') continue
+    if (!building.alive || isHostileToPlayer(getTeam(building))) continue
     const position = Transform.get(building.entity).position
     sources.push({ x: position.x, z: position.z, radius: BUILDING_VISION_RADIUS })
   }
@@ -123,16 +125,17 @@ function revealExploredCells(): void {
 }
 
 function updateEnemyVisibility(): void {
+  // Only hostiles hide in the fog; the player's own and allied units stay visible.
   for (const worker of workers) {
-    if (getTeam(worker) === 'player' || !worker.alive) continue
+    if (!worker.alive || !isHostileToPlayer(getTeam(worker))) continue
     setSelectableVisible(worker, isEntityVisibleToPlayer(worker.entity))
   }
   for (const soldier of soldiers) {
-    if (getTeam(soldier) === 'player' || !soldier.alive) continue
+    if (!soldier.alive || !isHostileToPlayer(getTeam(soldier))) continue
     setSelectableVisible(soldier, isEntityVisibleToPlayer(soldier.entity))
   }
   for (const building of buildings) {
-    if (getTeam(building) === 'player' || !building.alive) continue
+    if (!building.alive || !isHostileToPlayer(getTeam(building))) continue
     // Buildings stay discovered once their cell is explored, like classic RTS fog.
     const position = Transform.get(building.entity).position
     setSelectableVisible(building, isPositionExplored(position))

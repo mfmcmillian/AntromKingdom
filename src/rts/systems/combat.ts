@@ -3,7 +3,8 @@ import { Quaternion } from '@dcl/sdk/math'
 import { distanceToPoint, distanceToPosition, moveTowardPosition } from '../math'
 import { getSpeedMultiplier } from '../upgrades'
 import type { Building, Soldier, Worker } from '../types'
-import { areHostile, buildings, getTeam, soldiers, workers } from '../world'
+import { areHostile } from '../state'
+import { buildings, getTeam, soldiers, workers } from '../world'
 
 type CombatTarget = Building | Soldier | Worker
 

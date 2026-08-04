@@ -1,13 +1,14 @@
 import { Transform } from '@dcl/sdk/ecs'
 import { Vector3 } from '@dcl/sdk/math'
-import { AI_DIFFICULTY, BUILDING_DEFINITIONS, ENEMY_SEATS, type DifficultySettings } from '../config'
+import { AI_DIFFICULTY, BUILDING_DEFINITIONS, COMPUTER_SEATS, type DifficultySettings } from '../config'
 import { canQueueUnit, getResourceAmount, getSupplyCap, getSupplyUsed, hasResources, spendResources } from '../economy'
 import { distanceToPoint } from '../math'
 import { getSoldierDefinition, getWorkerDefinition } from '../races'
-import { gameState } from '../state'
+import { areHostile, gameState, isPlayerAlly } from '../state'
 import { getNextUpgradeCost, getUpgradeLevel, isUpgradeInProgress, startUpgradeResearchOrder } from '../upgrades'
 import type { BuildableKind, Building, Difficulty, EnemyTeam, ResourceKind, ResourceNode, Soldier, SoldierVariant, Team, UpgradeKind, Worker } from '../types'
 import {
+  buildings,
   getAvailableWorkersForTeam,
   getCompletedTeamBuildings,
   getIdleWorkersForTeam,
@@ -39,17 +40,20 @@ export type EnemyAi = {
   difficulty: Difficulty
   settings: DifficultySettings
   home: Vector3
+  buildRotationY: number
   decisionTimer: number
   attackTimer: number
 }
 
 export function createEnemyAi(team: EnemyTeam, difficulty: Difficulty): EnemyAi {
   const settings = AI_DIFFICULTY[difficulty]
+  const seat = COMPUTER_SEATS[gameState.enemySeatIndex[team]]
   return {
     team,
     difficulty,
     settings,
-    home: ENEMY_SEATS[team].temple,
+    home: seat.temple,
+    buildRotationY: seat.rotationY,
     decisionTimer: 0,
     attackTimer: settings.initialAttackTimer
   }
@@ -212,7 +216,7 @@ function tryStartEnemyConstruction(ai: EnemyAi, kind: BuildableKind, deps: Enemy
   if (!deps.canPlaceBuildingAt(definition, position)) return false
   if (!spendResources(ai.team, definition.cost)) return false
 
-  const site = deps.createConstructionSite(kind, Vector3.create(position.x, definition.placementY, position.z), builder.id, ENEMY_SEATS[ai.team].rotationY, ai.team)
+  const site = deps.createConstructionSite(kind, Vector3.create(position.x, definition.placementY, position.z), builder.id, ai.buildRotationY, ai.team)
   builder.state = 'movingToBuild'
   builder.targetResourceId = undefined
   builder.buildSiteId = site.id
@@ -225,20 +229,30 @@ function tryStartEnemyConstruction(ai: EnemyAi, kind: BuildableKind, deps: Enemy
 }
 
 function sendEnemyAttackWave(ai: EnemyAi, deps: EnemyAiDeps): void {
-  const playerTemples = getCompletedTeamBuildings('player', 'temple')
-  if (playerTemples.length === 0) return
+  // March on whichever hostile faction is closest: all completed temples of
+  // hostile teams, nearest first (in FFA that can be another computer).
+  const hostileTemples = buildings
+    .filter((building) => building.alive && building.isComplete && building.kind === 'temple' && areHostile(getTeam(building), ai.team))
+    .sort((a, b) => distanceToPoint(Transform.get(a.entity).position, ai.home) - distanceToPoint(Transform.get(b.entity).position, ai.home))
+  if (hostileTemples.length === 0) return
 
   const availableAttackers = soldiers.filter((soldier) => soldier.alive && getTeam(soldier) === ai.team && soldier.state === 'idle')
   const attackers = availableAttackers.slice(ai.settings.defenderCount)
 
   if (attackers.length < 3) return
 
+  // Focus on the nearest faction's temples rather than spreading map-wide.
+  const targetTeam = getTeam(hostileTemples[0])
+  const targets = hostileTemples.filter((temple) => getTeam(temple) === targetTeam)
   for (let i = 0; i < attackers.length; i++) {
-    const target = playerTemples[i % playerTemples.length]
-    deps.assignSoldierToAttack(attackers[i], target, i)
+    deps.assignSoldierToAttack(attackers[i], targets[i % targets.length], i)
   }
 
-  deps.setStatus(`Enemy attack wave incoming: ${attackers.length} hostiles targeting ${playerTemples.length} Temple${playerTemples.length === 1 ? '' : 's'}.`)
+  if (targetTeam === 'player') {
+    deps.setStatus(`Enemy attack wave incoming: ${attackers.length} hostiles targeting your Temple${targets.length === 1 ? '' : 's'}.`)
+  } else if (isPlayerAlly(ai.team)) {
+    deps.setStatus(`Your ally is attacking with ${attackers.length} fighters.`)
+  }
 }
 
 function shouldBuildEnemyHomestead(ai: EnemyAi, completedHomesteadCount: number): boolean {

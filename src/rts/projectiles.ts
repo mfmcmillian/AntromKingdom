@@ -1,5 +1,6 @@
 import { Entity, Material, MeshRenderer, Transform, VisibilityComponent, engine } from '@dcl/sdk/ecs'
 import { Color4, Vector3 } from '@dcl/sdk/math'
+import { isPlayerAlly } from './state'
 import type { Team } from './types'
 
 // Fast glowing bolts fired by ranged units. Pooled so combat never allocates
@@ -25,6 +26,11 @@ const TEAM_BOLT_COLORS: Record<Team, Color4> = {
   enemy2: Color4.create(1, 0.62, 0.15, 1),
   enemy3: Color4.create(0.85, 0.3, 0.95, 1)
 }
+const ALLY_BOLT_COLOR = Color4.create(0.98, 0.85, 0.35, 1)
+
+function getBoltColor(team: Team): Color4 {
+  return isPlayerAlly(team) ? ALLY_BOLT_COLOR : TEAM_BOLT_COLORS[team]
+}
 
 export function fireProjectile(from: Vector3, to: Vector3, team: Team): void {
   const bolt = bolts.find((candidate) => !candidate.active) ?? createBolt()
@@ -39,9 +45,10 @@ export function fireProjectile(from: Vector3, to: Vector3, team: Team): void {
   bolt.active = true
 
   Transform.getMutable(bolt.entity).position = start
+  const color = getBoltColor(team)
   Material.setPbrMaterial(bolt.entity, {
-    albedoColor: TEAM_BOLT_COLORS[team],
-    emissiveColor: TEAM_BOLT_COLORS[team],
+    albedoColor: color,
+    emissiveColor: color,
     emissiveIntensity: 3,
     metallic: 0,
     roughness: 0.3,

@@ -6,6 +6,8 @@ export type ResourceKind = 'minerals' | 'gas'
 export type EnemyTeam = 'enemy1' | 'enemy2' | 'enemy3'
 export type Team = 'player' | EnemyTeam
 export type Difficulty = 'easy' | 'medium' | 'hard'
+/** team: computers can join the player's side; ffa: every faction fights everyone. */
+export type GameMode = 'team' | 'ffa'
 export type RaceId = 'human' | 'alien' | 'bio'
 export type SelectableKind = 'temple' | 'worker' | 'resource' | 'supplyHouse' | 'barracks' | 'techLab' | 'forge' | 'fireplace' | 'soldier' | 'enemyBuilding'
 export type WorkerState =

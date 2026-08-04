@@ -3,8 +3,8 @@ import { Color4 } from '@dcl/sdk/math'
 import ReactEcs, { UiEntity } from '@dcl/sdk/react-ecs'
 import { SCENE } from './config'
 import { FOG_GRID_SIZE, isCellExplored, isPositionExplored, isPositionVisibleToPlayer } from './fogOfWar'
-import { gameState } from './state'
-import type { EnemyTeam } from './types'
+import { gameState, isHostileToPlayer } from './state'
+import type { EnemyTeam, Team } from './types'
 import { BASIN_PATCHES, CRATERS } from './terrain'
 import { getCameraFocus, isTopDownViewActive, setCameraFocus } from './topDownCamera'
 import { buildings, getTeam, resources, soldiers, workers } from './world'
@@ -37,6 +37,7 @@ const MINIMAP_COLORS = {
     enemy2: Color4.create(1, 0.6, 0.12, 1),
     enemy3: Color4.create(0.82, 0.3, 0.95, 1)
   } as Record<EnemyTeam, Color4>,
+  ally: Color4.create(0.95, 0.85, 0.3, 1),
   minerals: Color4.create(0.45, 0.7, 1, 1),
   gas: Color4.create(0.35, 0.9, 0.45, 1),
   avatar: Color4.create(1, 1, 1, 1)
@@ -153,14 +154,21 @@ function resourceDots() {
   return dots
 }
 
+/** Player is cyan/green, allies gold, hostiles their slot color. */
+function dotColor(team: Team, isBuilding: boolean): Color4 {
+  if (team === 'player') return isBuilding ? MINIMAP_COLORS.playerBuilding : MINIMAP_COLORS.playerUnit
+  if (!isHostileToPlayer(team)) return MINIMAP_COLORS.ally
+  return MINIMAP_COLORS.enemy[team]
+}
+
 function buildingDots() {
   const dots = []
   for (const building of buildings) {
     if (!building.alive) continue
     const position = Transform.get(building.entity).position
     const team = getTeam(building)
-    if (team !== 'player' && !isPositionExplored(position)) continue
-    dots.push(dot(`bld-${building.id}`, position, 11, team === 'player' ? MINIMAP_COLORS.playerBuilding : MINIMAP_COLORS.enemy[team]))
+    if (isHostileToPlayer(team) && !isPositionExplored(position)) continue
+    dots.push(dot(`bld-${building.id}`, position, 11, dotColor(team, true)))
   }
   return dots
 }
@@ -171,15 +179,15 @@ function unitDots() {
     if (!worker.alive) continue
     const position = Transform.get(worker.entity).position
     const team = getTeam(worker)
-    if (team !== 'player' && !isPositionVisibleToPlayer(position)) continue
-    dots.push(dot(`wrk-${worker.id}`, position, 6, team === 'player' ? MINIMAP_COLORS.playerUnit : MINIMAP_COLORS.enemy[team]))
+    if (isHostileToPlayer(team) && !isPositionVisibleToPlayer(position)) continue
+    dots.push(dot(`wrk-${worker.id}`, position, 6, dotColor(team, false)))
   }
   for (const soldier of soldiers) {
     if (!soldier.alive) continue
     const position = Transform.get(soldier.entity).position
     const team = getTeam(soldier)
-    if (team !== 'player' && !isPositionVisibleToPlayer(position)) continue
-    dots.push(dot(`sld-${soldier.id}`, position, 7, team === 'player' ? MINIMAP_COLORS.playerUnit : MINIMAP_COLORS.enemy[team]))
+    if (isHostileToPlayer(team) && !isPositionVisibleToPlayer(position)) continue
+    dots.push(dot(`sld-${soldier.id}`, position, 7, dotColor(team, false)))
   }
   return dots
 }

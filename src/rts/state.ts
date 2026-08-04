@@ -1,5 +1,5 @@
 import { AI_DIFFICULTY, CONFIG } from './config'
-import type { BuildableKind, Difficulty, EnemyTeam, PlacementState, RaceId, SelectableKind, Team } from './types'
+import type { BuildableKind, Difficulty, EnemyTeam, GameMode, PlacementState, RaceId, SelectableKind, Team } from './types'
 
 export const ENEMY_TEAMS: EnemyTeam[] = ['enemy1', 'enemy2', 'enemy3']
 
@@ -22,6 +22,8 @@ export type TeamStats = {
 export type OpponentSetup = {
   race: RaceId | 'random'
   difficulty: Difficulty
+  /** Team mode only: this computer fights on the player's side. */
+  ally: boolean
 }
 
 function createEconomy(): TeamEconomy {
@@ -41,12 +43,19 @@ function createStats(): TeamStats {
 
 export const gameState = {
   playerRace: 'human' as RaceId,
-  // Match setup chosen on the title screen: 1-3 computers, each with a race and difficulty.
-  opponents: [{ race: 'random', difficulty: 'medium' }] as OpponentSetup[],
+  gameMode: 'team' as GameMode,
+  // Match setup chosen on the title screen: 1-3 computers, each with a race, difficulty and side.
+  opponents: [{ race: 'random', difficulty: 'medium', ally: false }] as OpponentSetup[],
   // Resolved at match start from `opponents` (random races rolled here).
   activeEnemyTeams: ['enemy1'] as EnemyTeam[],
   enemyRaces: { enemy1: 'alien', enemy2: 'alien', enemy3: 'alien' } as Record<EnemyTeam, RaceId>,
   enemyDifficulties: { enemy1: 'medium', enemy2: 'medium', enemy3: 'medium' } as Record<EnemyTeam, Difficulty>,
+  // Alliance ids: teams sharing an id never fight each other. Team mode puts
+  // allied computers on id 0 with the player; FFA gives every faction its own id.
+  alliances: { player: 0, enemy1: 1, enemy2: 2, enemy3: 3 } as Record<Team, number>,
+  // Which map seat each active computer starts on (index into COMPUTER_SEATS);
+  // allies get seats near the player, hostiles the far side.
+  enemySeatIndex: { enemy1: 0, enemy2: 1, enemy3: 2 } as Record<EnemyTeam, number>,
   economies: {
     player: createEconomy(),
     enemy1: createEconomy(),
@@ -75,6 +84,20 @@ export const gameState = {
   currentPlayerLocation: '',
   savedMineralLocations: [] as string[],
   savedGasLocations: [] as string[]
+}
+
+/** Teams on different alliance ids fight; same id means allied (or self). */
+export function areHostile(a: Team, b: Team): boolean {
+  return gameState.alliances[a] !== gameState.alliances[b]
+}
+
+export function isHostileToPlayer(team: Team): boolean {
+  return areHostile('player', team)
+}
+
+/** A computer fighting on the player's side (team mode). */
+export function isPlayerAlly(team: Team): boolean {
+  return team !== 'player' && !isHostileToPlayer(team)
 }
 
 /** Hard computers bank extra per delivery (classic RTS difficulty cheat). */

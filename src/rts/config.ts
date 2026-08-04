@@ -1,5 +1,5 @@
 import { Color4, Vector3 } from '@dcl/sdk/math'
-import type { BuildableKind, BuildingDefinition, Difficulty, EnemyTeam, ResourceDefinition, ResourceKind, UnitDefinition } from './types'
+import type { BuildableKind, BuildingDefinition, Difficulty, ResourceDefinition, ResourceKind, UnitDefinition } from './types'
 
 export const CONFIG = {
   mineralsStart: 50,
@@ -187,15 +187,16 @@ export const AI_DIFFICULTY: Record<Difficulty, DifficultySettings> = {
 export const DIFFICULTY_IDS: Difficulty[] = ['easy', 'medium', 'hard']
 
 /**
- * Starting temple per computer slot. Slot 1 is the mirrored NE main; slots 2
- * and 3 seat at the gas expansions (NE-side, then SW-side - a third computer
- * starts uncomfortably close to the player on purpose).
+ * Computer start locations, ordered far-to-near from the player's SW corner:
+ * the mirrored NE main, the NE gas expansion, then the SW gas expansion.
+ * Hostile computers fill seats from the front (far side); allied computers
+ * fill from the back so they start next to the player they're defending.
  */
-export const ENEMY_SEATS: Record<EnemyTeam, { temple: Vector3; rotationY: number }> = {
-  enemy1: { temple: Vector3.create(142.89, 5, 136.75), rotationY: 180 },
-  enemy2: { temple: Vector3.create(137, 5, 114), rotationY: 200 },
-  enemy3: { temple: Vector3.create(23, 5, 46), rotationY: 160 }
-}
+export const COMPUTER_SEATS: { temple: Vector3; rotationY: number }[] = [
+  { temple: Vector3.create(142.89, 5, 136.75), rotationY: 180 },
+  { temple: Vector3.create(137, 5, 114), rotationY: 200 },
+  { temple: Vector3.create(23, 5, 46), rotationY: 160 }
+]
 
 export const POSITIONS = {
   base: Vector3.create(8.54, 5, 3.48),

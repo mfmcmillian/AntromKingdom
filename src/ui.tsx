@@ -33,7 +33,8 @@ import { UPGRADE_INFO, UPGRADE_MAX_LEVEL, getNextUpgradeCost, getUpgradeLevel, i
 import { isTopDownViewActive, toggleTopDownView } from './rts/topDownCamera'
 import { CONSOLE_HEIGHT } from './rts/hud'
 import { DIFFICULTY_IDS, AI_DIFFICULTY } from './rts/config'
-import type { BuildableKind, Difficulty, RaceId, ResourceCost, SelectedSummary, SoldierVariant, Team, UpgradeKind } from './rts/types'
+import { isPlayerAlly } from './rts/state'
+import type { BuildableKind, GameMode, RaceId, ResourceCost, SelectedSummary, SoldierVariant, Team, UpgradeKind } from './rts/types'
 
 const UI = {
   console: Color4.create(0.03, 0.04, 0.06, 0.94),
@@ -277,6 +278,7 @@ function infoPanel(selected: SelectedSummary) {
   const race = getRace(selected.team ?? 'player')
   const portrait = getPortraitIcon(selected)
   const isEnemy = selected.team !== undefined && selected.team !== 'player'
+  const isAlly = selected.team !== undefined && isPlayerAlly(selected.team)
   const hpRatio = selected.hp !== undefined && selected.maxHp ? Math.max(0, Math.min(1, selected.hp / selected.maxHp)) : undefined
 
   return (
@@ -297,7 +299,7 @@ function infoPanel(selected: SelectedSummary) {
       ) : null}
 
       <UiEntity uiTransform={{ flexDirection: 'column', width: 380, height: '100%', padding: { top: 24 } }}>
-        <Label value={getCommandTitle(selected.kind)} fontSize={13} color={isEnemy ? UI.red : UI.dim} textAlign="middle-left" />
+        <Label value={getCommandTitle(selected.kind)} fontSize={13} color={isAlly ? ALLY_UI_COLOR : isEnemy ? UI.red : UI.dim} textAlign="middle-left" />
         <Label value={selected.name} fontSize={30} color={UI.text} textAlign="middle-left" uiTransform={{ margin: { top: 2, bottom: 8 } }} />
 
         {!multi && hpRatio !== undefined ? (
@@ -914,6 +916,12 @@ function raceCard(raceId: RaceId) {
 
 const OPPONENT_RACE_OPTIONS: (RaceId | 'random')[] = ['random', 'human', 'alien', 'bio']
 const OPPONENT_SLOT_COLORS = [Color4.create(0.95, 0.3, 0.25, 1), Color4.create(1, 0.62, 0.15, 1), Color4.create(0.82, 0.35, 0.95, 1)]
+const ALLY_UI_COLOR = Color4.create(0.95, 0.85, 0.3, 1)
+
+const GAME_MODES: { id: GameMode; label: string; hint: string }[] = [
+  { id: 'team', label: 'TEAM', hint: 'Pick each computer\'s side. Allies fight with you and share vision.' },
+  { id: 'ffa', label: 'FFA', hint: 'Free-for-all: every computer fights everyone, including each other.' }
+]
 
 function opponentRaceLabel(race: RaceId | 'random'): string {
   return race === 'random' ? 'RANDOM' : RACES[race].name
@@ -929,6 +937,13 @@ function cycleOpponentDifficulty(index: number): void {
   const setup = gameState.opponents[index]
   const next = (DIFFICULTY_IDS.indexOf(setup.difficulty) + 1) % DIFFICULTY_IDS.length
   setup.difficulty = DIFFICULTY_IDS[next]
+}
+
+function toggleOpponentSide(index: number): void {
+  const setup = gameState.opponents[index]
+  // Someone has to be the enemy: block turning the last foe into an ally.
+  if (!setup.ally && gameState.opponents.filter((opponent) => !opponent.ally).length <= 1) return
+  setup.ally = !setup.ally
 }
 
 /** A click-to-cycle setting chip: shows the current value, advances on click. */
@@ -949,20 +964,24 @@ function opponentChip(key: string, value: string, width: number, onClick: () => 
 
 function opponentRow(index: number) {
   const setup = gameState.opponents[index]
-  const slotColor = OPPONENT_SLOT_COLORS[index]
+  const isAlly = gameState.gameMode === 'team' && setup.ally
+  const slotColor = isAlly ? ALLY_UI_COLOR : OPPONENT_SLOT_COLORS[index]
 
   return (
     <UiEntity key={`opponent-${index}`} uiTransform={{ width: '100%', height: 40, flexDirection: 'row', alignItems: 'center', margin: { bottom: 6 } }}>
       <UiEntity uiTransform={{ width: 10, height: 10, margin: { right: 8 } }} uiBackground={{ color: slotColor }} />
-      <Label value={`CPU ${index + 1}`} fontSize={13} color={UI.dim} textAlign="middle-left" uiTransform={{ width: 58 }} />
-      {opponentChip(`opp-race-${index}`, opponentRaceLabel(setup.race), 120, () => cycleOpponentRace(index))}
-      {opponentChip(`opp-diff-${index}`, AI_DIFFICULTY[setup.difficulty].label.toUpperCase(), 92, () => cycleOpponentDifficulty(index))}
+      <Label value={`CPU ${index + 1}`} fontSize={13} color={UI.dim} textAlign="middle-left" uiTransform={{ width: 52 }} />
+      {gameState.gameMode === 'team' ? opponentChip(`opp-side-${index}`, isAlly ? 'ALLY' : 'FOE', 62, () => toggleOpponentSide(index)) : null}
+      {opponentChip(`opp-race-${index}`, opponentRaceLabel(setup.race), gameState.gameMode === 'team' ? 96 : 120, () => cycleOpponentRace(index))}
+      {opponentChip(`opp-diff-${index}`, AI_DIFFICULTY[setup.difficulty].label.toUpperCase(), 78, () => cycleOpponentDifficulty(index))}
       {gameState.opponents.length > 1 ? (
         <UiEntity
-          uiTransform={{ width: 34, height: 34, justifyContent: 'center', alignItems: 'center' }}
+          uiTransform={{ width: 30, height: 34, justifyContent: 'center', alignItems: 'center' }}
           uiBackground={{ color: Color4.create(0.45, 0.12, 0.12, 0.9) }}
           onMouseDown={() => {
             gameState.opponents.splice(index, 1)
+            // Never leave the roster without a foe after a removal.
+            if (gameState.opponents.every((opponent) => opponent.ally)) gameState.opponents[0].ally = false
           }}
         >
           <Label value="X" fontSize={13} color={UI.text} textAlign="middle-center" />
@@ -972,7 +991,37 @@ function opponentRow(index: number) {
   )
 }
 
+/** TEAM / FFA selector chips. */
+function gameModeToggle() {
+  return (
+    <UiEntity uiTransform={{ width: '100%', height: 36, flexDirection: 'row', margin: { bottom: 10 } }}>
+      {GAME_MODES.map((mode) => {
+        const isActive = gameState.gameMode === mode.id
+        return (
+          <UiEntity
+            key={`mode-${mode.id}`}
+            uiTransform={{ width: 92, height: 34, margin: { right: 8 }, padding: 2, justifyContent: 'center', alignItems: 'center' }}
+            uiBackground={{ color: isActive ? UI.accent : Color4.create(0.25, 0.32, 0.45, 0.9) }}
+            onMouseDown={() => {
+              gameState.gameMode = mode.id
+            }}
+          >
+            <UiEntity
+              uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }}
+              uiBackground={{ color: isActive ? Color4.create(0.08, 0.18, 0.32, 0.98) : Color4.create(0.05, 0.07, 0.11, 0.96) }}
+            >
+              <Label value={mode.label} fontSize={13} color={isActive ? Color4.White() : UI.dim} textAlign="middle-center" />
+            </UiEntity>
+          </UiEntity>
+        )
+      })}
+    </UiEntity>
+  )
+}
+
 function opponentsPanel() {
+  const modeHint = GAME_MODES.find((mode) => mode.id === gameState.gameMode)?.hint ?? ''
+
   return (
     <UiEntity
       uiTransform={{
@@ -984,26 +1033,22 @@ function opponentsPanel() {
       }}
       uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.82) }}
     >
-      <Label value="OPPONENTS" fontSize={14} color={Color4.create(0.75, 0.78, 0.85, 0.9)} textAlign="middle-left" uiTransform={{ margin: { bottom: 10 } }} />
+      <Label value="GAME MODE" fontSize={14} color={Color4.create(0.75, 0.78, 0.85, 0.9)} textAlign="middle-left" uiTransform={{ margin: { bottom: 8 } }} />
+      {gameModeToggle()}
+      <Label value="COMPUTERS" fontSize={14} color={Color4.create(0.75, 0.78, 0.85, 0.9)} textAlign="middle-left" uiTransform={{ margin: { bottom: 10 } }} />
       {gameState.opponents.map((_, index) => opponentRow(index))}
       {gameState.opponents.length < 3 ? (
         <UiEntity
           uiTransform={{ width: 180, height: 34, margin: { top: 4 }, justifyContent: 'center', alignItems: 'center' }}
           uiBackground={{ color: Color4.create(0.12, 0.3, 0.16, 0.95) }}
           onMouseDown={() => {
-            gameState.opponents.push({ race: 'random', difficulty: 'medium' })
+            gameState.opponents.push({ race: 'random', difficulty: 'medium', ally: false })
           }}
         >
           <Label value="+ ADD COMPUTER" fontSize={12} color={UI.text} textAlign="middle-center" />
         </UiEntity>
       ) : null}
-      <Label
-        value="Click race / difficulty to change. All computers fight you."
-        fontSize={10}
-        color={Color4.create(0.55, 0.58, 0.66, 0.85)}
-        textAlign="middle-left"
-        uiTransform={{ margin: { top: 8 } }}
-      />
+      <Label value={modeHint} fontSize={10} color={Color4.create(0.55, 0.58, 0.66, 0.85)} textAlign="middle-left" uiTransform={{ margin: { top: 8 } }} />
     </UiEntity>
   )
 }
@@ -1189,8 +1234,9 @@ function endGameOverlay() {
         {statsRow(`PLAYER (${RACES[gameState.playerRace].name})`, gameState.matchStats.player.unitsProduced, gameState.matchStats.player.unitsKilled, gameState.matchStats.player.resourcesGathered, UI.accent)}
         {gameState.activeEnemyTeams.map((team, index) => {
           const stats = gameState.matchStats[team]
-          const label = `CPU ${index + 1} (${RACES[gameState.enemyRaces[team]].name} · ${AI_DIFFICULTY[gameState.enemyDifficulties[team]].label.toUpperCase()})`
-          return statsRow(label, stats.unitsProduced, stats.unitsKilled, stats.resourcesGathered, OPPONENT_SLOT_COLORS[index])
+          const ally = isPlayerAlly(team)
+          const label = `${ally ? 'ALLY' : 'CPU'} ${index + 1} (${RACES[gameState.enemyRaces[team]].name} · ${AI_DIFFICULTY[gameState.enemyDifficulties[team]].label.toUpperCase()})`
+          return statsRow(label, stats.unitsProduced, stats.unitsKilled, stats.resourcesGathered, ally ? ALLY_UI_COLOR : OPPONENT_SLOT_COLORS[index])
         })}
 
         <Button

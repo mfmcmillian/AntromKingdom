@@ -21,8 +21,8 @@ import {
   ASSETS,
   BUILDING_DEFINITIONS,
   COLORS,
+  COMPUTER_SEATS,
   CONFIG,
-  ENEMY_SEATS,
   GRID,
   MODEL_TRANSFORMS,
   POSITIONS,
@@ -54,7 +54,7 @@ import {
 } from './rts/entities'
 import { formatNumber, formatPosition, formatVectorForPaste } from './rts/format'
 import { clamp, cloneVector, distanceToPoint, distanceToPosition, getFormationPosition, offsetSpawn } from './rts/math'
-import { ENEMY_TEAMS, gameState, resetTeamStats } from './rts/state'
+import { ENEMY_TEAMS, areHostile, gameState, isHostileToPlayer, isPlayerAlly, resetTeamStats } from './rts/state'
 import { updateSoldiers as updateSoldiersSystem } from './rts/systems/combat'
 import { createEnemyAi, updateEnemyAi as updateEnemyAiSystem, type EnemyAi } from './rts/systems/enemyAi'
 import { updateSoldierProduction as updateSoldierProductionSystem, updateWorkerProduction as updateWorkerProductionSystem } from './rts/systems/production'
@@ -85,7 +85,6 @@ import {
 import { disableTopDownView, enableTopDownView, getCameraFocus, isTopDownViewActive } from './rts/topDownCamera'
 import { createBuildingDamageVfx, removeBuildingDamageVfx, updateBuildingDamageVfx } from './rts/vfx'
 import {
-  areHostile,
   buildings,
   createEntityId,
   getAvailableWorkersForTeam,
@@ -175,8 +174,11 @@ export function startRtsMatch(): void {
   // Always rebuild the base so the chosen race's units and buildings spawn fresh.
   resetRtsGame()
   gameState.matchResult = 'none'
-  const enemyNames = gameState.activeEnemyTeams.map((team) => RACES[gameState.enemyRaces[team]].name).join(' + ')
-  gameState.status = `${getRace('player').name} vs ${enemyNames}. Select a worker to gather resources.`
+  const allies = gameState.activeEnemyTeams.filter((team) => isPlayerAlly(team)).map((team) => RACES[gameState.enemyRaces[team]].name)
+  const foes = gameState.activeEnemyTeams.filter((team) => isHostileToPlayer(team)).map((team) => RACES[gameState.enemyRaces[team]].name)
+  const yourSide = [getRace('player').name, ...allies].join(' + ')
+  const versus = gameState.gameMode === 'ffa' ? foes.join(' vs ') : foes.join(' + ')
+  gameState.status = `${yourSide} vs ${versus}. Select a worker to gather resources.`
 }
 
 export function endRtsMatch(): void {
@@ -591,21 +593,39 @@ export function resetRtsGame(): void {
 }
 
 /**
- * Locks in the title-screen opponent choices: seats each computer on its map
- * slot, rolls 'random' races, and spins up one AI brain per computer.
+ * Locks in the title-screen opponent choices: resolves alliances for the game
+ * mode, seats each computer (allies near the player, hostiles far), rolls
+ * 'random' races, and spins up one AI brain per computer.
  */
 function applyOpponentSetup(): void {
   const opponents = gameState.opponents.slice(0, ENEMY_TEAMS.length)
   gameState.activeEnemyTeams = ENEMY_TEAMS.slice(0, Math.max(1, opponents.length))
-  enemyAis = []
+
+  // Seats are ordered far-to-near from the player: hostiles take the far ones
+  // first, allies claim the near ones so they actually cover the player's flank.
+  const openSeats = COMPUTER_SEATS.map((_, index) => index)
 
   for (let i = 0; i < gameState.activeEnemyTeams.length; i++) {
     const team = gameState.activeEnemyTeams[i]
-    const setup = opponents[i] ?? { race: 'random' as const, difficulty: 'medium' as const }
+    const setup = opponents[i] ?? { race: 'random' as const, difficulty: 'medium' as const, ally: false }
+    const isAlly = gameState.gameMode === 'team' && setup.ally
+
     gameState.enemyRaces[team] = setup.race === 'random' ? pickRandomRace() : setup.race
     gameState.enemyDifficulties[team] = setup.difficulty
-    enemyAis.push(createEnemyAi(team, setup.difficulty))
+    // FFA: everyone for themselves. Team mode: allies join the player's id 0.
+    gameState.alliances[team] = gameState.gameMode === 'ffa' ? i + 1 : isAlly ? 0 : 1
+    gameState.enemySeatIndex[team] = isAlly ? openSeats.pop()! : openSeats.shift()!
   }
+
+  // A match needs someone to fight: if every computer was marked ally, the
+  // last one flips hostile (the UI prevents this, this is the safety net).
+  if (!gameState.activeEnemyTeams.some((team) => isHostileToPlayer(team))) {
+    const lastTeam = gameState.activeEnemyTeams[gameState.activeEnemyTeams.length - 1]
+    gameState.alliances[lastTeam] = 1
+    gameState.enemySeatIndex[lastTeam] = 0
+  }
+
+  enemyAis = gameState.activeEnemyTeams.map((team) => createEnemyAi(team, gameState.enemyDifficulties[team]))
 }
 
 export function getWorkerCount(): number {
@@ -779,8 +799,8 @@ function createStartingBase(): void {
   }
 
   for (const team of gameState.activeEnemyTeams) {
-    const seat = ENEMY_SEATS[team]
-    buildings.push(createBuilding('temple', `Enemy ${getBuildingDisplayName('temple', team)}`, seat.temple, CONFIG.templeHp, 'complete', seat.rotationY, team))
+    const seat = COMPUTER_SEATS[gameState.enemySeatIndex[team]]
+    buildings.push(createBuilding('temple', `${teamNamePrefix(team)}${getBuildingDisplayName('temple', team)}`, seat.temple, CONFIG.templeHp, 'complete', seat.rotationY, team))
 
     // Workers spawn toward the map center so they don't clip the border highlands.
     const towardCenter = seat.temple.x < SCENE.center ? 5 : -5
@@ -791,6 +811,12 @@ function createStartingBase(): void {
       gameState.matchStats[team].unitsProduced += 1
     }
   }
+}
+
+/** "Ally " / "Enemy " label prefix so computer units read as friend or foe. */
+function teamNamePrefix(team: Team): string {
+  if (team === 'player') return ''
+  return isPlayerAlly(team) ? 'Ally ' : 'Enemy '
 }
 
 function spawnResourceFields(): void {
@@ -832,7 +858,7 @@ function createWorker(position: Vector3, team: Team = 'player'): Worker {
   const definition = getWorkerDefinition(team)
   const worker = createProceduralUnitSelectable(
     'worker',
-    `${team !== 'player' ? 'Enemy ' : ''}${definition.name} ${getTeamWorkerCount(team) + 1}`,
+    `${teamNamePrefix(team)}${definition.name} ${getTeamWorkerCount(team) + 1}`,
     position,
     team,
     // Generous click box: units are small targets from the overhead camera.
@@ -852,7 +878,7 @@ function createSoldier(position: Vector3, team: Team = 'player', variant: Soldie
   const definition = getSoldierDefinition(team, variant)
   const soldier = createProceduralUnitSelectable(
     'soldier',
-    `${team !== 'player' ? 'Enemy ' : ''}${definition.name} ${getTeamSoldierCount(team) + 1}`,
+    `${teamNamePrefix(team)}${definition.name} ${getTeamSoldierCount(team) + 1}`,
     position,
     team,
     getSoldierColliderScale(variant),
@@ -938,7 +964,7 @@ function createResourceNode(resource: ResourceKind, name: string, position: Vect
 
 function createConstructionSite(kind: BuildableKind, position: Vector3, builderWorkerId: string, rotationY = 0, team: Team = 'player'): Building {
   const definition = BUILDING_DEFINITIONS[kind]
-  const site = createBuilding(kind, `${team !== 'player' ? 'Enemy ' : ''}${getBuildingDisplayName(kind, team)} (Building)`, position, definition.hp, 'movingBuilder', rotationY, team)
+  const site = createBuilding(kind, `${teamNamePrefix(team)}${getBuildingDisplayName(kind, team)} (Building)`, position, definition.hp, 'movingBuilder', rotationY, team)
 
   site.builderWorkerId = builderWorkerId
   site.buildTime = definition.buildTime
@@ -1677,12 +1703,14 @@ function updateMatchEndState(): void {
   if (gameState.matchStatus === MATCH_ENDED) return
 
   const playerTemplesAlive = buildings.some((building) => building.alive && building.kind === 'temple' && getTeam(building) === 'player')
-  // Victory means every computer is out: no temple left on any enemy team.
-  const enemyTemplesAlive = buildings.some((building) => building.alive && building.kind === 'temple' && isEnemyTeam(getTeam(building)))
+  // Victory means every faction hostile to the player is out of temples;
+  // surviving allies don't block the win, and losing your own HQ is a loss
+  // even if an ally still stands - you are out of the game.
+  const hostileTemplesAlive = buildings.some((building) => building.alive && building.kind === 'temple' && isHostileToPlayer(getTeam(building)))
 
   if (!playerTemplesAlive) {
     endMatch('loss')
-  } else if (!enemyTemplesAlive) {
+  } else if (!hostileTemplesAlive) {
     endMatch('win')
   }
 }
@@ -1698,7 +1726,7 @@ function endMatch(result: 'win' | 'loss'): void {
   cancelPlacement()
   clearSelection()
   const time = formatRuntimeMatchTime(gameState.matchTime)
-  setStatus(result === 'win' ? `You destroyed every AI Temple in ${time}. Victory!` : `All player Temples were destroyed after ${time}. You lose.`)
+  setStatus(result === 'win' ? `You destroyed every enemy Temple in ${time}. Victory!` : `All player Temples were destroyed after ${time}. You lose.`)
 }
 
 function updateGhostPreview(): void {
@@ -1882,7 +1910,7 @@ function pauseConstruction(site: Building, builder?: Worker): void {
 
 function completeConstruction(site: Building, builder: Worker): void {
   const definition = BUILDING_DEFINITIONS[site.kind as BuildableKind]
-  const displayName = `${getTeam(site) !== 'player' ? 'Enemy ' : ''}${getBuildingDisplayName(site.kind as BuildableKind, getTeam(site))}`
+  const displayName = `${teamNamePrefix(getTeam(site))}${getBuildingDisplayName(site.kind as BuildableKind, getTeam(site))}`
 
   site.constructionState = 'complete'
   site.constructionProgress = 1
@@ -1984,7 +2012,7 @@ function damageBuilding(building: Building, amount: number, attacker?: Soldier |
 }
 
 function isPlayerTempleUnderAttack(building: Building, attacker?: Soldier | Worker): boolean {
-  return building.kind === 'temple' && getTeam(building) === 'player' && attacker !== undefined && isEnemyTeam(getTeam(attacker))
+  return building.kind === 'temple' && getTeam(building) === 'player' && attacker !== undefined && isHostileToPlayer(getTeam(attacker))
 }
 
 function showPlayerAttackAlert(): void {
@@ -2064,8 +2092,10 @@ function clearAttackersTargeting(targetId: string): void {
 }
 
 function alertDefenders(building: Building, attacker: Soldier | Worker): void {
+  // Any computer rallies nearby idle soldiers when a hostile hits its buildings
+  // (the player's own defense stays manual - that's the game).
   const buildingTeam = getTeam(building)
-  if (!isEnemyTeam(buildingTeam) || getTeam(attacker) !== 'player' || !attacker.alive) return
+  if (!isEnemyTeam(buildingTeam) || !attacker.alive || !areHostile(buildingTeam, getTeam(attacker))) return
 
   const buildingPosition = Transform.get(building.entity).position
   const defenders = soldiers.filter((soldier) => {
@@ -2184,7 +2214,7 @@ function getCommandableSoldiers(): Soldier[] {
 }
 
 function isEnemyAttackTarget(selectable: Selectable): selectable is Building | Soldier | Worker {
-  return selectable.kind !== 'resource' && isEnemyTeam(getTeam(selectable))
+  return selectable.kind !== 'resource' && isHostileToPlayer(getTeam(selectable))
 }
 
 function isPlayerRepairTarget(selectable: Selectable): selectable is Building {
@@ -2229,7 +2259,7 @@ function getBuildingDetail(building: Building): string {
   if (building.kind === 'temple') {
     const templePosition = Transform.get(building.entity).position
     const templeName = getBuildingDisplayName('temple', getTeam(building))
-    if (isEnemyTeam(getTeam(building))) return `Enemy ${templeName}: AI resource dropoff. Location ${formatPosition(templePosition)}.`
+    if (isEnemyTeam(getTeam(building))) return `${teamNamePrefix(getTeam(building))}${templeName}: AI resource dropoff. Location ${formatPosition(templePosition)}.`
     return `${templeName}: workers deliver resources here. Location ${formatPosition(templePosition)}.`
   }
   if (building.kind === 'supplyHouse') {
@@ -2271,7 +2301,7 @@ function getHoverText(selectable: Selectable): string {
     const resource = selectable as ResourceNode
     return resource.resource ? RESOURCE_DEFINITIONS[resource.resource].hoverText : `Select ${selectable.name}`
   }
-  if (isEnemyTeam(getTeam(selectable))) return `Attack ${selectable.name}`
+  if (isHostileToPlayer(getTeam(selectable))) return `Attack ${selectable.name}`
   return `Select ${selectable.name}`
 }
 

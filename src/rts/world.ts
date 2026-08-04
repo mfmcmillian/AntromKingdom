@@ -33,11 +33,6 @@ export function isEnemyTeam(team: Team): team is EnemyTeam {
   return team !== 'player'
 }
 
-/** Computer opponents are allied: only player-vs-computer pairs fight. */
-export function areHostile(a: Team, b: Team): boolean {
-  return (a === 'player') !== (b === 'player')
-}
-
 export function getTeamWorkerCount(team: Team): number {
   return workers.filter((worker) => worker.alive && getTeam(worker) === team).length
 }

@@ -1,5 +1,6 @@
 import { Entity, Material, MeshRenderer, Transform, VisibilityComponent, engine } from '@dcl/sdk/ecs'
 import { Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
+import { isPlayerAlly } from './state'
 import { RaceId, ResourceKind, Team } from './types'
 
 // Procedural units for all three races, built from primitives so each race gets a
@@ -54,12 +55,18 @@ const BIO_FLESH = Color4.create(0.48, 0.18, 0.16, 1)
 const BIO_CARAPACE = Color4.create(0.22, 0.1, 0.13, 1)
 const BIO_BONE = Color4.create(0.75, 0.68, 0.55, 1)
 
-// Player is cyan; each computer gets its own hostile hue so mixed armies read.
+// Player is cyan, allied computers glow friendly gold, and each hostile
+// computer gets its own hue so mixed armies read at a glance.
 const TEAM_GLOW: Record<Team, Color4> = {
   player: Color4.create(0.2, 0.85, 0.95, 1),
   enemy1: Color4.create(1, 0.3, 0.2, 1),
   enemy2: Color4.create(1, 0.6, 0.12, 1),
   enemy3: Color4.create(0.82, 0.3, 0.95, 1)
+}
+const ALLY_GLOW = Color4.create(0.95, 0.85, 0.3, 1)
+
+function getTeamGlow(team: Team): Color4 {
+  return isPlayerAlly(team) ? ALLY_GLOW : TEAM_GLOW[team]
 }
 
 const STILL: MotionProfile = { amplitude: 0.03, speed: 2, tilt: 0, spin: 0, lunge: 0 }
@@ -118,7 +125,7 @@ export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team:
     return part
   }
 
-  const glow = TEAM_GLOW[team]
+  const glow = getTeamGlow(team)
 
   if (race === 'human') {
     if (role === 'worker') buildHumanMiner(rig, addPart, glow)
