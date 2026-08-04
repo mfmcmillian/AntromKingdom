@@ -26,6 +26,8 @@ import {
   MODEL_TRANSFORMS,
   POSITIONS,
   RESOURCE_DEFINITIONS,
+  RESOURCE_FIELDS,
+  ResourceField,
   SCENE,
   SOLDIER_DEFINITION
 } from './rts/config'
@@ -724,9 +726,7 @@ function createStartingBase(): void {
   buildings.push(createBuilding('temple', 'Temple', POSITIONS.base, CONFIG.templeHp, 'complete', 0, 'player'))
   buildings.push(createBuilding('temple', 'Enemy Temple', POSITIONS.enemyTemple, CONFIG.templeHp, 'complete', 180, 'enemy'))
 
-  spawnResourceNodes('rocks', POSITIONS.rocks)
-  spawnResourceNodes('wood', POSITIONS.trees)
-  spawnResourceNodes('meat', POSITIONS.pigs)
+  spawnResourceFields()
 
   for (const position of POSITIONS.workers) {
     workers.push(createWorker(position, 'player'))
@@ -742,12 +742,39 @@ function createStartingBase(): void {
   }
 }
 
-function spawnResourceNodes(resource: ResourceKind, positions: Vector3[]): void {
-  const definition = RESOURCE_DEFINITIONS[resource]
+function spawnResourceFields(): void {
+  const counters: Record<ResourceKind, number> = { rocks: 0, wood: 0, meat: 0 }
 
-  for (let i = 0; i < positions.length; i++) {
-    resources.push(createResourceNode(resource, `${definition.name} ${i + 1}`, positions[i]))
+  RESOURCE_FIELDS.forEach((field, fieldIndex) => {
+    const definition = RESOURCE_DEFINITIONS[field.kind]
+    for (const position of generateFieldPositions(field, fieldIndex)) {
+      counters[field.kind] += 1
+      resources.push(createResourceNode(field.kind, `${definition.name} ${counters[field.kind]}`, position))
+    }
+  })
+}
+
+/** Deterministic ring of node positions around a field center: evenly spaced angle slots with jitter. */
+function generateFieldPositions(field: ResourceField, fieldIndex: number): Vector3[] {
+  let seed = 4241 + fieldIndex * 131
+  const random = () => {
+    seed = (seed * 16807) % 2147483647
+    return seed / 2147483647
   }
+
+  const positions: Vector3[] = []
+  for (let i = 0; i < field.count; i++) {
+    const angle = ((i + random() * 0.5) / field.count) * Math.PI * 2
+    const radius = field.radius * (0.45 + random() * 0.55)
+    positions.push(
+      Vector3.create(
+        Math.min(SCENE.size - 4, Math.max(4, field.center.x + Math.cos(angle) * radius)),
+        0,
+        Math.min(SCENE.size - 4, Math.max(4, field.center.z + Math.sin(angle) * radius))
+      )
+    )
+  }
+  return positions
 }
 
 function createWorker(position: Vector3, team: Team = 'player'): Worker {
