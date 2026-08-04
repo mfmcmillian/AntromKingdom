@@ -956,8 +956,8 @@ function raceCard(raceId: RaceId) {
           uiBackground={{
             textureMode: 'stretch',
             texture: { src: portrait },
-            // Unselected races sit dimmed until hovered/picked.
-            color: isSelected ? Color4.White() : Color4.create(0.45, 0.45, 0.5, 1)
+            // Unselected races dim slightly; the new portraits are dark, so keep them readable.
+            color: isSelected ? Color4.White() : Color4.create(0.72, 0.72, 0.78, 1)
           }}
         />
         <Label
