@@ -20,6 +20,7 @@ const BORDER = 5
 const FOG_CELL_SIZE = MAP_SIZE / FOG_GRID_SIZE
 
 const MINIMAP_COLORS = {
+  border: Color4.create(0.3, 0.55, 0.85, 1),
   frame: Color4.create(0.03, 0.035, 0.05, 0.95),
   ground: Color4.create(0.13, 0.13, 0.17, 1),
   fog: Color4.create(0.02, 0.02, 0.035, 0.94),
@@ -41,10 +42,14 @@ export function minimapPanel() {
         position: { bottom: PANEL_BOTTOM, right: PANEL_RIGHT },
         width: MAP_SIZE + BORDER * 2,
         height: MAP_SIZE + BORDER * 2,
-        padding: BORDER
+        padding: 2
       }}
-      uiBackground={{ color: MINIMAP_COLORS.frame }}
+      uiBackground={{ color: MINIMAP_COLORS.border }}
     >
+      <UiEntity
+        uiTransform={{ width: '100%', height: '100%', padding: BORDER - 2 }}
+        uiBackground={{ color: MINIMAP_COLORS.frame }}
+      >
       <UiEntity
         uiTransform={{ width: MAP_SIZE, height: MAP_SIZE }}
         uiBackground={{ color: MINIMAP_COLORS.ground }}
@@ -55,6 +60,7 @@ export function minimapPanel() {
         {unitDots()}
         {viewDot()}
         {fogOverlay()}
+      </UiEntity>
       </UiEntity>
     </UiEntity>
   )
