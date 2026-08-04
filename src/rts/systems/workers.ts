@@ -1,7 +1,7 @@
 import { Transform } from '@dcl/sdk/ecs'
 import type { Vector3 } from '@dcl/sdk/math'
 import { CONFIG } from '../config'
-import { addResource, getResourceAmount } from '../economy'
+import { addResource, getResourceAmount, spendResources } from '../economy'
 import { distanceToPosition, moveTowardPosition } from '../math'
 import { gameState } from '../state'
 import type { Building, ResourceNode, Worker } from '../types'
@@ -13,6 +13,7 @@ export type WorkerSystemDeps = {
   getNearestTemple(position: Vector3, team: 'player' | 'enemy'): Building | undefined
   getTempleDropoffPosition(temple: Building, worker: Worker): Vector3
   getBuilderWorkPosition(site: Building, workerPosition: Vector3): Vector3
+  getRepairWorkPosition(site: Building, workerPosition: Vector3): Vector3
   getWorkerRallyPosition(worker: Worker): Vector3
   setWorkerAnimation(worker: Worker, clipName: string, restart?: boolean): void
   playResourceGatherFeedback(resource: ResourceNode): void
@@ -27,6 +28,7 @@ export function updateWorkers(dt: number, deps: WorkerSystemDeps): void {
 
     updateWorkerGathering(worker, dt, deps)
     updateWorkerBuildMovement(worker, dt, deps)
+    updateWorkerRepairMovement(worker, dt, deps)
     updateWorkerRallyMovement(worker, dt, deps)
   }
 }
@@ -40,7 +42,7 @@ function updateWorkerGathering(worker: Worker, dt: number, deps: WorkerSystemDep
     if (distanceToPosition(worker.entity, gatherPosition) < 0.35) {
       worker.state = 'gathering'
       worker.timer = 0
-      deps.setWorkerAnimation(worker, 'idle')
+      deps.setWorkerAnimation(worker, 'talk')
       deps.playResourceGatherFeedback(resource)
     }
   } else if (worker.state === 'gathering' && resource) {
@@ -108,9 +110,63 @@ function updateWorkerBuildMovement(worker: Worker, dt: number, deps: WorkerSyste
   if (distanceToPosition(worker.entity, workPosition) <= 0.25) {
     worker.state = 'constructing'
     site.constructionState = 'building'
-    deps.setWorkerAnimation(worker, 'expression')
+    deps.setWorkerAnimation(worker, 'talk')
     if (getTeam(worker) === 'player') deps.setStatus(`${worker.name} started constructing ${site.name}.`)
   }
+}
+
+function updateWorkerRepairMovement(worker: Worker, dt: number, deps: WorkerSystemDeps): void {
+  if ((worker.state !== 'movingToRepair' && worker.state !== 'repairing') || !worker.repairTargetId) return
+
+  const site = deps.getBuildingById(worker.repairTargetId)
+  if (!site?.alive || !site.isComplete || site.hp >= site.maxHp) {
+    stopRepairing(worker, deps)
+    return
+  }
+
+  const workPosition = deps.getRepairWorkPosition(site, Transform.get(worker.entity).position)
+  if (worker.state === 'movingToRepair') {
+    moveTowardPosition(worker.entity, workPosition, CONFIG.builderMoveSpeed, dt)
+    if (distanceToPosition(worker.entity, workPosition) <= 0.25) {
+      worker.state = 'repairing'
+      worker.timer = 0
+      deps.setWorkerAnimation(worker, 'talk')
+      if (getTeam(worker) === 'player') deps.setStatus(`${worker.name} started repairing ${site.name}.`)
+    }
+    return
+  }
+
+  if (distanceToPosition(worker.entity, workPosition) > 0.8) {
+    worker.state = 'movingToRepair'
+    deps.setWorkerAnimation(worker, 'walk')
+    return
+  }
+
+  worker.timer += dt
+  if (worker.timer < 1) return
+  worker.timer -= 1
+
+  const repairAmount = Math.min(CONFIG.repairHpPerSecond, site.maxHp - site.hp)
+  const repairCost = Math.max(1, Math.ceil((repairAmount / CONFIG.repairHpPerSecond) * CONFIG.repairRockCostPerSecond))
+  if (!spendResources(getTeam(worker), { rocks: repairCost })) {
+    stopRepairing(worker, deps)
+    if (getTeam(worker) === 'player') deps.setStatus(`Need rocks to keep repairing ${site.name}.`)
+    return
+  }
+
+  site.hp = Math.min(site.maxHp, site.hp + repairAmount)
+  if (getTeam(worker) === 'player') deps.setStatus(`${worker.name} repairing ${site.name}: ${site.hp}/${site.maxHp} HP.`)
+  if (site.hp >= site.maxHp) {
+    stopRepairing(worker, deps)
+    if (getTeam(worker) === 'player') deps.setStatus(`${site.name} fully repaired.`)
+  }
+}
+
+function stopRepairing(worker: Worker, deps: WorkerSystemDeps): void {
+  worker.state = 'idle'
+  worker.repairTargetId = undefined
+  worker.timer = 0
+  deps.setWorkerAnimation(worker, 'idle')
 }
 
 function updateWorkerRallyMovement(worker: Worker, dt: number, deps: WorkerSystemDeps): void {

@@ -57,6 +57,13 @@ import { updateSoldiers as updateSoldiersSystem } from './rts/systems/combat'
 import { resetEnemyAiTimers, updateEnemyAi as updateEnemyAiSystem } from './rts/systems/enemyAi'
 import { updateSoldierProduction as updateSoldierProductionSystem, updateWorkerProduction as updateWorkerProductionSystem } from './rts/systems/production'
 import { updateWorkers as updateWorkersSystem } from './rts/systems/workers'
+import { updateDragSelect } from './rts/dragSelect'
+import { initFogOfWar, resetFogOfWar } from './rts/fogOfWar'
+import { SelectionMarkerTarget, clearSelectionMarkers, updateSelectionMarkers } from './rts/selectionMarkers'
+import { buildEnvironmentEnclosure } from './rts/environment'
+import { showMoveMarker } from './rts/moveMarker'
+import { disableTopDownView, enableTopDownView, getCameraFocus, isTopDownViewActive } from './rts/topDownCamera'
+import { createBuildingDamageVfx, removeBuildingDamageVfx, updateBuildingDamageVfx } from './rts/vfx'
 import {
   buildings,
   createEntityId,
@@ -96,7 +103,6 @@ export { gameState }
 type BuildingPreview = { ghostEntity: Entity; ghostFootprintEntity: Entity; ghostModelEntity: Entity }
 
 let placementState: PlacementState = { state: 'none' }
-let selectionMarker: Entity | undefined
 let rallyMarker: RallyMarker | undefined
 let coordinateLogTimer = 0
 let currentBuildingPreviewPosition: Vector3 | undefined
@@ -107,6 +113,9 @@ let secondaryCancelWasPressed = false
 let actionCancelWasPressed = false
 const homesteadRallyPoints = new Map<string, Vector3>()
 const barracksRallyPoints = new Map<string, Vector3>()
+let rallyPlacementKind: 'supplyHouse' | 'barracks' | 'none' = 'none'
+let rallyPlacementBuildingId = ''
+let rallyPlacementCooldown = 0
 const BUILDING_FOOTPRINT_Y = 0.18
 const BUILDING_FOOTPRINT_HEIGHT = 0.16
 const BUILDING_PREVIEW_PADDING = 1.5
@@ -120,6 +129,7 @@ const PLAYER_ATTACK_ALERT_DURATION = 4
 const SOLDIER_MOVE_COMMAND_CLICK_COOLDOWN = 0.2
 const SOLDIER_MOVE_FORMATION_RADIUS = 0.9
 const SOLDIER_ATTACK_SPACING = 0.7
+const SOLDIER_UNIT_ATTACK_SPACING = 1.2
 const ENEMY_DEFENSE_RADIUS = 20
 const TEMPLE_ATTACK_DISTANCE_PADDING = 3
 const RESOURCE_ANIMATION_RESET_DELAY = 1.2
@@ -127,12 +137,13 @@ const MATCH_NOT_STARTED = 'notStarted'
 const MATCH_ACTIVE = 'active'
 const MATCH_ENDED = 'ended'
 
-let soldierCommandMode: 'none' | 'move' = 'none'
+let soldierCommandMode: 'none' | 'move' | 'attack' = 'none'
 let soldierCommandCooldown = 0
 
 export function initRtsGame(): void {
   createStaticScene()
   createStartingBase()
+  initFogOfWar()
   engine.addSystem(rtsTickSystem)
 }
 
@@ -147,6 +158,7 @@ export function startRtsMatch(): void {
   gameState.matchStatus = MATCH_ACTIVE
   gameState.matchResult = 'none'
   gameState.status = 'Match started. Select a worker to gather resources.'
+  enableTopDownView()
 }
 
 export function endRtsMatch(): void {
@@ -177,7 +189,7 @@ export function queueWorker(): void {
     return
   }
 
-  workerProductionOrders.push({ homesteadId: homestead.id, timer: 0, team: 'player' })
+  workerProductionOrders.push({ homesteadId: homestead.id, timer: 0, productionTime: CONFIG.productionTime, team: 'player' })
   gameState.workerQueue += 1
   setStatus('Worker queued at Homestead.')
 }
@@ -198,15 +210,8 @@ export function setWorkerSpawnPoint(): void {
     return
   }
 
-  const position = getPlayerPosition()
-  if (!position) {
-    setStatus('Player position is not ready yet.')
-    return
-  }
-
-  const rallyPoint = Vector3.create(position.x, 0.25, position.z)
-  homesteadRallyPoints.set(homestead.id, rallyPoint)
-  setStatus(`Homestead worker spawn set to ${formatPosition(rallyPoint)}.`)
+  startRallyPlacement('supplyHouse', homestead.id)
+  setStatus('Click the ground where new workers should gather.')
 }
 
 export function setBarracksSpawnPoint(): void {
@@ -225,15 +230,44 @@ export function setBarracksSpawnPoint(): void {
     return
   }
 
-  const position = getPlayerPosition()
-  if (!position) {
-    setStatus('Player position is not ready yet.')
+  startRallyPlacement('barracks', barracks.id)
+  setStatus('Click the ground where new fighters should gather.')
+}
+
+function startRallyPlacement(kind: 'supplyHouse' | 'barracks', buildingId: string): void {
+  rallyPlacementKind = kind
+  rallyPlacementBuildingId = buildingId
+  rallyPlacementCooldown = BUILDING_PLACEMENT_CLICK_COOLDOWN
+}
+
+function cancelRallyPlacement(): void {
+  rallyPlacementKind = 'none'
+  rallyPlacementBuildingId = ''
+  rallyPlacementCooldown = 0
+}
+
+function updateRallyPlacementInput(dt: number): void {
+  if (rallyPlacementKind === 'none') return
+
+  rallyPlacementCooldown = Math.max(0, rallyPlacementCooldown - dt)
+  if (rallyPlacementCooldown > 0) return
+  if (!inputSystem.isTriggered(InputAction.IA_POINTER, PointerEventType.PET_DOWN)) return
+
+  const ground = getPointerGroundPosition()
+  if (!ground) {
+    setStatus('Spawn point needs a ground click.')
     return
   }
 
-  const rallyPoint = Vector3.create(position.x, 0.25, position.z)
-  barracksRallyPoints.set(barracks.id, rallyPoint)
-  setStatus(`Barracks spawn set to ${formatPosition(rallyPoint)}.`)
+  const rallyPoint = Vector3.create(ground.x, 0.25, ground.z)
+  if (rallyPlacementKind === 'supplyHouse') {
+    homesteadRallyPoints.set(rallyPlacementBuildingId, rallyPoint)
+    setStatus(`Homestead worker spawn set to ${formatPosition(rallyPoint)}.`)
+  } else {
+    barracksRallyPoints.set(rallyPlacementBuildingId, rallyPoint)
+    setStatus(`Barracks spawn set to ${formatPosition(rallyPoint)}.`)
+  }
+  cancelRallyPlacement()
 }
 
 export function startWorkerBuildingPlacement(kind: BuildableKind): void {
@@ -248,7 +282,7 @@ export function startWorkerBuildingPlacement(kind: BuildableKind): void {
     return
   }
 
-  if (worker.state === 'movingToBuild' || worker.state === 'constructing') {
+  if (worker.state === 'movingToBuild' || worker.state === 'constructing' || worker.state === 'movingToRepair' || worker.state === 'repairing') {
     setStatus(`${worker.name} is already building.`)
     return
   }
@@ -269,7 +303,7 @@ export function startWorkerBuildingPlacement(kind: BuildableKind): void {
   gameState.placementMode = 'placing'
   gameState.placementBuildingKind = kind
   placementConfirmCooldown = BUILDING_PLACEMENT_CLICK_COOLDOWN
-  setStatus(`Placing ${definition.name}. Move the cursor to an open area and click to build.`)
+  setStatus(`Placing ${definition.name}. Click open ground to build. Press E to rotate.`)
 }
 
 export function cancelBuildingPlacement(): void {
@@ -301,7 +335,7 @@ export function queueSoldier(): void {
     return
   }
 
-  soldierProductionOrders.push({ barracksId: barracks.id, timer: 0, team: 'player' })
+  soldierProductionOrders.push({ barracksId: barracks.id, timer: 0, productionTime: SOLDIER_DEFINITION.productionTime, team: 'player' })
   gameState.soldierQueue += 1
   setStatus(`${SOLDIER_DEFINITION.name} queued at Barracks.`)
 }
@@ -314,10 +348,10 @@ export function selectAllLikeSelected(): void {
     return
   }
 
-  gameState.selectedGroupKind = selected.kind
-  const count = selected.kind === 'worker' ? getAvailableWorkers().length : getAvailableSoldiers().length
+  const units = selected.kind === 'worker' ? getAvailableWorkers() : getAvailableSoldiers()
+  setUnitSelection(units)
   const unitLabel = selected.kind === 'worker' ? 'workers' : `${SOLDIER_DEFINITION.name}s`
-  setStatus(`Selected all ${unitLabel} (${count}). Click a valid target to command them.`)
+  setStatus(`Selected all ${unitLabel} (${units.length}). Click a valid target to command them.`)
 }
 
 export function startSoldierMoveCommand(): void {
@@ -331,6 +365,19 @@ export function startSoldierMoveCommand(): void {
   soldierCommandMode = 'move'
   soldierCommandCooldown = SOLDIER_MOVE_COMMAND_CLICK_COOLDOWN
   setStatus(`Move ${commandableSoldiers.length} ${SOLDIER_DEFINITION.name}${commandableSoldiers.length === 1 ? '' : 's'}: click open ground.`)
+}
+
+export function startSoldierAttackCommand(): void {
+  const commandableSoldiers = getCommandableSoldiers()
+
+  if (commandableSoldiers.length === 0) {
+    setStatus(`Select an ${SOLDIER_DEFINITION.name} first.`)
+    return
+  }
+
+  soldierCommandMode = 'attack'
+  soldierCommandCooldown = SOLDIER_MOVE_COMMAND_CLICK_COOLDOWN
+  setStatus(`Attack with ${commandableSoldiers.length} ${SOLDIER_DEFINITION.name}${commandableSoldiers.length === 1 ? '' : 's'}: click an enemy.`)
 }
 
 export function selectIdleWorker(): void {
@@ -366,7 +413,6 @@ export function moveSelectedBuilding(deltaX: number, deltaY: number, deltaZ: num
 
   const transform = Transform.getMutable(building.entity)
   transform.position = Vector3.create(transform.position.x + deltaX, Math.max(0, transform.position.y + deltaY), transform.position.z + deltaZ)
-  moveSelectionMarker(building)
   printBuildingTransform(building)
   setStatus(`${building.name} moved to ${formatPosition(transform.position)}.`)
 }
@@ -385,7 +431,6 @@ export function scaleSelectedBuilding(multiplier: number): void {
     clamp(transform.scale.y * multiplier, 0.1, 20),
     clamp(transform.scale.z * multiplier, 0.1, 20)
   )
-  moveSelectionMarker(building)
   printBuildingTransform(building)
   setStatus(`${building.name} scaled to ${formatVectorForPaste(transform.scale)}.`)
 }
@@ -478,7 +523,7 @@ export function resetRtsGame(): void {
   resetMatchState(MATCH_ACTIVE)
   gameState.selectedId = ''
   gameState.selectedKind = ''
-  gameState.selectedGroupKind = ''
+  gameState.selectedUnitIds = []
   gameState.status = 'Reset complete. Select a worker to start gathering.'
   gameState.attackAlert = ''
   gameState.attackAlertTimer = 0
@@ -491,22 +536,25 @@ export function resetRtsGame(): void {
   gameState.savedMeatLocations = []
   homesteadRallyPoints.clear()
   barracksRallyPoints.clear()
+  cancelRallyPlacement()
   cancelSoldierCommand()
   cancelPlacement()
 
   for (const worker of workers) destroySelectable(worker)
   for (const soldier of soldiers) destroySelectable(soldier)
   for (const resource of resources) destroySelectable(resource)
-  for (const building of buildings) destroySelectable(building)
+  for (const building of buildings) {
+    clearBuildingDamageVfx(building)
+    destroySelectable(building)
+  }
 
   resetWorld()
   resetEnemyAiTimers()
-
-  if (selectionMarker) {
-    Transform.getMutable(selectionMarker).position = Vector3.create(0, -10, 0)
-  }
+  clearSelectionMarkers()
+  resetFogOfWar()
 
   createStartingBase()
+  enableTopDownView()
 }
 
 export function getWorkerCount(): number {
@@ -521,6 +569,17 @@ export function getSoldierCount(): number {
   return soldiers.filter((soldier) => soldier.alive && getTeam(soldier) === 'player').length
 }
 
+function getGroupSelectionPrefix(): string {
+  const workerCount = getSelectedWorkers().length
+  const soldierCount = getSelectedSoldiers().length
+  if (workerCount + soldierCount <= 1) return ''
+
+  const parts: string[] = []
+  if (workerCount > 0) parts.push(`${workerCount} worker${workerCount === 1 ? '' : 's'}`)
+  if (soldierCount > 0) parts.push(`${soldierCount} ${SOLDIER_DEFINITION.name}${soldierCount === 1 ? '' : 's'}`)
+  return `Selected ${parts.join(' + ')}. `
+}
+
 export function getSelectedSummary(): SelectedSummary {
   const selected = getSelected()
 
@@ -532,27 +591,29 @@ export function getSelectedSummary(): SelectedSummary {
     }
   }
 
+  const selectedUnitCount = getSelectedUnits().length
+
   if (selected.kind === 'worker') {
     const worker = selected as Worker
     return {
-      name: worker.name,
+      name: selectedUnitCount > 1 ? `${selectedUnitCount} Units` : worker.name,
       kind: worker.kind,
       team: getTeam(worker),
       hp: worker.hp,
       maxHp: worker.maxHp,
-      detail: `${gameState.selectedGroupKind === 'worker' ? `All workers selected (${getAvailableWorkers().length}). ` : ''}State: ${worker.state}${worker.carrying > 0 ? `, carrying ${worker.carrying} ${worker.carryingResource}` : ''}`
+      detail: `${getGroupSelectionPrefix()}State: ${worker.state}${worker.carrying > 0 ? `, carrying ${worker.carrying} ${worker.carryingResource}` : ''}`
     }
   }
 
   if (selected.kind === 'soldier') {
     const soldier = selected as Soldier
     return {
-      name: soldier.name,
+      name: selectedUnitCount > 1 ? `${selectedUnitCount} Units` : soldier.name,
       kind: soldier.kind,
       team: getTeam(soldier),
       hp: soldier.hp,
       maxHp: soldier.maxHp,
-      detail: `${gameState.selectedGroupKind === 'soldier' ? `All ${SOLDIER_DEFINITION.name}s selected (${getAvailableSoldiers().length}). ` : ''}State: ${soldier.state}`
+      detail: `${getGroupSelectionPrefix()}State: ${soldier.state}`
     }
   }
 
@@ -577,25 +638,67 @@ export function getSelectedSummary(): SelectedSummary {
 }
 
 function createStaticScene(): void {
-  createSkybox()
-  selectionMarker = createVisualBoxEntity({
-    position: Vector3.create(0, -10, 0),
-    scale: Vector3.create(GRID.plotSize * 0.9, 0.08, GRID.plotSize * 0.9),
-    color: COLORS.selected,
-    emissive: COLORS.selected
-  })
+  createGround()
+  buildEnvironmentEnclosure()
   rallyMarker = createRallyMarker()
 }
 
-function createSkybox(): void {
-  const skybox = engine.addEntity()
+function createGround(): void {
+  const ground = engine.addEntity()
 
-  Transform.create(skybox, {
-    position: Vector3.create(SCENE.center, 0, SCENE.center)
+  Transform.create(ground, {
+    position: Vector3.create(SCENE.center, 0.01, SCENE.center),
+    scale: Vector3.create(SCENE.size, 0.02, SCENE.size)
   })
-  GltfContainer.create(skybox, {
-    src: ASSETS.skybox
+  MeshRenderer.setBox(ground)
+  Material.setPbrMaterial(ground, {
+    albedoColor: COLORS.ground,
+    castShadows: false
   })
+
+  scatterGroundDecorations()
+}
+
+/** Deterministic scatter of pebbles and darker grass patches so the ground doesn't read as one flat color. */
+function scatterGroundDecorations(): void {
+  let seed = 1337
+  const random = () => {
+    seed = (seed * 16807) % 2147483647
+    return seed / 2147483647
+  }
+
+  for (let i = 0; i < 110; i++) {
+    const x = 3 + random() * (SCENE.size - 6)
+    const z = 3 + random() * (SCENE.size - 6)
+    const entity = engine.addEntity()
+
+    if (random() < 0.4) {
+      // Flat pebble. Kept low so it stays under the fog tiles of unexplored cells.
+      const size = 0.35 + random() * 0.7
+      Transform.create(entity, {
+        position: Vector3.create(x, 0.05, z),
+        rotation: Quaternion.fromEulerDegrees(0, random() * 360, 0),
+        scale: Vector3.create(size, 0.09, size * (0.65 + random() * 0.55))
+      })
+      MeshRenderer.setBox(entity)
+      Material.setPbrMaterial(entity, {
+        albedoColor: Color4.create(0.42, 0.45, 0.48, 1),
+        castShadows: false
+      })
+    } else {
+      // Darker grass patch.
+      const size = 1.2 + random() * 2.4
+      Transform.create(entity, {
+        position: Vector3.create(x, 0.03, z),
+        scale: Vector3.create(size, 0.015, size)
+      })
+      MeshRenderer.setCylinder(entity)
+      Material.setPbrMaterial(entity, {
+        albedoColor: Color4.create(0.27, 0.4, 0.2, 1),
+        castShadows: false
+      })
+    }
+  }
 }
 
 function createStartingBase(): void {
@@ -637,9 +740,9 @@ function createWorker(position: Vector3, team: Team = 'player'): Worker {
     animations: [
       { clip: 'idle', playing: true, loop: true },
       { clip: 'walk', playing: false, loop: true },
-      { clip: 'expression', playing: false, loop: false }
+      { clip: 'talk', playing: false, loop: true }
     ]
-  }, team === 'player', team) as Worker
+  }, true, team) as Worker
 
   worker.hp = CONFIG.workerHp
   worker.maxHp = CONFIG.workerHp
@@ -663,10 +766,10 @@ function createSoldier(position: Vector3, team: Team = 'player'): Soldier {
     animations: [
       { clip: 'idle', playing: true, loop: true },
       { clip: 'walk', playing: false, loop: true },
-      { clip: 'attack', playing: false, loop: false },
+      { clip: 'attack', playing: false, loop: true },
       { clip: 'impact', playing: false, loop: false }
     ]
-  }, team === 'player', team) as Soldier
+  }, true, team) as Soldier
 
   soldier.hp = SOLDIER_DEFINITION.hp
   soldier.maxHp = SOLDIER_DEFINITION.hp
@@ -836,9 +939,18 @@ function registerSelectable(selectable: Selectable): void {
   const pointerTarget = selectable.colliderEntity ?? selectable.entity
 
   ensurePointerCollider(pointerTarget)
+  registerPointerHandler(pointerTarget, selectable)
+  // Units click via an invisible collider box, which the client can't outline on hover.
+  // Registering the visible model too makes the character glow like other selectables.
+  if (selectable.colliderEntity) {
+    registerPointerHandler(selectable.entity, selectable)
+  }
+}
+
+function registerPointerHandler(target: Entity, selectable: Selectable): void {
   pointerEventsSystem.onPointerDown(
     {
-      entity: pointerTarget,
+      entity: target,
       opts: {
         button: InputAction.IA_POINTER,
         hoverText: getHoverText(selectable),
@@ -857,7 +969,6 @@ function ensurePointerCollider(entity: Entity): void {
 
 function handleSelectableClick(id: string): void {
   const clicked = selectables.get(id)
-  const selected = getSelected()
 
   if (!clicked || !clicked.alive) return
 
@@ -866,9 +977,12 @@ function handleSelectableClick(id: string): void {
     return
   }
 
+  // The pending spawn-point click is handled globally; don't also run selection commands.
+  if (rallyPlacementKind !== 'none') return
+
   if (soldierCommandMode === 'move') {
     if (isEnemyAttackTarget(clicked)) {
-      assignCommandableSoldiersToAttack(clicked as Building)
+      assignCommandableSoldiersToAttack(clicked)
     } else {
       cancelSoldierCommand()
       setStatus('Move cancelled. Click open ground after pressing Move.')
@@ -876,23 +990,30 @@ function handleSelectableClick(id: string): void {
     return
   }
 
-  if (gameState.selectedGroupKind === 'worker' && clicked.kind === 'resource') {
-    assignWorkersToResource(clicked as ResourceNode)
+  if (soldierCommandMode === 'attack') {
+    if (isEnemyAttackTarget(clicked)) {
+      assignCommandableSoldiersToAttack(clicked)
+    } else {
+      cancelSoldierCommand()
+      setStatus('Attack cancelled. Click an enemy building, guard, or worker after pressing Attack.')
+    }
     return
   }
 
-  if (gameState.selectedGroupKind === 'soldier' && isEnemyAttackTarget(clicked)) {
-    assignCommandableSoldiersToAttack(clicked as Building)
+  const selectedWorkers = getSelectedWorkers()
+
+  if (selectedWorkers.length > 0 && clicked.kind === 'resource') {
+    assignWorkersToResource(selectedWorkers, clicked as ResourceNode)
     return
   }
 
-  if (selected?.kind === 'worker' && clicked.kind === 'resource') {
-    assignWorkerToResource(selected as Worker, clicked as ResourceNode)
+  if (selectedWorkers.length > 0 && isPlayerRepairTarget(clicked)) {
+    assignWorkerToRepair(selectedWorkers[0], clicked)
     return
   }
 
-  if (selected?.kind === 'soldier' && isEnemyAttackTarget(clicked)) {
-    assignCommandableSoldiersToAttack(clicked as Building)
+  if (getSelectedSoldiers().length > 0 && isEnemyAttackTarget(clicked)) {
+    assignCommandableSoldiersToAttack(clicked)
     return
   }
 
@@ -902,44 +1023,29 @@ function handleSelectableClick(id: string): void {
 function selectObject(selectable: Selectable): void {
   gameState.selectedId = selectable.id
   gameState.selectedKind = selectable.kind
-  gameState.selectedGroupKind = ''
-  moveSelectionMarker(selectable)
+  gameState.selectedUnitIds = selectable.kind === 'worker' || selectable.kind === 'soldier' ? [selectable.id] : []
   setStatus(`Selected ${selectable.name}.`)
-}
-
-function moveSelectionMarker(selectable: Selectable): void {
-  if (!selectionMarker) return
-
-  const position = Transform.get(selectable.entity).position
-  const scale = Transform.get(selectable.entity).scale
-  const markerTransform = Transform.getMutable(selectionMarker)
-  const markerPosition = getSelectableAnchorPosition(selectable, position)
-
-  markerTransform.position = Vector3.create(markerPosition.x, 0.05, markerPosition.z)
-  markerTransform.scale = Vector3.create(Math.max(scale.x, scale.z) + 0.35, 0.08, Math.max(scale.x, scale.z) + 0.35)
 }
 
 function clearSelection(): void {
   gameState.selectedId = ''
   gameState.selectedKind = ''
-  gameState.selectedGroupKind = ''
+  gameState.selectedUnitIds = []
   cancelSoldierCommand()
-
-  if (selectionMarker) {
-    Transform.getMutable(selectionMarker).position = Vector3.create(0, -10, 0)
-  }
+  clearSelectionMarkers()
 }
 
 function assignWorkerToResource(worker: Worker, resource: ResourceNode, announce = true): void {
   if (!worker.alive || !resource.alive || resource.amount <= 0) return
-  if (worker.state === 'movingToBuild' || worker.state === 'constructing') {
-    setStatus(`${worker.name} is busy building.`)
+  if (worker.state === 'movingToBuild' || worker.state === 'constructing' || worker.state === 'movingToRepair' || worker.state === 'repairing') {
+    setStatus(`${worker.name} is busy.`)
     return
   }
 
   worker.state = 'movingToResource'
   worker.targetResourceId = resource.id
   worker.buildSiteId = undefined
+  worker.repairTargetId = undefined
   worker.rallyPoint = undefined
   worker.timer = 0
   worker.carrying = 0
@@ -951,21 +1057,20 @@ function assignWorkerToResource(worker: Worker, resource: ResourceNode, announce
   }
 }
 
-function assignWorkersToResource(resource: ResourceNode): void {
-  const assignedWorkers = getAvailableWorkers()
-
+function assignWorkersToResource(assignedWorkers: Worker[], resource: ResourceNode): void {
   for (const worker of assignedWorkers) {
-    assignWorkerToResource(worker, resource)
+    assignWorkerToResource(worker, resource, false)
   }
 
   clearSelection()
-  setStatus(`${assignedWorkers.length} workers gathering ${resource.name}.`)
+  setStatus(`${assignedWorkers.length} worker${assignedWorkers.length === 1 ? '' : 's'} gathering ${resource.name}.`)
 }
 
 function sendWorkerToRally(worker: Worker, rallyPoint: Vector3): void {
   worker.state = 'movingToRally'
   worker.targetResourceId = undefined
   worker.buildSiteId = undefined
+  worker.repairTargetId = undefined
   worker.timer = 0
   worker.carrying = 0
   worker.carryingResource = undefined
@@ -982,20 +1087,45 @@ function sendSoldierToRally(soldier: Soldier, rallyPoint: Vector3): void {
   setSoldierAnimation(soldier, 'walk')
 }
 
-function assignSoldierToAttack(soldier: Soldier, target: Building | Soldier, slot = 0): void {
+function assignSoldierToAttack(soldier: Soldier, target: Building | Soldier | Worker, slot = 0): void {
   if (!soldier.alive || !target.alive) return
   if (getTeam(soldier) === getTeam(target)) return
 
   soldier.state = 'movingToAttack'
   soldier.targetId = target.id
-  soldier.attackPosition = target.kind === 'soldier' ? undefined : getSoldierAttackPosition(target, slot)
+  soldier.attackPosition = target.kind === 'soldier' || target.kind === 'worker' ? undefined : getSoldierAttackPosition(target, slot)
   soldier.rallyPoint = undefined
   soldier.attackTimer = 0
   setSoldierAnimation(soldier, 'walk')
   if (getTeam(soldier) === 'player') setStatus(`${soldier.name} attacking ${target.name}.`)
 }
 
-function assignCommandableSoldiersToAttack(target: Building): void {
+function assignWorkerToRepair(worker: Worker, building: Building): void {
+  if (!worker.alive || !building.alive || !building.isComplete) return
+  if (getTeam(worker) !== getTeam(building)) return
+  if (building.hp >= building.maxHp) {
+    setStatus(`${building.name} does not need repairs.`)
+    return
+  }
+  if (worker.state === 'movingToBuild' || worker.state === 'constructing' || worker.state === 'movingToRepair' || worker.state === 'repairing') {
+    setStatus(`${worker.name} is busy.`)
+    return
+  }
+
+  worker.state = 'movingToRepair'
+  worker.targetResourceId = undefined
+  worker.buildSiteId = undefined
+  worker.repairTargetId = building.id
+  worker.rallyPoint = undefined
+  worker.timer = 0
+  worker.carrying = 0
+  worker.carryingResource = undefined
+  setWorkerAnimation(worker, 'walk')
+  clearSelection()
+  setStatus(`${worker.name} moving to repair ${building.name}.`)
+}
+
+function assignCommandableSoldiersToAttack(target: Building | Soldier | Worker): void {
   const assignedSoldiers = getCommandableSoldiers()
 
   if (assignedSoldiers.length === 0) {
@@ -1026,6 +1156,7 @@ function moveCommandableSoldiersTo(destination: Vector3): void {
     sendSoldierToRally(soldier, Vector3.create(movePosition.x, 0.25, movePosition.z))
   }
 
+  showMoveMarker(destination)
   clearSelection()
   setStatus(`${assignedSoldiers.length} ${SOLDIER_DEFINITION.name}${assignedSoldiers.length === 1 ? '' : 's'} moving.`)
 }
@@ -1035,7 +1166,7 @@ function confirmBuildingPlacement(hitPosition?: Vector3): void {
 
   const definition = BUILDING_DEFINITIONS[placementState.buildingKind]
   const builder = getWorkerById(placementState.builderWorkerId)
-  const position = hitPosition ?? currentBuildingPreviewPosition ?? getCurrentAnchoredBuildingPlacement(definition)?.center
+  const position = hitPosition ?? currentBuildingPreviewPosition ?? getCurrentBuildingPlacement(definition)?.center
 
   if (!builder?.alive) {
     cancelPlacement()
@@ -1065,6 +1196,7 @@ function confirmBuildingPlacement(hitPosition?: Vector3): void {
   builder.state = 'movingToBuild'
   builder.targetResourceId = undefined
   builder.buildSiteId = site.id
+  builder.repairTargetId = undefined
   builder.rallyPoint = undefined
   builder.timer = 0
   builder.carrying = 0
@@ -1119,6 +1251,7 @@ const workerSystemDeps = {
   getNearestTemple,
   getTempleDropoffPosition,
   getBuilderWorkPosition,
+  getRepairWorkPosition: getBuilderWorkPosition,
   getWorkerRallyPosition,
   setWorkerAnimation,
   playResourceGatherFeedback,
@@ -1130,9 +1263,121 @@ const workerSystemDeps = {
 const combatSystemDeps = {
   getCombatTargetById,
   getSoldierAttackPosition,
+  getUnitAttackPosition,
   setSoldierAnimation,
   damageCombatTarget,
   setStatus
+}
+
+const dragSelectDeps = {
+  isBlocked: () =>
+    placementState.state === 'placing' ||
+    soldierCommandMode !== 'none' ||
+    rallyPlacementKind !== 'none' ||
+    gameState.matchStatus !== MATCH_ACTIVE,
+  onBoxSelect: selectPlayerUnitsInRect,
+  isPressOnSelectable: isPointerPressOnSelectable,
+  onGroundClick: moveSelectedUnitsTo
+}
+
+function isPointerPressOnSelectable(): boolean {
+  const command = inputSystem.getInputCommand(InputAction.IA_POINTER, PointerEventType.PET_DOWN)
+  const hitEntityId = command?.hit?.entityId
+  if (hitEntityId === undefined) return false
+
+  for (const selectable of selectables.values()) {
+    if (selectable.entity === hitEntityId) return true
+    if (selectable.colliderEntity === hitEntityId) return true
+  }
+  return false
+}
+
+/** Plain ground click with units selected = walk there, classic RTS style. */
+function moveSelectedUnitsTo(point: { x: number; z: number }): void {
+  const movableWorkers = getSelectedWorkers().filter(
+    (worker) =>
+      worker.alive &&
+      getTeam(worker) === 'player' &&
+      worker.state !== 'movingToBuild' &&
+      worker.state !== 'constructing' &&
+      worker.state !== 'movingToRepair' &&
+      worker.state !== 'repairing'
+  )
+  const movableSoldiers = getSelectedSoldiers().filter((soldier) => soldier.alive && getTeam(soldier) === 'player')
+  const unitCount = movableWorkers.length + movableSoldiers.length
+  if (unitCount === 0) return
+
+  const destination = Vector3.create(point.x, 0.25, point.z)
+  // Workers spread around a shared rally point on arrival; soldiers get explicit formation slots.
+  for (const worker of movableWorkers) {
+    sendWorkerToRally(worker, destination)
+  }
+  for (let i = 0; i < movableSoldiers.length; i++) {
+    const slotPosition = getFormationPosition(destination, i, SOLDIER_MOVE_FORMATION_RADIUS)
+    sendSoldierToRally(movableSoldiers[i], Vector3.create(slotPosition.x, 0.25, slotPosition.z))
+  }
+
+  showMoveMarker(point)
+  setStatus(`${unitCount} unit${unitCount === 1 ? '' : 's'} moving.`)
+}
+
+let autoGatherTimer = 0
+
+/** Idle player workers pick up the nearest resource within range, so parking workers near a forest puts them to work. */
+function updateWorkerAutoGather(dt: number): void {
+  autoGatherTimer += dt
+  if (autoGatherTimer < 1) return
+  autoGatherTimer = 0
+
+  for (const worker of workers) {
+    if (!worker.alive || getTeam(worker) !== 'player' || worker.state !== 'idle') continue
+
+    const resource = getNearestGatherableResource(Transform.get(worker.entity).position)
+    if (resource) assignWorkerToResource(worker, resource, false)
+  }
+}
+
+function getNearestGatherableResource(position: Vector3): ResourceNode | undefined {
+  let nearest: ResourceNode | undefined
+  let nearestDistance = CONFIG.workerAutoGatherRange
+
+  for (const resource of resources) {
+    if (!resource.alive || resource.amount <= 0) continue
+
+    const distance = distanceToPoint(Transform.get(resource.entity).position, position)
+    if (distance < nearestDistance) {
+      nearest = resource
+      nearestDistance = distance
+    }
+  }
+  return nearest
+}
+
+function selectPlayerUnitsInRect(min: { x: number; z: number }, max: { x: number; z: number }): void {
+  const unitsInRect: (Worker | Soldier)[] = []
+
+  for (const worker of workers) {
+    if (worker.alive && getTeam(worker) === 'player' && isInRect(worker, min, max)) unitsInRect.push(worker)
+  }
+  for (const soldier of soldiers) {
+    if (soldier.alive && getTeam(soldier) === 'player' && isInRect(soldier, min, max)) unitsInRect.push(soldier)
+  }
+
+  if (unitsInRect.length === 0) {
+    clearSelection()
+    setStatus('Nothing selected.')
+    return
+  }
+
+  // Fighting selections should command soldiers, so put them first when mixed.
+  unitsInRect.sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'soldier' ? -1 : 1))
+  setUnitSelection(unitsInRect)
+  setStatus(`Selected ${unitsInRect.length} unit${unitsInRect.length === 1 ? '' : 's'}.`)
+}
+
+function isInRect(unit: Worker | Soldier, min: { x: number; z: number }, max: { x: number; z: number }): boolean {
+  const position = Transform.get(unit.entity).position
+  return position.x >= min.x && position.x <= max.x && position.z >= min.z && position.z <= max.z
 }
 
 function rtsTickSystem(dt: number): void {
@@ -1144,17 +1389,40 @@ function rtsTickSystem(dt: number): void {
   updateGhostPreview()
   updatePlacementConfirmInput(dt)
   updateSoldierMoveCommandInput(dt)
+  updateRallyPlacementInput(dt)
   updateCancelInput()
+  updateDragSelect(dragSelectDeps)
+  updateWorkerAutoGather(dt)
   updateRallyMarker()
-  updatePlayerGuardDefense()
+  updateSelectionMarkers(getSelectionMarkerTargets())
   updateWorkerProductionSystem(dt, productionDeps)
   updateSoldierProductionSystem(dt, productionDeps)
   updateEnemyAiSystem(dt, enemyAiDeps)
   updateWorkersSystem(dt, workerSystemDeps)
   updateSoldiersSystem(dt, combatSystemDeps)
   updateConstructionSites(dt)
+  updateBuildingDamageVfxSystem()
   updateDepletedResources(dt)
   updateMatchEndState()
+}
+
+function getSelectionMarkerTargets(): SelectionMarkerTarget[] {
+  const units = getSelectedUnits()
+  if (units.length > 0) {
+    return units.map(getSelectionMarkerTarget)
+  }
+
+  const selected = getSelected()
+  return selected?.alive ? [getSelectionMarkerTarget(selected)] : []
+}
+
+function getSelectionMarkerTarget(selectable: Selectable): SelectionMarkerTarget {
+  const transform = Transform.get(selectable.entity)
+
+  return {
+    position: transform.position,
+    diameter: Math.max(transform.scale.x, transform.scale.z) + 0.55
+  }
 }
 
 function updateMatchTimer(dt: number): void {
@@ -1211,6 +1479,7 @@ function endMatch(result: 'win' | 'loss'): void {
   gameState.matchResult = result
   gameState.attackAlert = ''
   gameState.attackAlertTimer = 0
+  disableTopDownView()
   cancelSoldierCommand()
   cancelPlacement()
   clearSelection()
@@ -1222,20 +1491,25 @@ function updateGhostPreview(): void {
   if (placementState.state !== 'placing') return
 
   const definition = BUILDING_DEFINITIONS[placementState.buildingKind]
-  const placement = getCurrentAnchoredBuildingPlacement(definition)
+  const placement = getCurrentBuildingPlacement(definition)
   if (!placement) return
 
   currentBuildingPreviewPosition = placement.center
   currentBuildingPreviewCanPlace = canPlaceBuildingAt(definition, placement.center)
-  currentBuildingPreviewRotationY = placement.rotationY
 
-  Transform.getMutable(placementState.ghostEntity).position = Vector3.create(placement.center.x, 0, placement.center.z)
-  Transform.getMutable(placementState.ghostModelEntity).rotation = Quaternion.fromEulerDegrees(0, currentBuildingPreviewRotationY, 0)
+  const ghostRoot = Transform.getMutable(placementState.ghostEntity)
+  ghostRoot.position = Vector3.create(placement.center.x, 0, placement.center.z)
+  ghostRoot.rotation = Quaternion.fromEulerDegrees(0, currentBuildingPreviewRotationY, 0)
+  Transform.getMutable(placementState.ghostModelEntity).rotation = Quaternion.fromEulerDegrees(0, 0, 0)
   updateFootprintMaterial(placementState.ghostFootprintEntity, currentBuildingPreviewCanPlace)
 }
 
 function updatePlacementConfirmInput(dt: number): void {
   if (placementState.state !== 'placing') return
+
+  if (inputSystem.isTriggered(InputAction.IA_PRIMARY, PointerEventType.PET_DOWN)) {
+    currentBuildingPreviewRotationY = (currentBuildingPreviewRotationY + 90) % 360
+  }
 
   placementConfirmCooldown = Math.max(0, placementConfirmCooldown - dt)
   if (placementConfirmCooldown > 0) return
@@ -1245,10 +1519,12 @@ function updatePlacementConfirmInput(dt: number): void {
 }
 
 function updateSoldierMoveCommandInput(dt: number): void {
-  if (soldierCommandMode !== 'move' || placementState.state === 'placing') return
+  if (soldierCommandMode !== 'move' && soldierCommandMode !== 'attack') return
+  if (placementState.state === 'placing') return
 
   soldierCommandCooldown = Math.max(0, soldierCommandCooldown - dt)
   if (soldierCommandCooldown > 0) return
+  if (soldierCommandMode === 'attack') return
   if (!inputSystem.isTriggered(InputAction.IA_POINTER, PointerEventType.PET_DOWN)) return
 
   const destination = getPointerGroundPosition()
@@ -1285,6 +1561,12 @@ function updateCancelInput(): void {
     return
   }
 
+  if (rallyPlacementKind !== 'none') {
+    cancelRallyPlacement()
+    setStatus('Spawn point placement cancelled.')
+    return
+  }
+
   const selected = getSelected()
   if (isCancellableConstruction(selected)) {
     cancelConstruction(selected)
@@ -1301,40 +1583,6 @@ function updateRallyMarker(): void {
   }
 
   Transform.getMutable(rallyMarker.root).position = Vector3.create(position.x, 0, position.z)
-}
-
-function updatePlayerGuardDefense(): void {
-  const playerTemples = buildings.filter((building) => building.alive && building.kind === 'temple' && getTeam(building) === 'player')
-  if (playerTemples.length === 0) return
-
-  for (const guard of soldiers) {
-    if (!guard.alive || getTeam(guard) !== 'player') continue
-    if (guard.targetId || (guard.state !== 'idle' && guard.state !== 'movingToRally')) continue
-
-    const guardPosition = Transform.get(guard.entity).position
-    const defendedTemple = playerTemples.find((temple) => distanceToPoint(guardPosition, Transform.get(temple.entity).position) <= ENEMY_DEFENSE_RADIUS)
-    if (!defendedTemple) continue
-
-    const attacker = getIncomingTempleAttacker(defendedTemple, guardPosition)
-    if (!attacker) continue
-
-    assignSoldierToAttack(guard, attacker)
-    if (attacker.targetId === defendedTemple.id || attacker.state === 'idle') {
-      assignSoldierToAttack(attacker, guard)
-    }
-  }
-}
-
-function getIncomingTempleAttacker(temple: Building, guardPosition: Vector3): Soldier | undefined {
-  const templePosition = Transform.get(temple.entity).position
-
-  return soldiers
-    .filter((soldier) => {
-      if (!soldier.alive || getTeam(soldier) !== 'enemy') return false
-      if (soldier.targetId !== temple.id && distanceToPoint(Transform.get(soldier.entity).position, templePosition) > ENEMY_DEFENSE_RADIUS) return false
-      return distanceToPoint(Transform.get(soldier.entity).position, guardPosition) <= ENEMY_DEFENSE_RADIUS
-    })
-    .sort((a, b) => distanceToPoint(Transform.get(a.entity).position, guardPosition) - distanceToPoint(Transform.get(b.entity).position, guardPosition))[0]
 }
 
 function updateConstructionSites(dt: number): void {
@@ -1384,6 +1632,54 @@ function updateDepletedResources(dt: number): void {
   }
 }
 
+function updateBuildingDamageVfxSystem(): void {
+  for (const building of buildings) {
+    updateBuildingDamageVfxForBuilding(building)
+  }
+}
+
+function updateBuildingDamageVfxForBuilding(building: Building): void {
+  if (!building.alive || !building.isComplete || building.hp <= 0) {
+    clearBuildingDamageVfx(building)
+    return
+  }
+
+  const level = getBuildingDamageVfxLevel(building)
+  if (level === 0) {
+    clearBuildingDamageVfx(building)
+    return
+  }
+
+  const position = getBuildingDamageVfxPosition(building)
+  if (!building.damageVfxEntity) {
+    building.damageVfxEntity = createBuildingDamageVfx(position, level)
+  } else {
+    updateBuildingDamageVfx(building.damageVfxEntity, position, level)
+  }
+  building.damageVfxLevel = level
+}
+
+function getBuildingDamageVfxLevel(building: Building): number {
+  const hpPercent = building.hp / building.maxHp
+  if (hpPercent <= 0.2) return 2.2
+  if (hpPercent <= 0.4) return 1.55
+  if (hpPercent <= 0.7) return 1
+  return 0
+}
+
+function getBuildingDamageVfxPosition(building: Building): Vector3 {
+  const transform = Transform.get(building.entity)
+  const height = Math.max(transform.scale.y * 0.45, 1.4)
+
+  return Vector3.create(transform.position.x, transform.position.y + height, transform.position.z)
+}
+
+function clearBuildingDamageVfx(building: Building): void {
+  removeBuildingDamageVfx(building.damageVfxEntity)
+  building.damageVfxEntity = undefined
+  building.damageVfxLevel = undefined
+}
+
 function pauseConstruction(site: Building, builder?: Worker): void {
   if (site.constructionState !== 'paused') {
     site.constructionState = 'paused'
@@ -1405,6 +1701,7 @@ function completeConstruction(site: Building, builder: Worker): void {
   site.name = definition.name
   builder.state = 'idle'
   builder.buildSiteId = undefined
+  builder.repairTargetId = undefined
   setWorkerAnimation(builder, 'idle')
   updateConstructionVisual(site)
   updateLabel(site, definition.name)
@@ -1418,9 +1715,14 @@ function completeConstruction(site: Building, builder: Worker): void {
   }
 }
 
-function damageCombatTarget(target: Building | Soldier, amount: number, attacker: Soldier): void {
+function damageCombatTarget(target: Building | Soldier | Worker, amount: number, attacker: Soldier): void {
   if (target.kind === 'soldier') {
     damageSoldier(target, amount, attacker)
+    return
+  }
+
+  if (target.kind === 'worker') {
+    damageWorker(target, amount, attacker)
     return
   }
 
@@ -1443,14 +1745,7 @@ function damageBuilding(building: Building, amount: number, attacker?: Soldier):
   if (building.kind === 'enemyBuilding') playAnimation(building.entity, 'die')
   removeSelectable(building)
   removeBuilding(building)
-
-  for (const soldier of soldiers) {
-    if (soldier.targetId === building.id) {
-      soldier.targetId = undefined
-      soldier.attackPosition = undefined
-      soldier.state = 'idle'
-    }
-  }
+  clearAttackersTargeting(building.id)
 
   setStatus(`${building.name} destroyed.`)
   updateMatchEndState()
@@ -1471,23 +1766,49 @@ function damageSoldier(soldier: Soldier, amount: number, attacker?: Soldier): vo
 
   if (soldier.hp > 0) return
 
-  if (attacker && getTeam(attacker) !== getTeam(soldier)) {
-    gameState.matchStats[getTeam(attacker)].unitsKilled += 1
-  }
+  creditUnitKill(attacker, soldier)
   soldier.state = 'dead'
   soldier.targetId = undefined
   soldier.attackPosition = undefined
   soldier.rallyPoint = undefined
   addSupplyUsed(getTeam(soldier), -SOLDIER_DEFINITION.supply)
   removeSelectable(soldier)
+  clearAttackersTargeting(soldier.id)
+}
 
+function damageWorker(worker: Worker, amount: number, attacker?: Soldier): void {
+  worker.hp = Math.max(0, worker.hp - amount)
+
+  if (worker.hp > 0) return
+
+  creditUnitKill(attacker, worker)
+
+  worker.state = 'dead'
+  worker.targetResourceId = undefined
+  worker.buildSiteId = undefined
+  worker.repairTargetId = undefined
+  worker.rallyPoint = undefined
+  worker.carrying = 0
+  worker.carryingResource = undefined
+  addSupplyUsed(getTeam(worker), -1)
+  removeSelectable(worker)
+  clearAttackersTargeting(worker.id)
+}
+
+function creditUnitKill(attacker: Soldier | undefined, target: Soldier | Worker): void {
+  if (!attacker || getTeam(attacker) === getTeam(target)) return
+
+  gameState.matchStats[getTeam(attacker)].unitsKilled += 1
+}
+
+function clearAttackersTargeting(targetId: string): void {
   for (const attacker of soldiers) {
-    if (attacker.targetId === soldier.id) {
-      attacker.targetId = undefined
-      attacker.attackPosition = undefined
-      attacker.state = 'idle'
-      setSoldierAnimation(attacker, 'idle')
-    }
+    if (attacker.targetId !== targetId) continue
+
+    attacker.targetId = undefined
+    attacker.attackPosition = undefined
+    attacker.state = 'idle'
+    setSoldierAnimation(attacker, 'idle')
   }
 }
 
@@ -1558,6 +1879,31 @@ function getSelected(): Selectable | undefined {
   return gameState.selectedId ? selectables.get(gameState.selectedId) : undefined
 }
 
+function getSelectedUnits(): (Worker | Soldier)[] {
+  const units: (Worker | Soldier)[] = []
+  for (const id of gameState.selectedUnitIds) {
+    const selectable = selectables.get(id)
+    if (selectable?.alive && (selectable.kind === 'worker' || selectable.kind === 'soldier')) {
+      units.push(selectable as Worker | Soldier)
+    }
+  }
+  return units
+}
+
+function getSelectedWorkers(): Worker[] {
+  return getSelectedUnits().filter((unit): unit is Worker => unit.kind === 'worker')
+}
+
+function getSelectedSoldiers(): Soldier[] {
+  return getSelectedUnits().filter((unit): unit is Soldier => unit.kind === 'soldier')
+}
+
+function setUnitSelection(units: (Worker | Soldier)[]): void {
+  gameState.selectedUnitIds = units.map((unit) => unit.id)
+  gameState.selectedId = units[0]?.id ?? ''
+  gameState.selectedKind = units[0]?.kind ?? ''
+}
+
 function getWorkerById(id: string): Worker | undefined {
   return workers.find((worker) => worker.id === id)
 }
@@ -1575,22 +1921,26 @@ function getAvailableSoldiers(): Soldier[] {
 }
 
 function getCommandableSoldiers(): Soldier[] {
-  if (gameState.selectedGroupKind === 'soldier') return getAvailableSoldiers()
-
-  const selected = getSelected()
-  return selected?.kind === 'soldier' && selected.alive ? [selected as Soldier] : []
+  return getSelectedSoldiers()
 }
 
-function isEnemyAttackTarget(selectable: Selectable): selectable is Building {
-  return selectable.kind !== 'resource' && selectable.kind !== 'worker' && selectable.kind !== 'soldier' && getTeam(selectable) === 'enemy'
+function isEnemyAttackTarget(selectable: Selectable): selectable is Building | Soldier | Worker {
+  return selectable.kind !== 'resource' && getTeam(selectable) === 'enemy'
+}
+
+function isPlayerRepairTarget(selectable: Selectable): selectable is Building {
+  if (selectable.kind === 'resource' || selectable.kind === 'worker' || selectable.kind === 'soldier') return false
+  const building = selectable as Building
+
+  return getTeam(building) === 'player' && building.isComplete && building.hp < building.maxHp
 }
 
 function getBuildingById(id: string): Building | undefined {
   return buildings.find((building) => building.id === id)
 }
 
-function getCombatTargetById(id: string): Building | Soldier | undefined {
-  return getBuildingById(id) ?? soldiers.find((soldier) => soldier.id === id)
+function getCombatTargetById(id: string): Building | Soldier | Worker | undefined {
+  return getBuildingById(id) ?? soldiers.find((soldier) => soldier.id === id) ?? workers.find((worker) => worker.id === id)
 }
 
 function getSelectedAdjustableBuilding(): Building | undefined {
@@ -1742,6 +2092,12 @@ function getBuildingPreviewPosition(definition: BuildingDefinition): Vector3 | u
   const pointerGroundPosition = getPointerGroundPosition()
   if (pointerGroundPosition) return pointerGroundPosition
 
+  // Free-camera mode: fall back to the center of the view instead of the parked avatar.
+  if (isTopDownViewActive()) {
+    const focus = getCameraFocus()
+    return getSnappedPlacementPosition(Vector3.create(focus.x, 0, focus.z))
+  }
+
   if (!Transform.has(engine.PlayerEntity)) return undefined
 
   const playerTransform = Transform.get(engine.PlayerEntity)
@@ -1773,55 +2129,12 @@ function getPointerGroundPosition(): Vector3 | undefined {
   )
 }
 
-function getPreviewRotationFacingViewer(position: Vector3): number {
-  const viewerPosition = Transform.getOrNull(engine.CameraEntity)?.position ?? getPlayerPosition()
-  if (!viewerPosition) return currentBuildingPreviewRotationY
+/** The cursor's ground point (grid-snapped) is used directly as the building center, RTS style. */
+function getCurrentBuildingPlacement(definition: BuildingDefinition): { center: Vector3; rotationY: number } | undefined {
+  const center = getBuildingPreviewPosition(definition)
+  if (!center) return undefined
 
-  const dx = viewerPosition.x - position.x
-  const dz = viewerPosition.z - position.z
-  if (Math.abs(dx) < 0.001 && Math.abs(dz) < 0.001) return currentBuildingPreviewRotationY
-
-  return (Math.atan2(dx, dz) * 180) / Math.PI
-}
-
-function getCurrentAnchoredBuildingPlacement(definition: BuildingDefinition): { center: Vector3; rotationY: number } | undefined {
-  const anchor = getBuildingPreviewPosition(definition)
-  if (!anchor) return undefined
-
-  const rotationY = getPreviewRotationFacingViewer(anchor)
-  return {
-    center: getBuildingCenterFromBackAnchor(definition, anchor, rotationY),
-    rotationY
-  }
-}
-
-function getBuildingCenterFromBackAnchor(definition: BuildingDefinition, anchor: Vector3, rotationY: number): Vector3 {
-  const forward = getYawForward(rotationY)
-  const halfDepth = definition.scale.z / 2
-
-  return Vector3.create(anchor.x + forward.x * halfDepth, 0, anchor.z + forward.z * halfDepth)
-}
-
-function getSelectableAnchorPosition(selectable: Selectable, position: Vector3): Vector3 {
-  if (!isBuildableKind(selectable.kind as Building['kind'])) return position
-
-  const transform = Transform.get(selectable.entity)
-  const rotationY = getYawFromQuaternion(transform.rotation)
-  const definition = BUILDING_DEFINITIONS[selectable.kind as BuildableKind]
-  const forward = getYawForward(rotationY)
-  const halfDepth = definition.scale.z / 2
-
-  return Vector3.create(position.x - forward.x * halfDepth, position.y, position.z - forward.z * halfDepth)
-}
-
-function getYawForward(rotationY: number): Vector3 {
-  const radians = (rotationY * Math.PI) / 180
-  return Vector3.create(Math.sin(radians), 0, Math.cos(radians))
-}
-
-function getYawFromQuaternion(rotation: Quaternion): number {
-  const forward = Vector3.rotate(Vector3.Forward(), rotation)
-  return (Math.atan2(forward.x, forward.z) * 180) / Math.PI
+  return { center, rotationY: currentBuildingPreviewRotationY }
 }
 
 function getSnappedPlacementPosition(position: Vector3): Vector3 {
@@ -1982,6 +2295,23 @@ function getSoldierAttackPosition(target: Building, slot: number): Vector3 {
   return Vector3.create(position.x, 0.25, position.z)
 }
 
+function getUnitAttackPosition(target: Soldier | Worker, attacker: Soldier): Vector3 {
+  const targetPosition = Transform.get(target.entity).position
+  const slot = getAttackSlotForTarget(target.id, attacker.id)
+  const position = getFormationPosition(targetPosition, slot, SOLDIER_UNIT_ATTACK_SPACING)
+
+  return Vector3.create(position.x, 0.25, position.z)
+}
+
+function getAttackSlotForTarget(targetId: string, attackerId: string): number {
+  const attackers = soldiers
+    .filter((soldier) => soldier.alive && soldier.targetId === targetId)
+    .sort((a, b) => a.id.localeCompare(b.id))
+  const slot = attackers.findIndex((soldier) => soldier.id === attackerId)
+
+  return slot >= 0 ? slot : attackers.length
+}
+
 function cancelSoldierCommand(): void {
   soldierCommandMode = 'none'
   soldierCommandCooldown = 0
@@ -1994,13 +2324,12 @@ function removeSelectable(selectable: Selectable): void {
   if (selectable.labelEntity) hideEntity(selectable.labelEntity)
   selectables.delete(selectable.id)
 
+  gameState.selectedUnitIds = gameState.selectedUnitIds.filter((id) => id !== selectable.id)
   if (gameState.selectedId === selectable.id) {
-    gameState.selectedId = ''
-    gameState.selectedKind = ''
-    gameState.selectedGroupKind = ''
-    if (selectionMarker) {
-      Transform.getMutable(selectionMarker).position = Vector3.create(0, -10, 0)
-    }
+    const nextSelected = gameState.selectedUnitIds[0] ? selectables.get(gameState.selectedUnitIds[0]) : undefined
+    gameState.selectedId = nextSelected?.id ?? ''
+    gameState.selectedKind = nextSelected?.kind ?? ''
+    clearSelectionMarkers()
   }
 }
 
@@ -2013,6 +2342,7 @@ function destroySelectable(selectable: Selectable): void {
 }
 
 function removeBuilding(building: Building): void {
+  clearBuildingDamageVfx(building)
   const index = buildings.findIndex((candidate) => candidate.id === building.id)
   if (index >= 0) buildings.splice(index, 1)
 }
@@ -2023,6 +2353,7 @@ function removeSelectableInteractivity(selectable: Selectable): void {
   pointerEventsSystem.removeOnPointerDown(pointerTarget)
   MeshCollider.deleteFrom(pointerTarget)
   if (selectable.colliderEntity) {
+    pointerEventsSystem.removeOnPointerDown(selectable.entity)
     engine.removeEntity(selectable.colliderEntity)
   }
   GltfContainer.deleteFrom(selectable.entity)

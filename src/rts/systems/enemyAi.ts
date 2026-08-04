@@ -25,7 +25,7 @@ export type EnemyAiDeps = {
   createConstructionSite(kind: BuildableKind, position: Vector3, builderWorkerId: string, rotationY: number, team: 'enemy'): Building
   canPlaceBuildingAt(definition: (typeof BUILDING_DEFINITIONS)[BuildableKind], position: Vector3): boolean
   setWorkerAnimation(worker: Worker, clipName: string, restart?: boolean): void
-  assignSoldierToAttack(soldier: Soldier, target: Building, slot?: number): void
+  assignSoldierToAttack(soldier: Soldier, target: Building | Soldier | Worker, slot?: number): void
   getNearestTemple(position: Vector3, team: 'player' | 'enemy'): Building | undefined
   getSnappedPlacementPosition(position: Vector3): Vector3
   setStatus(message: string): void
@@ -101,12 +101,12 @@ function queueEnemyProduction(): void {
   const enemyBarracks = getCompletedTeamBuildings('enemy', 'barracks')[0]
 
   if (enemyHomestead && enemyWorkers < CONFIG.enemyAiTargetWorkers && canQueueUnit('enemy', 1) && spendResources('enemy', { meat: CONFIG.workerCost })) {
-    workerProductionOrders.push({ homesteadId: enemyHomestead.id, timer: 0, team: 'enemy' })
+    workerProductionOrders.push({ homesteadId: enemyHomestead.id, timer: 0, productionTime: CONFIG.productionTime, team: 'enemy' })
     gameState.enemyWorkerQueue += 1
   }
 
   if (enemyBarracks && enemyGuards < CONFIG.enemyAiTargetGuards && canQueueUnit('enemy', SOLDIER_DEFINITION.supply) && spendResources('enemy', SOLDIER_DEFINITION.cost)) {
-    soldierProductionOrders.push({ barracksId: enemyBarracks.id, timer: 0, team: 'enemy' })
+    soldierProductionOrders.push({ barracksId: enemyBarracks.id, timer: 0, productionTime: SOLDIER_DEFINITION.productionTime, team: 'enemy' })
     gameState.enemySoldierQueue += 1
   }
 }

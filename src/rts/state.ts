@@ -1,5 +1,5 @@
 import { CONFIG } from './config'
-import type { BuildableKind, PlacementState, SelectableKind, UnitGroupKind } from './types'
+import type { BuildableKind, PlacementState, SelectableKind } from './types'
 
 export const gameState = {
   rocks: CONFIG.rocksStart,
@@ -16,7 +16,7 @@ export const gameState = {
   enemySoldierQueue: 0,
   selectedId: '',
   selectedKind: '' as SelectableKind | '',
-  selectedGroupKind: '' as UnitGroupKind | '',
+  selectedUnitIds: [] as string[],
   status: 'Select a worker, then click a rock or tree.',
   attackAlert: '',
   attackAlertTimer: 0,

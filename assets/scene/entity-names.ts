@@ -5,8 +5,6 @@
  * Object containing all entity names in the scene for autocomplete support.
  */
 export enum EntityNames {
-  Dark_Cobblestone = "Dark Cobblestone",
-  Dark_Cobblestone_2 = "Dark Cobblestone_2",
   Ground = "Ground",
   Large_Pond = "Large Pond",
   Tile_1 = "Tile 1",

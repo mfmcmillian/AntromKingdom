@@ -38,7 +38,16 @@ export function getTeamSoldierCount(team: Team): number {
 }
 
 export function getAvailableWorkersForTeam(team: Team): Worker[] {
-  return workers.filter((worker) => worker.alive && getTeam(worker) === team && worker.state !== 'movingToBuild' && worker.state !== 'constructing' && worker.state !== 'movingToRally')
+  return workers.filter(
+    (worker) =>
+      worker.alive &&
+      getTeam(worker) === team &&
+      worker.state !== 'movingToBuild' &&
+      worker.state !== 'constructing' &&
+      worker.state !== 'movingToRepair' &&
+      worker.state !== 'repairing' &&
+      worker.state !== 'movingToRally'
+  )
 }
 
 export function getIdleWorkersForTeam(team: Team): Worker[] {

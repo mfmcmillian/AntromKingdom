@@ -19,6 +19,8 @@ export type ProductionDeps = {
 }
 
 export function updateWorkerProduction(dt: number, deps: ProductionDeps): void {
+  const activeOrders = getActiveWorkerOrderIndexes()
+
   for (let i = workerProductionOrders.length - 1; i >= 0; i--) {
     const order = workerProductionOrders[i]
     const homestead = deps.getBuildingById(order.homesteadId)
@@ -30,8 +32,13 @@ export function updateWorkerProduction(dt: number, deps: ProductionDeps): void {
       continue
     }
 
+    if (!activeOrders.has(i)) {
+      order.timer = 0
+      continue
+    }
+
     order.timer += dt
-    if (order.timer < CONFIG.productionTime) continue
+    if (order.timer < order.productionTime) continue
 
     const worker = deps.createWorker(deps.getHomesteadExitPosition(homestead, getTeamWorkerCount(order.team)), order.team)
     const rallyPoint = deps.getHomesteadRallyPoint(homestead.id)
@@ -49,6 +56,8 @@ export function updateWorkerProduction(dt: number, deps: ProductionDeps): void {
 }
 
 export function updateSoldierProduction(dt: number, deps: ProductionDeps): void {
+  const activeOrders = getActiveSoldierOrderIndexes()
+
   for (let i = soldierProductionOrders.length - 1; i >= 0; i--) {
     const order = soldierProductionOrders[i]
     const barracks = deps.getBuildingById(order.barracksId)
@@ -60,8 +69,13 @@ export function updateSoldierProduction(dt: number, deps: ProductionDeps): void 
       continue
     }
 
+    if (!activeOrders.has(i)) {
+      order.timer = 0
+      continue
+    }
+
     order.timer += dt
-    if (order.timer < SOLDIER_DEFINITION.productionTime) continue
+    if (order.timer < order.productionTime) continue
 
     const soldier = deps.createSoldier(deps.getBarracksExitPosition(barracks, getTeamSoldierCount(order.team)), order.team)
     const rallyPoint = deps.getBarracksRallyPoint(barracks.id)
@@ -76,4 +90,34 @@ export function updateSoldierProduction(dt: number, deps: ProductionDeps): void 
     soldierProductionOrders.splice(i, 1)
     if (order.team === 'player') deps.setStatus(rallyPoint ? `${SOLDIER_DEFINITION.name} ready and moving to Barracks spawn point.` : `${SOLDIER_DEFINITION.name} ready outside Barracks.`)
   }
+}
+
+function getActiveWorkerOrderIndexes(): Set<number> {
+  const activeBuildings = new Set<string>()
+  const activeOrders = new Set<number>()
+
+  for (let i = 0; i < workerProductionOrders.length; i++) {
+    const buildingId = workerProductionOrders[i].homesteadId
+    if (activeBuildings.has(buildingId)) continue
+
+    activeBuildings.add(buildingId)
+    activeOrders.add(i)
+  }
+
+  return activeOrders
+}
+
+function getActiveSoldierOrderIndexes(): Set<number> {
+  const activeBuildings = new Set<string>()
+  const activeOrders = new Set<number>()
+
+  for (let i = 0; i < soldierProductionOrders.length; i++) {
+    const buildingId = soldierProductionOrders[i].barracksId
+    if (activeBuildings.has(buildingId)) continue
+
+    activeBuildings.add(buildingId)
+    activeOrders.add(i)
+  }
+
+  return activeOrders
 }

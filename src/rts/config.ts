@@ -20,20 +20,25 @@ export const CONFIG = {
   soldierDamage: 10,
   soldierAttackRate: 1,
   soldierAttackRange: 1.8,
+  soldierUnitEngageRadius: 1.35,
   templeHp: 400,
+  repairHpPerSecond: 12,
+  repairRockCostPerSecond: 2,
   enemyBuildingHp: 300,
   enemyAiDecisionRate: 1.5,
   enemyAiAttackInterval: 90,
   enemyAiDefenderCount: 4,
   enemyAiTargetWorkers: 14,
   enemyAiTargetGuards: 18,
-  commandRange: 16,
+  // Pointer click distance. Large so everything on screen is clickable from the overhead camera.
+  commandRange: 100,
+  // Idle workers automatically start gathering resources within this range.
+  workerAutoGatherRange: 12,
   placementRange: 100,
   buildRange: 1
 }
 
 export const ASSETS = {
-  skybox: 'models/TreesSkybox.glb',
   hq: 'models/hq.glb',
   supply: 'models/supply.glb',
   barracks: 'models/barracks.glb',
@@ -42,7 +47,7 @@ export const ASSETS = {
   playerFighter: 'models/KnightwSwordNPC.glb',
   enemyFighter: 'models/ExecutionerAxe.glb',
   rock: 'models/mining.glb',
-  tree: 'models/Pine.glb',
+  tree: 'models/LeafyTree.glb',
   pig: 'models/Pig.glb',
   rockSound: 'sounds/gathering/mining.mp3',
   treeSound: 'sounds/gathering/tree.mp3'

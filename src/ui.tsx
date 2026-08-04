@@ -8,8 +8,6 @@ import {
   gameState,
   getIdleWorkerCount,
   getSelectedSummary,
-  getSoldierCount,
-  getWorkerCount,
   queueWorker,
   queueSoldier,
   resetRtsGame,
@@ -18,9 +16,13 @@ import {
   setBarracksSpawnPoint,
   setWorkerSpawnPoint,
   startRtsMatch,
+  startSoldierAttackCommand,
   startSoldierMoveCommand,
   startWorkerBuildingPlacement
 } from './rtsGame'
+import { getDragScreenRect } from './rts/dragSelect'
+import { minimapPanel } from './rts/minimap'
+import { isTopDownViewActive, toggleTopDownView } from './rts/topDownCamera'
 
 const UI = {
   panel: Color4.create(0.04, 0.05, 0.08, 0.92),
@@ -50,37 +52,8 @@ export const uiMenu = () => {
 
   return (
     <UiEntity uiTransform={{ width: '100%', height: '100%' }}>
-      <UiEntity
-        uiTransform={{
-          positionType: 'absolute',
-          position: { top: 22, right: 92 },
-          width: 760,
-          height: 108,
-          flexDirection: 'column',
-          padding: { top: 10, bottom: 10, left: 12, right: 12 }
-        }}
-        uiBackground={{ color: UI.panel }}
-      >
-        <UiEntity uiTransform={{ width: '100%', height: 42, flexDirection: 'row', justifyContent: 'space-between' }}>
-          {resourcePill('ROCKS', gameState.rocks, UI.gold)}
-          {resourcePill('WOOD', gameState.wood, UI.gold)}
-          {resourcePill('MEAT', gameState.meat, UI.gold)}
-        </UiEntity>
-        <UiEntity uiTransform={{ width: '100%', height: 38, flexDirection: 'row', justifyContent: 'space-between', margin: { top: 8 } }}>
-          {statPill('TIME', formatMatchTime(gameState.matchTime), UI.gold, 150)}
-          {statPill('SUPPLY', `${gameState.supplyUsed}/${gameState.supplyCap}`, UI.green, 140)}
-          {statPill('WORKERS', getWorkerCount().toString(), UI.text, 140)}
-          <Button
-            value={`IDLE ${getIdleWorkerCount()}`}
-            variant="primary"
-            fontSize={15}
-            uiTransform={{ width: 120, height: 38 }}
-            uiBackground={{ color: UI.card }}
-            onMouseDown={selectIdleWorker}
-          />
-          {statPill('GUARDS', getSoldierCount().toString(), UI.text, 140)}
-        </UiEntity>
-      </UiEntity>
+      {gameState.matchStatus === 'active' ? topResourceStrip() : null}
+      {gameState.matchStatus === 'active' ? idleWorkerButton() : null}
 
       <UiEntity
         uiTransform={{
@@ -147,17 +120,125 @@ export const uiMenu = () => {
           {isPlayerSelection && selected.kind === 'barracks' ? actionButton('Create Gaurd', '100 rocks / 50 meat', queueSoldier, UI.green) : null}
           {isPlayerSelection && selected.kind === 'barracks' ? actionButton('Set Spawn', 'current position', setBarracksSpawnPoint, UI.card) : null}
           {showCancelBuild ? actionButton('Cancel Build', 'refund unbuilt cost', cancelSelectedConstruction, UI.red) : null}
+          {isPlayerSelection && selected.kind === 'soldier' ? actionButton('Attack', 'click enemy', startSoldierAttackCommand, UI.red) : null}
           {isPlayerSelection && selected.kind === 'soldier' ? actionButton('Move', 'click ground', startSoldierMoveCommand, UI.accent) : null}
           {isPlayerSelection && selected.kind === 'soldier' ? actionButton('Select All', 'guards', selectAllLikeSelected, UI.card) : null}
           {selected.kind !== 'temple' && selected.kind !== 'worker' ? infoCard(getContextHint(selected.kind)) : null}
         </UiEntity>
       </UiEntity>
 
+      {minimapPanel()}
+      {dragSelectionRect()}
+
       {gameState.matchStatus === 'notStarted' ? startScreenOverlay() : null}
       {gameState.matchStatus === 'ended' ? endGameOverlay() : null}
       {!showSettingsMenu ? settingsButton() : null}
       {showSettingsMenu ? settingsOverlay() : null}
     </UiEntity>
+  )
+}
+
+function dragSelectionRect() {
+  const rect = getDragScreenRect(1920, 1080)
+  if (!rect) return null
+
+  return (
+    <UiEntity
+      uiTransform={{
+        positionType: 'absolute',
+        position: { left: rect.left, top: rect.top },
+        width: rect.width,
+        height: rect.height
+      }}
+      uiBackground={{ color: Color4.create(0.2, 1, 0.35, 0.16) }}
+    >
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { left: 0, top: 0 }, width: '100%', height: 2 }}
+        uiBackground={{ color: Color4.create(0.2, 1, 0.35, 0.65) }}
+      />
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { left: 0, bottom: 0 }, width: '100%', height: 2 }}
+        uiBackground={{ color: Color4.create(0.2, 1, 0.35, 0.65) }}
+      />
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { left: 0, top: 0 }, width: 2, height: '100%' }}
+        uiBackground={{ color: Color4.create(0.2, 1, 0.35, 0.65) }}
+      />
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { right: 0, top: 0 }, width: 2, height: '100%' }}
+        uiBackground={{ color: Color4.create(0.2, 1, 0.35, 0.65) }}
+      />
+    </UiEntity>
+  )
+}
+
+function topResourceStrip() {
+  const supplyCapped = gameState.supplyUsed >= gameState.supplyCap
+
+  return (
+    <UiEntity
+      uiTransform={{
+        positionType: 'absolute',
+        position: { top: 22, right: 282 },
+        width: 700,
+        height: 40,
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: { left: 16, right: 16 }
+      }}
+      uiBackground={{ color: UI.panel }}
+    >
+      {stripStat('ROCKS', gameState.rocks.toString(), UI.gold, 136)}
+      {stripStat('WOOD', gameState.wood.toString(), UI.gold, 126)}
+      {stripStat('MEAT', gameState.meat.toString(), UI.gold, 122)}
+      {stripStat('SUPPLY', `${gameState.supplyUsed}/${gameState.supplyCap}`, supplyCapped ? UI.red : UI.green, 152)}
+      {stripStat('TIME', formatMatchTime(gameState.matchTime), UI.dim, 126)}
+    </UiEntity>
+  )
+}
+
+function stripStat(label: string, value: string, color: Color4, width: number) {
+  return (
+    <UiEntity uiTransform={{ width, height: '100%', flexDirection: 'row', alignItems: 'center' }}>
+      <Label
+        value={label}
+        fontSize={11}
+        color={UI.dim}
+        textAlign="middle-left"
+        textWrap="nowrap"
+        uiTransform={{ width: 58, height: '100%' }}
+      />
+      <Label
+        value={value}
+        fontSize={20}
+        color={color}
+        textAlign="middle-left"
+        textWrap="nowrap"
+        uiTransform={{ width: width - 64, height: '100%' }}
+      />
+    </UiEntity>
+  )
+}
+
+function idleWorkerButton() {
+  const idleCount = getIdleWorkerCount()
+  if (idleCount === 0) return null
+
+  return (
+    <Button
+      value={`IDLE WORKERS: ${idleCount}`}
+      variant="primary"
+      fontSize={16}
+      uiTransform={{
+        positionType: 'absolute',
+        // Sits directly below the minimap (top: 22, height: 246).
+        position: { top: 276, right: 22 },
+        width: 246,
+        height: 44
+      }}
+      uiBackground={{ color: UI.card }}
+      onMouseDown={selectIdleWorker}
+    />
   )
 }
 
@@ -197,7 +278,7 @@ function settingsOverlay() {
       <UiEntity
         uiTransform={{
           width: 420,
-          height: 250,
+          height: 316,
           flexDirection: 'column',
           alignItems: 'center',
           padding: { top: 24, bottom: 24, left: 28, right: 28 }
@@ -211,6 +292,17 @@ function settingsOverlay() {
           color={UI.dim}
           textAlign="middle-center"
           uiTransform={{ width: 340, height: 58, margin: { top: 14 } }}
+        />
+        <Button
+          value={isTopDownViewActive() ? 'SWITCH TO AVATAR VIEW' : 'SWITCH TO OVERHEAD VIEW'}
+          variant="primary"
+          fontSize={16}
+          uiTransform={{ width: 280, height: 48, margin: { top: 4 } }}
+          uiBackground={{ color: UI.accent }}
+          onMouseDown={() => {
+            toggleTopDownView()
+            showSettingsMenu = false
+          }}
         />
         <Button
           value="END GAME"
@@ -369,30 +461,6 @@ function statsRow(team: string, unitsProduced: number, unitsKilled: number, reso
       <Label value={unitsProduced.toString()} fontSize={20} color={UI.text} textAlign="middle-center" uiTransform={{ width: 225, height: '100%' }} />
       <Label value={unitsKilled.toString()} fontSize={20} color={UI.text} textAlign="middle-center" uiTransform={{ width: 225, height: '100%' }} />
       <Label value={resourcesGathered.toString()} fontSize={20} color={UI.text} textAlign="middle-center" uiTransform={{ width: 225, height: '100%' }} />
-    </UiEntity>
-  )
-}
-
-function resourcePill(label: string, value: number, color: Color4) {
-  return (
-    <UiEntity
-      uiTransform={{ width: 236, height: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: { left: 14, right: 14 } }}
-      uiBackground={{ color: UI.panelStrong }}
-    >
-      <Label value={label} fontSize={13} color={UI.dim} textAlign="middle-left" />
-      <Label value={value.toString()} fontSize={24} color={color} textAlign="middle-right" />
-    </UiEntity>
-  )
-}
-
-function statPill(label: string, value: string, color: Color4, width: number) {
-  return (
-    <UiEntity
-      uiTransform={{ width, height: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: { left: 12, right: 12 } }}
-      uiBackground={{ color: UI.cardSoft }}
-    >
-      <Label value={label} fontSize={12} color={UI.dim} textAlign="middle-left" />
-      <Label value={value} fontSize={22} color={color} textAlign="middle-right" />
     </UiEntity>
   )
 }

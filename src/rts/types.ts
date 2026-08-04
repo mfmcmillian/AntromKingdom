@@ -11,10 +11,11 @@ export type WorkerState =
   | 'returning'
   | 'movingToBuild'
   | 'constructing'
+  | 'movingToRepair'
+  | 'repairing'
   | 'movingToRally'
   | 'dead'
 export type SoldierState = 'idle' | 'movingToAttack' | 'attacking' | 'movingToRally' | 'dead'
-export type UnitGroupKind = 'worker' | 'soldier'
 export type BuildableKind = 'temple' | 'supplyHouse' | 'barracks' | 'fireplace'
 export type ConstructionState = 'none' | 'placing' | 'movingBuilder' | 'building' | 'paused' | 'complete'
 
@@ -63,6 +64,7 @@ export type Worker = Selectable & {
   state: WorkerState
   targetResourceId?: string
   buildSiteId?: string
+  repairTargetId?: string
   rallyPoint?: Vector3
   timer: number
   carrying: number
@@ -99,6 +101,8 @@ export type Building = Selectable & {
   buildTime: number
   builderWorkerId?: string
   isComplete: boolean
+  damageVfxEntity?: Entity
+  damageVfxLevel?: number
 }
 
 export type BuildingDefinition = {
@@ -140,12 +144,14 @@ export type ResourceDefinition = {
 export type UnitProductionOrder = {
   barracksId: string
   timer: number
+  productionTime: number
   team: Team
 }
 
 export type WorkerProductionOrder = {
   homesteadId: string
   timer: number
+  productionTime: number
   team: Team
 }
 
