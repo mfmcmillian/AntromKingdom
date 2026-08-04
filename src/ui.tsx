@@ -1223,8 +1223,9 @@ function startScreenOverlay() {
           alignItems: 'center'
         }}
       >
-        <Label value="CHOOSE YOUR RACE" fontSize={14} color={Color4.create(0.75, 0.78, 0.85, 0.9)} textAlign="middle-center" uiTransform={{ margin: { bottom: 14 } }} />
-        <UiEntity uiTransform={{ flexDirection: 'row', justifyContent: 'center', margin: { bottom: 12 } }}>
+        {/* Full-width labels + centered rows: auto-sized children drift left in this UI runtime. */}
+        <Label value="CHOOSE YOUR RACE" fontSize={14} color={Color4.create(0.75, 0.78, 0.85, 0.9)} textAlign="middle-center" uiTransform={{ width: '100%', height: 18, margin: { bottom: 14 } }} />
+        <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { bottom: 12 } }}>
           {RACE_IDS.map((raceId) => raceCard(raceId))}
         </UiEntity>
         <Label
@@ -1232,21 +1233,23 @@ function startScreenOverlay() {
           fontSize={14}
           color={Color4.create(0.85, 0.87, 0.92, 0.95)}
           textAlign="middle-center"
-          uiTransform={{ margin: { bottom: 18 } }}
+          uiTransform={{ width: '100%', height: 18, margin: { bottom: 18 } }}
         />
 
-        <UiEntity
-          uiTransform={{ width: 300, height: 62, justifyContent: 'center', alignItems: 'center', padding: 3 }}
-          uiBackground={{ color: Color4.create(0.35, 0.65, 1, 1) }}
-          onMouseDown={() => {
-            titleStage = 'setup'
-          }}
-        >
-          <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.06, 0.14, 0.28, 1) }}>
-            <Label value="CONTINUE" fontSize={22} color={Color4.create(0.85, 0.93, 1, 1)} textAlign="middle-center" />
+        <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center' }}>
+          <UiEntity
+            uiTransform={{ width: 300, height: 62, justifyContent: 'center', alignItems: 'center', padding: 3 }}
+            uiBackground={{ color: Color4.create(0.35, 0.65, 1, 1) }}
+            onMouseDown={() => {
+              titleStage = 'setup'
+            }}
+          >
+            <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.06, 0.14, 0.28, 1) }}>
+              <Label value="CONTINUE" fontSize={22} color={Color4.create(0.85, 0.93, 1, 1)} textAlign="middle-center" />
+            </UiEntity>
           </UiEntity>
         </UiEntity>
-        <Label value="Build. Defend. Conquer." fontSize={12} color={Color4.create(0.6, 0.64, 0.72, 0.85)} textAlign="middle-center" uiTransform={{ margin: { top: 14 } }} />
+        <Label value="Build. Defend. Conquer." fontSize={12} color={Color4.create(0.6, 0.64, 0.72, 0.85)} textAlign="middle-center" uiTransform={{ width: '100%', height: 16, margin: { top: 14 } }} />
       </UiEntity>
     </UiEntity>
   )
