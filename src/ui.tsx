@@ -144,6 +144,9 @@ let hoveredSlot: CommandSlot | undefined
 /** Clock driving the title screen ambience (shooting stars, twinkles). */
 let titleTime = 0
 
+// Pre-match menu flow: title screen (race pick) -> match setup (opponents + hero).
+let titleStage: 'title' | 'setup' = 'title'
+
 export function setupUi() {
   ReactEcsRenderer.setUiRenderer(uiMenu, { virtualWidth: 1920, virtualHeight: 1080 })
   engine.addSystem((dt: number) => {
@@ -166,7 +169,7 @@ export const uiMenu = () => {
       {minimapPanel()}
       {dragSelectionRect()}
 
-      {gameState.matchStatus === 'notStarted' ? startScreenOverlay() : null}
+      {gameState.matchStatus === 'notStarted' ? (titleStage === 'title' ? startScreenOverlay() : matchSetupOverlay()) : null}
       {gameState.matchStatus === 'ended' ? endGameOverlay() : null}
       {!showSettingsMenu ? menuButton() : null}
       {showSettingsMenu ? settingsOverlay() : null}
@@ -1088,39 +1091,6 @@ function gameModeToggle() {
   )
 }
 
-function opponentsPanel() {
-  const modeHint = GAME_MODES.find((mode) => mode.id === gameState.gameMode)?.hint ?? ''
-
-  return (
-    <UiEntity
-      uiTransform={{
-        positionType: 'absolute',
-        position: { right: 46, bottom: 96 },
-        width: 356,
-        flexDirection: 'column',
-        padding: { top: 14, bottom: 14, left: 16, right: 16 }
-      }}
-      uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.82) }}
-    >
-      <Label value="GAME MODE" fontSize={14} color={Color4.create(0.75, 0.78, 0.85, 0.9)} textAlign="middle-left" uiTransform={{ margin: { bottom: 8 } }} />
-      {gameModeToggle()}
-      <Label value="COMPUTERS" fontSize={14} color={Color4.create(0.75, 0.78, 0.85, 0.9)} textAlign="middle-left" uiTransform={{ margin: { bottom: 10 } }} />
-      {gameState.opponents.map((_, index) => opponentRow(index))}
-      {gameState.opponents.length < 3 ? (
-        <UiEntity
-          uiTransform={{ width: 180, height: 34, margin: { top: 4 }, justifyContent: 'center', alignItems: 'center' }}
-          uiBackground={{ color: Color4.create(0.12, 0.3, 0.16, 0.95) }}
-          onMouseDown={() => {
-            gameState.opponents.push({ race: 'random', difficulty: 'medium', ally: false })
-          }}
-        >
-          <Label value="+ ADD COMPUTER" fontSize={12} color={UI.text} textAlign="middle-center" />
-        </UiEntity>
-      ) : null}
-      <Label value={modeHint} fontSize={10} color={Color4.create(0.55, 0.58, 0.66, 0.85)} textAlign="middle-left" uiTransform={{ margin: { top: 8 } }} />
-    </UiEntity>
-  )
-}
 
 // Deterministic star field for the title screen sky (kept above the race picker band).
 const TITLE_STARS: { x: number; y: number; size: number; phase: number; speed: number }[] = []
@@ -1251,16 +1221,178 @@ function startScreenOverlay() {
         <UiEntity
           uiTransform={{ width: 300, height: 62, justifyContent: 'center', alignItems: 'center', padding: 3 }}
           uiBackground={{ color: Color4.create(0.35, 0.65, 1, 1) }}
-          onMouseDown={startRtsMatch}
+          onMouseDown={() => {
+            titleStage = 'setup'
+          }}
         >
           <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.06, 0.14, 0.28, 1) }}>
-            <Label value="PLAY" fontSize={22} color={Color4.create(0.85, 0.93, 1, 1)} textAlign="middle-center" />
+            <Label value="CONTINUE" fontSize={22} color={Color4.create(0.85, 0.93, 1, 1)} textAlign="middle-center" />
           </UiEntity>
         </UiEntity>
         <Label value="Build. Defend. Conquer." fontSize={12} color={Color4.create(0.6, 0.64, 0.72, 0.85)} textAlign="middle-center" uiTransform={{ margin: { top: 14 } }} />
       </UiEntity>
+    </UiEntity>
+  )
+}
 
-      {opponentsPanel()}
+// ---------------------------------------------------------------------------
+// Match setup screen: computers and game mode on the left half, the selected
+// race's hero showcase (portrait, trait, stats) on the right half.
+// ---------------------------------------------------------------------------
+
+function matchSetupOverlay() {
+  const race = RACES[gameState.playerRace]
+
+  return (
+    <UiEntity
+      uiTransform={{
+        positionType: 'absolute',
+        position: { top: 0, left: 0 },
+        width: '100%',
+        height: '100%'
+      }}
+      uiBackground={{ textureMode: 'stretch', texture: { src: 'images/ui/title-bg-decentracraft.png' } }}
+    >
+      {titleSkyAmbience()}
+
+      {/* Full-screen scrim so both halves read over the artwork. */}
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%' }}
+        uiBackground={{ color: Color4.create(0, 0, 0, 0.62) }}
+      />
+
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { top: 54, left: 0 }, width: '100%', flexDirection: 'column', alignItems: 'center' }}
+      >
+        <Label value="MATCH SETUP" fontSize={44} color={UI.gold} textAlign="middle-center" />
+        <Label value={`Playing as ${race.name}`} fontSize={16} color={Color4.create(0.75, 0.78, 0.85, 0.9)} textAlign="middle-center" uiTransform={{ margin: { top: 8 } }} />
+      </UiEntity>
+
+      {/* Left half: game mode + computer roster. */}
+      <UiEntity
+        uiTransform={{
+          positionType: 'absolute',
+          position: { top: 190, left: 150 },
+          width: 620,
+          height: 640,
+          flexDirection: 'column',
+          padding: { top: 26, bottom: 26, left: 30, right: 30 }
+        }}
+        uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.88) }}
+      >
+        <Label value="OPPONENTS" fontSize={22} color={UI.text} textAlign="middle-left" uiTransform={{ margin: { bottom: 18 } }} />
+        <Label value="GAME MODE" fontSize={14} color={Color4.create(0.75, 0.78, 0.85, 0.9)} textAlign="middle-left" uiTransform={{ margin: { bottom: 8 } }} />
+        {gameModeToggle()}
+        <Label value={GAME_MODES.find((mode) => mode.id === gameState.gameMode)?.hint ?? ''} fontSize={12} color={Color4.create(0.55, 0.58, 0.66, 0.9)} textAlign="middle-left" uiTransform={{ margin: { bottom: 18 } }} />
+        <Label value="COMPUTERS" fontSize={14} color={Color4.create(0.75, 0.78, 0.85, 0.9)} textAlign="middle-left" uiTransform={{ margin: { bottom: 10 } }} />
+        {gameState.opponents.map((_, index) => opponentRow(index))}
+        {gameState.opponents.length < 3 ? (
+          <UiEntity
+            uiTransform={{ width: 180, height: 34, margin: { top: 6 }, justifyContent: 'center', alignItems: 'center' }}
+            uiBackground={{ color: Color4.create(0.12, 0.3, 0.16, 0.95) }}
+            onMouseDown={() => {
+              gameState.opponents.push({ race: 'random', difficulty: 'medium', ally: false })
+            }}
+          >
+            <Label value="+ ADD COMPUTER" fontSize={12} color={UI.text} textAlign="middle-center" />
+          </UiEntity>
+        ) : null}
+      </UiEntity>
+
+      {/* Right half: the selected race's hero showcase. */}
+      {heroShowcase()}
+
+      {/* Bottom bar: back to race select, or launch the match. */}
+      <UiEntity
+        uiTransform={{
+          positionType: 'absolute',
+          position: { bottom: 60, left: 0 },
+          width: '100%',
+          flexDirection: 'row',
+          justifyContent: 'center'
+        }}
+      >
+        <UiEntity
+          uiTransform={{ width: 220, height: 60, margin: { right: 16 }, padding: 3, justifyContent: 'center', alignItems: 'center' }}
+          uiBackground={{ color: Color4.create(0.3, 0.36, 0.48, 1) }}
+          onMouseDown={() => {
+            titleStage = 'title'
+          }}
+        >
+          <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.07, 0.09, 0.14, 1) }}>
+            <Label value="BACK" fontSize={20} color={UI.dim} textAlign="middle-center" />
+          </UiEntity>
+        </UiEntity>
+        <UiEntity
+          uiTransform={{ width: 320, height: 60, margin: { left: 16 }, padding: 3, justifyContent: 'center', alignItems: 'center' }}
+          uiBackground={{ color: Color4.create(0.35, 0.65, 1, 1) }}
+          onMouseDown={() => {
+            titleStage = 'title'
+            startRtsMatch()
+          }}
+        >
+          <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.06, 0.14, 0.28, 1) }}>
+            <Label value="START MATCH" fontSize={22} color={Color4.create(0.85, 0.93, 1, 1)} textAlign="middle-center" />
+          </UiEntity>
+        </UiEntity>
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+/** One stat line in the hero showcase: label left, value right. */
+function heroStatRow(label: string, value: string) {
+  return (
+    <UiEntity uiTransform={{ width: '100%', height: 30, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+      <Label value={label} fontSize={14} color={UI.dim} textAlign="middle-left" />
+      <Label value={value} fontSize={16} color={UI.text} textAlign="middle-right" />
+    </UiEntity>
+  )
+}
+
+function heroShowcase() {
+  const race = RACES[gameState.playerRace]
+  const hero = race.hero
+  const portrait = `images/icons/icon-unit-hero${RACE_ICON_SUFFIX[gameState.playerRace]}.png`
+
+  return (
+    <UiEntity
+      uiTransform={{
+        positionType: 'absolute',
+        position: { top: 190, right: 150 },
+        width: 620,
+        height: 640,
+        flexDirection: 'column',
+        alignItems: 'center',
+        padding: { top: 26, bottom: 26, left: 40, right: 40 }
+      }}
+      uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.88) }}
+    >
+      <Label value="YOUR HERO" fontSize={22} color={UI.text} textAlign="middle-center" />
+
+      <UiEntity uiTransform={{ width: 300, height: 300, margin: { top: 16 }, padding: 3 }} uiBackground={{ color: race.accent }}>
+        <UiEntity uiTransform={{ width: '100%', height: '100%' }} uiBackground={{ textureMode: 'stretch', texture: { src: portrait } }} />
+      </UiEntity>
+
+      <Label value={hero.name.toUpperCase()} fontSize={26} color={race.accent} textAlign="middle-center" uiTransform={{ margin: { top: 14 } }} />
+      <Label value={race.heroTrait} fontSize={14} color={Color4.create(0.85, 0.87, 0.92, 0.95)} textAlign="middle-center" textWrap="wrap" uiTransform={{ width: 520, margin: { top: 8, bottom: 14 } }} />
+
+      <UiEntity uiTransform={{ width: 420, flexDirection: 'column' }}>
+        {heroStatRow('HIT POINTS', `${hero.hp}`)}
+        {heroStatRow('DAMAGE', `${hero.damage ?? 0}`)}
+        {heroStatRow('ATTACK RANGE', hero.attackRange !== undefined && hero.attackRange > 3 ? `${hero.attackRange} (ranged)` : 'Melee')}
+        {heroStatRow('ATTACK SPEED', `every ${hero.attackRate ?? 1}s`)}
+        {heroStatRow('MOVE SPEED', `${hero.moveSpeed ?? 0}`)}
+        {hero.splashRadius ? heroStatRow('SPLASH RADIUS', `${hero.splashRadius}`) : null}
+      </UiEntity>
+
+      <Label
+        value="Free at match start. Takes no supply. Cannot be rebuilt if slain."
+        fontSize={12}
+        color={Color4.create(0.55, 0.58, 0.66, 0.9)}
+        textAlign="middle-center"
+        uiTransform={{ margin: { top: 16 } }}
+      />
     </UiEntity>
   )
 }
@@ -1325,7 +1457,10 @@ function endGameOverlay() {
             fontSize={24}
             uiTransform={{ width: 240, height: 58, margin: { left: 12 } }}
             uiBackground={{ color: Color4.create(0.25, 0.32, 0.45, 0.95) }}
-            onMouseDown={returnToMainMenu}
+            onMouseDown={() => {
+              titleStage = 'title'
+              returnToMainMenu()
+            }}
           />
         </UiEntity>
       </UiEntity>
