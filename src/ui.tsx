@@ -488,12 +488,12 @@ function getCommandTitle(kind: string): string {
 
 function getContextHint(kind: string): string {
   if (kind === 'resource') return 'Select a worker, then click this resource.'
-  if (kind === 'supplyHouse') return 'Homesteads create workers and increase your unit cap.'
+  if (kind === 'supplyHouse') return 'Homesteads create miners and increase your unit cap.'
   if (kind === 'barracks') return 'Create Antrom Gaurds here.'
   if (kind === 'fireplace') return 'A camp utility building.'
   if (kind === 'soldier') return 'Click an enemy building to attack.'
   if (kind === 'enemyBuilding') return 'Select an Antrom Gaurd, then click this building to attack.'
-  return 'Select a Homestead to create workers, or a worker to build.'
+  return 'Select a Homestead to create miners, or a miner to build.'
 }
 
 function infoCard(text: string) {

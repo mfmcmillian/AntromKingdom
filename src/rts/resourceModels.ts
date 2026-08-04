@@ -20,12 +20,15 @@ const rigs = new Map<Entity, ResourceRig>()
 const PULSE_DURATION = 0.45
 const DIE_DURATION = 1.4
 
-const ROCK_DARK = Color4.create(0.26, 0.26, 0.31, 1)
-const ROCK_DARKER = Color4.create(0.2, 0.2, 0.24, 1)
-const ORE_VEIN = Color4.create(1, 0.62, 0.22, 1)
-const CRYSTAL_TEAL = Color4.create(0.3, 0.9, 0.95, 1)
-const PLASMA_ORANGE = Color4.create(1, 0.5, 0.28, 1)
-const PLASMA_CORE = Color4.create(1, 0.72, 0.4, 1)
+// Muted albedos with restrained emissive so deposits read as colored shapes
+// from the overhead camera instead of blown-out white blobs.
+const ROCK_DARK = Color4.create(0.3, 0.3, 0.35, 1)
+const ROCK_DARKER = Color4.create(0.24, 0.24, 0.28, 1)
+const ORE_VEIN = Color4.create(1, 0.58, 0.16, 1)
+const CRYSTAL_TEAL = Color4.create(0.1, 0.52, 0.6, 1)
+const CRYSTAL_GLOW = Color4.create(0.1, 0.7, 0.8, 1)
+const PLASMA_ORANGE = Color4.create(1, 0.38, 0.1, 1)
+const PLASMA_CORE = Color4.create(1, 0.45, 0.15, 1)
 
 export function buildResourceModel(root: Entity, kind: ResourceKind): void {
   const bodyRoot = engine.addEntity()
@@ -79,46 +82,46 @@ function buildOreDeposit(rig: ResourceRig): void {
   addPart(rig, Vector3.create(-0.5, 0.2, 0.4), Vector3.create(0.55, 0.4, 0.5), ROCK_DARKER, {
     rotation: Quaternion.fromEulerDegrees(8, 130, -4)
   })
-  addPart(rig, Vector3.create(0.15, 0.62, 0.18), Vector3.create(0.2, 0.14, 0.16), ORE_VEIN, {
+  addPart(rig, Vector3.create(0.15, 0.62, 0.18), Vector3.create(0.28, 0.18, 0.22), ORE_VEIN, {
     emissive: ORE_VEIN,
-    emissiveIntensity: 1.3,
+    emissiveIntensity: 1.1,
     rotation: Quaternion.fromEulerDegrees(15, 40, 10)
   })
-  addPart(rig, Vector3.create(-0.35, 0.42, -0.25), Vector3.create(0.16, 0.12, 0.14), ORE_VEIN, {
+  addPart(rig, Vector3.create(-0.35, 0.42, -0.25), Vector3.create(0.22, 0.16, 0.18), ORE_VEIN, {
     emissive: ORE_VEIN,
-    emissiveIntensity: 1.3,
+    emissiveIntensity: 1.1,
     rotation: Quaternion.fromEulerDegrees(-10, 100, 20)
   })
-  addPart(rig, Vector3.create(0.55, 0.42, 0.3), Vector3.create(0.13, 0.1, 0.12), ORE_VEIN, {
+  addPart(rig, Vector3.create(0.55, 0.42, 0.3), Vector3.create(0.18, 0.14, 0.16), ORE_VEIN, {
     emissive: ORE_VEIN,
-    emissiveIntensity: 1.3,
+    emissiveIntensity: 1.1,
     rotation: Quaternion.fromEulerDegrees(20, 160, -12)
   })
 }
 
 function buildCrystalFormation(rig: ResourceRig): void {
-  // Rock base with one tall teal spike and smaller leaning shards, echoing the
-  // small crystal decorations scattered across the regolith.
+  // Rock base with a stocky pyramid-like cluster of teal shards. Kept short and
+  // wide: tall thin spikes lean badly at the screen edges of the overhead camera.
   addPart(rig, Vector3.create(0, 0.14, 0), Vector3.create(1.35, 0.28, 1.35), ROCK_DARKER, { cylinder: true })
-  addPart(rig, Vector3.create(0, 1.15, 0), Vector3.create(0.34, 2.1, 0.34), CRYSTAL_TEAL, {
-    emissive: CRYSTAL_TEAL,
-    emissiveIntensity: 1.7,
+  addPart(rig, Vector3.create(0, 0.8, 0), Vector3.create(0.46, 1.4, 0.46), CRYSTAL_TEAL, {
+    emissive: CRYSTAL_GLOW,
+    emissiveIntensity: 0.9,
     rotation: Quaternion.fromEulerDegrees(3, 20, -4)
   })
-  addPart(rig, Vector3.create(0.42, 0.7, 0.15), Vector3.create(0.22, 1.25, 0.22), CRYSTAL_TEAL, {
-    emissive: CRYSTAL_TEAL,
-    emissiveIntensity: 1.5,
-    rotation: Quaternion.fromEulerDegrees(6, 65, -18)
+  addPart(rig, Vector3.create(0.42, 0.55, 0.15), Vector3.create(0.3, 0.95, 0.3), CRYSTAL_TEAL, {
+    emissive: CRYSTAL_GLOW,
+    emissiveIntensity: 0.8,
+    rotation: Quaternion.fromEulerDegrees(6, 65, -16)
   })
-  addPart(rig, Vector3.create(-0.38, 0.55, -0.2), Vector3.create(0.18, 0.95, 0.18), CRYSTAL_TEAL, {
-    emissive: CRYSTAL_TEAL,
-    emissiveIntensity: 1.5,
-    rotation: Quaternion.fromEulerDegrees(-8, 140, 16)
+  addPart(rig, Vector3.create(-0.38, 0.45, -0.2), Vector3.create(0.26, 0.75, 0.26), CRYSTAL_TEAL, {
+    emissive: CRYSTAL_GLOW,
+    emissiveIntensity: 0.8,
+    rotation: Quaternion.fromEulerDegrees(-8, 140, 14)
   })
-  addPart(rig, Vector3.create(0.1, 0.4, -0.45), Vector3.create(0.14, 0.7, 0.14), CRYSTAL_TEAL, {
-    emissive: CRYSTAL_TEAL,
-    emissiveIntensity: 1.5,
-    rotation: Quaternion.fromEulerDegrees(-14, 200, -10)
+  addPart(rig, Vector3.create(0.1, 0.32, -0.45), Vector3.create(0.2, 0.55, 0.2), CRYSTAL_TEAL, {
+    emissive: CRYSTAL_GLOW,
+    emissiveIntensity: 0.8,
+    rotation: Quaternion.fromEulerDegrees(-12, 200, -10)
   })
 }
 
@@ -128,16 +131,16 @@ function buildPlasmaVent(rig: ResourceRig): void {
   addPart(rig, Vector3.create(0, 0.34, 0), Vector3.create(0.9, 0.06, 0.9), PLASMA_ORANGE, {
     cylinder: true,
     emissive: PLASMA_ORANGE,
-    emissiveIntensity: 2.2
+    emissiveIntensity: 1.4
   })
 
-  const column = addPart(rig, Vector3.create(0, 0.95, 0), Vector3.create(0.42, 1.25, 0.42), PLASMA_CORE, {
+  const column = addPart(rig, Vector3.create(0, 0.72, 0), Vector3.create(0.5, 0.85, 0.5), PLASMA_CORE, {
     cylinder: true,
     emissive: PLASMA_CORE,
-    emissiveIntensity: 2
+    emissiveIntensity: 1.2
   })
   rig.column = column
-  rig.columnBaseScale = Vector3.create(0.42, 1.25, 0.42)
+  rig.columnBaseScale = Vector3.create(0.5, 0.85, 0.5)
 
   // A few chunks around the rim.
   addPart(rig, Vector3.create(0.7, 0.28, 0.35), Vector3.create(0.3, 0.32, 0.28), ROCK_DARKER, {

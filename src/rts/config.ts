@@ -63,6 +63,12 @@ export const MODEL_TRANSFORMS = {
 
 // Space re-theme: the internal keys stay rocks/wood/meat so the economy code is
 // untouched, but the deposits are procedural ore chunks, crystal veins, and plasma vents.
+export const RESOURCE_LABELS: Record<ResourceKind, string> = {
+  rocks: 'ore',
+  wood: 'crystal',
+  meat: 'plasma'
+}
+
 export const RESOURCE_DEFINITIONS: Record<ResourceKind, ResourceDefinition> = {
   rocks: {
     name: 'Ore Deposit',
@@ -95,7 +101,7 @@ export const SCENE = {
 }
 
 export const COLORS = {
-  ground: Color4.create(0.24, 0.24, 0.28, 1),
+  ground: Color4.create(0.42, 0.42, 0.47, 1),
   temple: Color4.create(0.1, 0.35, 1, 1),
   worker: Color4.create(0.3, 0.75, 1, 1),
   rock: Color4.create(0.45, 0.48, 0.52, 1),

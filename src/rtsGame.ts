@@ -684,12 +684,12 @@ function scatterGroundDecorations(): void {
       })
       MeshRenderer.setBox(entity)
       Material.setPbrMaterial(entity, {
-        albedoColor: Color4.create(0.36, 0.37, 0.42, 1),
+        albedoColor: Color4.create(0.53, 0.54, 0.59, 1),
         roughness: 1,
         castShadows: false
       })
     } else if (roll < 0.85) {
-      // Dark crater patch.
+      // Crater patch, only slightly darker than the ground so it doesn't read as a hole.
       const size = 1.4 + random() * 3
       Transform.create(entity, {
         position: Vector3.create(x, 0.03, z),
@@ -697,7 +697,7 @@ function scatterGroundDecorations(): void {
       })
       MeshRenderer.setCylinder(entity)
       Material.setPbrMaterial(entity, {
-        albedoColor: Color4.create(0.14, 0.14, 0.18, 1),
+        albedoColor: Color4.create(0.33, 0.33, 0.38, 1),
         roughness: 1,
         castShadows: false
       })
@@ -711,9 +711,9 @@ function scatterGroundDecorations(): void {
       })
       MeshRenderer.setBox(entity)
       Material.setPbrMaterial(entity, {
-        albedoColor: Color4.create(0.25, 0.85, 0.9, 1),
-        emissiveColor: Color4.create(0.2, 0.8, 0.9, 1),
-        emissiveIntensity: 1.6,
+        albedoColor: Color4.create(0.12, 0.55, 0.62, 1),
+        emissiveColor: Color4.create(0.12, 0.65, 0.75, 1),
+        emissiveIntensity: 1,
         castShadows: false
       })
     }

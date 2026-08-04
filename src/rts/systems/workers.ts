@@ -1,6 +1,6 @@
 import { Transform } from '@dcl/sdk/ecs'
 import type { Vector3 } from '@dcl/sdk/math'
-import { CONFIG } from '../config'
+import { CONFIG, RESOURCE_LABELS } from '../config'
 import { addResource, getResourceAmount, spendResources } from '../economy'
 import { distanceToPosition, moveTowardPosition } from '../math'
 import { gameState } from '../state'
@@ -84,7 +84,7 @@ function updateWorkerGathering(worker: Worker, dt: number, deps: WorkerSystemDep
       worker.carryingResource = undefined
       worker.state = resource?.alive ? 'movingToResource' : 'idle'
       deps.setWorkerAnimation(worker, worker.state === 'idle' ? 'idle' : 'walk')
-      if (getTeam(worker) === 'player') deps.setStatus(`${worker.name} delivered ${deliveredResource}. Total: ${getResourceAmount(getTeam(worker), deliveredResource)}.`)
+      if (getTeam(worker) === 'player') deps.setStatus(`${worker.name} delivered ${RESOURCE_LABELS[deliveredResource]}. Total: ${getResourceAmount(getTeam(worker), deliveredResource)}.`)
     }
   } else if (!resource && ['movingToResource', 'gathering', 'returning'].includes(worker.state)) {
     worker.state = 'idle'
