@@ -1395,8 +1395,10 @@ function heroStatsPanel() {
     >
       <Label value="YOUR HERO" fontSize={22} color={UI.text} textAlign="middle-center" uiTransform={{ width: '100%', height: 26 }} />
 
-      <UiEntity uiTransform={{ width: 170, height: 170, margin: { top: 14 }, padding: 3 }} uiBackground={{ color: race.accent }}>
-        <UiEntity uiTransform={{ width: '100%', height: '100%' }} uiBackground={{ textureMode: 'stretch', texture: { src: portrait } }} />
+      <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: 14 } }}>
+        <UiEntity uiTransform={{ width: 170, height: 170, padding: 3 }} uiBackground={{ color: race.accent }}>
+          <UiEntity uiTransform={{ width: '100%', height: '100%' }} uiBackground={{ textureMode: 'stretch', texture: { src: portrait } }} />
+        </UiEntity>
       </UiEntity>
 
       <Label value={hero.name.toUpperCase()} fontSize={30} color={race.accent} textAlign="middle-center" uiTransform={{ width: '100%', height: 36, margin: { top: 14 } }} />
@@ -1409,13 +1411,15 @@ function heroStatsPanel() {
         uiTransform={{ width: 440, height: 40, margin: { top: 10, bottom: 14 } }}
       />
 
-      <UiEntity uiTransform={{ width: 420, flexDirection: 'column' }}>
-        {heroStatRow('HIT POINTS', `${hero.hp}`)}
-        {heroStatRow('DAMAGE', `${hero.damage ?? 0}`)}
-        {heroStatRow('ATTACK RANGE', hero.attackRange !== undefined && hero.attackRange > 3 ? `${hero.attackRange} (ranged)` : 'Melee')}
-        {heroStatRow('ATTACK SPEED', `every ${hero.attackRate ?? 1}s`)}
-        {heroStatRow('MOVE SPEED', `${hero.moveSpeed ?? 0}`)}
-        {hero.splashRadius ? heroStatRow('SPLASH RADIUS', `${hero.splashRadius}`) : null}
+      <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center' }}>
+        <UiEntity uiTransform={{ width: 420, flexDirection: 'column' }}>
+          {heroStatRow('HIT POINTS', `${hero.hp}`)}
+          {heroStatRow('DAMAGE', `${hero.damage ?? 0}`)}
+          {heroStatRow('ATTACK RANGE', hero.attackRange !== undefined && hero.attackRange > 3 ? `${hero.attackRange} (ranged)` : 'Melee')}
+          {heroStatRow('ATTACK SPEED', `every ${hero.attackRate ?? 1}s`)}
+          {heroStatRow('MOVE SPEED', `${hero.moveSpeed ?? 0}`)}
+          {hero.splashRadius ? heroStatRow('SPLASH RADIUS', `${hero.splashRadius}`) : null}
+        </UiEntity>
       </UiEntity>
 
       <Label
