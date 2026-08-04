@@ -381,7 +381,7 @@ function productionQueuePanel(selected: SelectedSummary) {
   const queue = getSelectedProductionQueue()
   if (!queue) return null
 
-  const icon = selected.kind === 'supplyHouse' ? unitIcon('worker') : unitIcon(queue.variant ?? 'melee')
+  const icon = selected.kind === 'temple' ? unitIcon('worker') : unitIcon(queue.variant ?? 'melee')
 
   return (
     <UiEntity uiTransform={{ flexDirection: 'column', width: 300, height: '100%', padding: { top: 30 } }}>
@@ -546,7 +546,7 @@ function getCommandSlots(selected: SelectedSummary): CommandSlot[] {
     slots.push(selectAllSlot(`all ${getWorkerDefinition('player').name}s`))
   }
 
-  if (selected.kind === 'supplyHouse') {
+  if (selected.kind === 'temple') {
     const worker = getWorkerDefinition('player')
     slots.push({
       id: 'train-worker',
@@ -687,8 +687,8 @@ function getPortraitIcon(selected: SelectedSummary): string | undefined {
 
 function getBuildingDescription(kind: BuildableKind): string {
   const race = getRace('player')
-  if (kind === 'temple') return 'Main base. Workers deliver resources here. Lose all of them and you lose.'
-  if (kind === 'supplyHouse') return `Trains ${race.worker.name}s and raises your supply cap.`
+  if (kind === 'temple') return `Main base. Trains ${race.worker.name}s and receives resources. Lose all of them and you lose.`
+  if (kind === 'supplyHouse') return 'Raises your supply cap so you can field more units.'
   if (kind === 'barracks') return `Tier 1 production: ${race.melee.name}s and ${race.ranged.name}s.`
   if (kind === 'techLab') return `Tier 2 production: ${race.caster.name}s, ${race.flyer.name}s and ${race.titan.name}s.`
   if (kind === 'forge') return 'Researches Weapons and Propulsion upgrades. Unlocks the titan.'
@@ -1276,10 +1276,10 @@ function formatMatchTime(seconds: number): string {
 }
 
 function getCommandTitle(kind: string): string {
-  if (kind === 'temple') return 'MAIN BASE'
+  if (kind === 'temple') return 'MAIN BASE / WORKERS'
   if (kind === 'worker') return 'WORKER'
   if (kind === 'resource') return 'RESOURCE'
-  if (kind === 'supplyHouse') return 'SUPPLY / WORKERS'
+  if (kind === 'supplyHouse') return 'SUPPLY'
   if (kind === 'barracks') return 'TIER 1 PRODUCTION'
   if (kind === 'techLab') return 'TIER 2 PRODUCTION'
   if (kind === 'forge') return 'RESEARCH'

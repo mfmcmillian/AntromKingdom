@@ -133,9 +133,9 @@ let currentBuildingPreviewRotationY = 0
 let placementConfirmCooldown = 0
 let secondaryCancelWasPressed = false
 let actionCancelWasPressed = false
-const homesteadRallyPoints = new Map<string, Vector3>()
+const templeRallyPoints = new Map<string, Vector3>()
 const barracksRallyPoints = new Map<string, Vector3>()
-let rallyPlacementKind: 'supplyHouse' | 'barracks' | 'none' = 'none'
+let rallyPlacementKind: 'temple' | 'barracks' | 'none' = 'none'
 let rallyPlacementBuildingId = ''
 let rallyPlacementCooldown = 0
 const BUILDING_FOOTPRINT_Y = 0.18
@@ -191,13 +191,13 @@ export function queueWorker(): void {
   if (!isMatchActive()) return
 
   const selected = getSelected()
-  const homestead = selected?.kind === 'supplyHouse' ? (selected as Building) : undefined
+  const temple = selected?.kind === 'temple' ? (selected as Building) : undefined
 
   const workerDef = getWorkerDefinition('player')
-  const supplyName = getBuildingDisplayName('supplyHouse', 'player')
+  const templeName = getBuildingDisplayName('temple', 'player')
 
-  if (!homestead?.alive || !homestead.isComplete) {
-    setStatus(`Select a completed ${supplyName} to create ${workerDef.name}s.`)
+  if (!temple?.alive || !temple.isComplete) {
+    setStatus(`Select a completed ${templeName} to create ${workerDef.name}s.`)
     return
   }
 
@@ -211,9 +211,9 @@ export function queueWorker(): void {
     return
   }
 
-  workerProductionOrders.push({ homesteadId: homestead.id, timer: 0, productionTime: workerDef.productionTime, team: 'player' })
+  workerProductionOrders.push({ templeId: temple.id, timer: 0, productionTime: workerDef.productionTime, team: 'player' })
   gameState.economies.player.workerQueue += 1
-  setStatus(`${workerDef.name} queued at the ${supplyName}.`)
+  setStatus(`${workerDef.name} queued at the ${templeName}.`)
 }
 
 export function setWorkerSpawnPoint(): void {
@@ -221,18 +221,18 @@ export function setWorkerSpawnPoint(): void {
 
   const selected = getSelected()
 
-  if (selected?.kind !== 'supplyHouse') {
-    setStatus('Select a Homestead first, then set the worker spawn point.')
+  if (selected?.kind !== 'temple') {
+    setStatus('Select your Temple first, then set the worker spawn point.')
     return
   }
 
-  const homestead = selected as Building
-  if (!homestead.isComplete) {
-    setStatus('Finish the Homestead before setting its spawn point.')
+  const temple = selected as Building
+  if (!temple.isComplete) {
+    setStatus('Finish the Temple before setting its spawn point.')
     return
   }
 
-  startRallyPlacement('supplyHouse', homestead.id)
+  startRallyPlacement('temple', temple.id)
   setStatus('Click the ground where new workers should gather.')
 }
 
@@ -257,7 +257,7 @@ export function setBarracksSpawnPoint(): void {
   setStatus('Click the ground where new fighters should gather.')
 }
 
-function startRallyPlacement(kind: 'supplyHouse' | 'barracks', buildingId: string): void {
+function startRallyPlacement(kind: 'temple' | 'barracks', buildingId: string): void {
   rallyPlacementKind = kind
   rallyPlacementBuildingId = buildingId
   rallyPlacementCooldown = BUILDING_PLACEMENT_CLICK_COOLDOWN
@@ -284,9 +284,9 @@ function updateRallyPlacementInput(dt: number): void {
   }
 
   const rallyPoint = Vector3.create(ground.x, 0.25, ground.z)
-  if (rallyPlacementKind === 'supplyHouse') {
-    homesteadRallyPoints.set(rallyPlacementBuildingId, rallyPoint)
-    setStatus(`Homestead worker spawn set to ${formatPosition(rallyPoint)}.`)
+  if (rallyPlacementKind === 'temple') {
+    templeRallyPoints.set(rallyPlacementBuildingId, rallyPoint)
+    setStatus(`Worker spawn point set to ${formatPosition(rallyPoint)}.`)
   } else {
     barracksRallyPoints.set(rallyPlacementBuildingId, rallyPoint)
     setStatus(`Barracks spawn set to ${formatPosition(rallyPoint)}.`)
@@ -570,7 +570,7 @@ export function resetRtsGame(): void {
   gameState.placementBuildingKind = ''
   gameState.savedMineralLocations = []
   gameState.savedGasLocations = []
-  homesteadRallyPoints.clear()
+  templeRallyPoints.clear()
   barracksRallyPoints.clear()
   cancelRallyPlacement()
   cancelPlacement()
@@ -696,8 +696,8 @@ export function getSelectedProductionQueue(): ProductionQueueInfo | undefined {
   const selected = getSelected()
   if (!selected) return undefined
 
-  if (selected.kind === 'supplyHouse') {
-    const orders = workerProductionOrders.filter((order) => order.homesteadId === selected.id)
+  if (selected.kind === 'temple') {
+    const orders = workerProductionOrders.filter((order) => order.templeId === selected.id)
     if (orders.length === 0) return undefined
     return { count: orders.length, progress: clamp(orders[0].timer / orders[0].productionTime, 0, 1) }
   }
@@ -1439,9 +1439,9 @@ const productionDeps = {
   getBuildingById,
   createWorker,
   createSoldier,
-  getHomesteadExitPosition,
+  getTempleExitPosition,
   getBarracksExitPosition,
-  getHomesteadRallyPoint: (homesteadId: string) => homesteadRallyPoints.get(homesteadId),
+  getTempleRallyPoint: (templeId: string) => templeRallyPoints.get(templeId),
   getBarracksRallyPoint: (barracksId: string) => barracksRallyPoints.get(barracksId),
   sendWorkerToRally,
   sendSoldierToRally,
@@ -2241,7 +2241,7 @@ function getSelectedAdjustableBuilding(): Building | undefined {
 function getSelectedRallyPoint(): Vector3 | undefined {
   const selected = getSelected()
 
-  if (selected?.kind === 'supplyHouse') return homesteadRallyPoints.get(selected.id)
+  if (selected?.kind === 'temple') return templeRallyPoints.get(selected.id)
   if (selected?.kind === 'barracks' || selected?.kind === 'techLab') return barracksRallyPoints.get(selected.id)
   return undefined
 }
@@ -2259,13 +2259,14 @@ function getBuildingDetail(building: Building): string {
   if (building.kind === 'temple') {
     const templePosition = Transform.get(building.entity).position
     const templeName = getBuildingDisplayName('temple', getTeam(building))
-    if (isEnemyTeam(getTeam(building))) return `${teamNamePrefix(getTeam(building))}${templeName}: AI resource dropoff. Location ${formatPosition(templePosition)}.`
-    return `${templeName}: workers deliver resources here. Location ${formatPosition(templePosition)}.`
+    if (isEnemyTeam(getTeam(building))) return `${teamNamePrefix(getTeam(building))}${templeName}: AI headquarters. Location ${formatPosition(templePosition)}.`
+    const rallyPoint = templeRallyPoints.get(building.id)
+    const base = `${templeName}: trains workers, receives resources.`
+    return rallyPoint ? `${base} Spawn ${formatPosition(rallyPoint)}.` : `${base} Location ${formatPosition(templePosition)}.`
   }
   if (building.kind === 'supplyHouse') {
-    const rallyPoint = homesteadRallyPoints.get(building.id)
     const supplyName = getBuildingDisplayName('supplyHouse', getTeam(building))
-    return rallyPoint ? `${supplyName}: creates workers and adds supply. Spawn ${formatPosition(rallyPoint)}.` : `${supplyName}: creates workers and adds supply.`
+    return `${supplyName}: raises the supply cap by ${BUILDING_DEFINITIONS.supplyHouse.supplyAdds}.`
   }
   if (building.kind === 'barracks') {
     const rallyPoint = barracksRallyPoints.get(building.id)
@@ -2558,9 +2559,11 @@ function getBarracksExitPosition(barracks: Building, index: number): Vector3 {
   return offsetSpawn(exitPosition, index)
 }
 
-function getHomesteadExitPosition(homestead: Building, index: number): Vector3 {
-  const transform = Transform.get(homestead.entity)
-  const exitDistance = Math.max(transform.scale.x, transform.scale.z) * 0.55 + 1
+function getTempleExitPosition(temple: Building, index: number): Vector3 {
+  const transform = Transform.get(temple.entity)
+  // The temple's collider is roughly twice its transform scale, so push new
+  // workers out past it instead of spawning them inside the model.
+  const exitDistance = Math.max(MODEL_TRANSFORMS.hq.colliderScale.x, MODEL_TRANSFORMS.hq.colliderScale.z) * 0.55 + 1
   const exitPosition = Vector3.create(transform.position.x, 0.25, transform.position.z + exitDistance)
 
   return offsetSpawn(exitPosition, index)

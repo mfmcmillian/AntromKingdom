@@ -4,7 +4,7 @@ import type { BuildableKind, BuildingDefinition, Difficulty, ResourceDefinition,
 export const CONFIG = {
   mineralsStart: 50,
   gasStart: 0,
-  startSupplyCap: 5,
+  startSupplyCap: 10,
   workerMineTime: 3,
   workerCarryAmount: 10,
   workerMoveSpeed: 2.5,
@@ -254,7 +254,7 @@ export const BUILDING_DEFINITIONS: Record<BuildableKind, BuildingDefinition> = {
     placementY: MODEL_TRANSFORMS.hq.y,
     scale: MODEL_TRANSFORMS.hq.scale,
     color: COLORS.temple,
-    completeStatus: 'Temple complete. Workers can deliver resources here.'
+    completeStatus: 'Temple complete. Train workers and deliver resources here.'
   },
   supplyHouse: {
     kind: 'supplyHouse',
@@ -266,7 +266,7 @@ export const BUILDING_DEFINITIONS: Record<BuildableKind, BuildingDefinition> = {
     placementY: 2.65,
     scale: Vector3.create(6.04, 4.72, 6.04),
     color: COLORS.supply,
-    completeStatus: 'Homestead complete. Workers can be trained here.'
+    completeStatus: 'Homestead complete. Supply cap raised.'
   },
   barracks: {
     kind: 'barracks',

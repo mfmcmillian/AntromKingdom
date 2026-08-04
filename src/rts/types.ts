@@ -187,7 +187,8 @@ export type UnitProductionOrder = {
 }
 
 export type WorkerProductionOrder = {
-  homesteadId: string
+  /** Workers train at the HQ temple (Command Post / Nexus / Hive). */
+  templeId: string
   timer: number
   productionTime: number
   team: Team

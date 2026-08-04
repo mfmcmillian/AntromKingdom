@@ -135,13 +135,13 @@ function queueEnemyProduction(ai: EnemyAi): void {
   const economy = gameState.economies[team]
   const workerCount = getTeamWorkerCount(team) + economy.workerQueue
   const guardCount = getTeamSoldierCount(team) + economy.soldierQueue
-  const homestead = getCompletedTeamBuildings(team, 'supplyHouse')[0]
+  const temple = getCompletedTeamBuildings(team, 'temple')[0]
   const barracks = getCompletedTeamBuildings(team, 'barracks')[0]
 
   const workerDef = getWorkerDefinition(team)
 
-  if (homestead && workerCount < ai.settings.targetWorkers && canQueueUnit(team, workerDef.supply) && spendResources(team, workerDef.cost)) {
-    workerProductionOrders.push({ homesteadId: homestead.id, timer: 0, productionTime: workerDef.productionTime, team })
+  if (temple && workerCount < ai.settings.targetWorkers && canQueueUnit(team, workerDef.supply) && spendResources(team, workerDef.cost)) {
+    workerProductionOrders.push({ templeId: temple.id, timer: 0, productionTime: workerDef.productionTime, team })
     economy.workerQueue += 1
   }
 
@@ -256,7 +256,7 @@ function sendEnemyAttackWave(ai: EnemyAi, deps: EnemyAiDeps): void {
 }
 
 function shouldBuildEnemyHomestead(ai: EnemyAi, completedHomesteadCount: number): boolean {
-  if (completedHomesteadCount === 0) return true
+  // Workers come from the temple now, so supply houses are only needed when the cap gets tight.
   return getSupplyCap(ai.team) - getSupplyUsed(ai.team) <= 2 && completedHomesteadCount < ai.settings.maxHomesteads
 }
 
