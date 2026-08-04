@@ -318,6 +318,15 @@ function updateRallyPlacementInput(dt: number): void {
 let attackMovePending = false
 let attackMoveCooldown = 0
 
+/**
+ * True from the moment a pending-order handler (attack-move / patrol) uses a
+ * ground click until that pointer press is released. Without this, drag-select
+ * runs later in the same frame, sees the pending flag already cleared, and
+ * re-reads the same press as a plain move order - overwriting the order that
+ * was just issued.
+ */
+let orderClickConsumedUntilRelease = false
+
 export function startAttackMove(): void {
   if (!isMatchActive()) return
 
@@ -382,6 +391,7 @@ function updatePatrolInput(dt: number): void {
   }
 
   cancelPatrol()
+  orderClickConsumedUntilRelease = true
   const patrollers = getCommandableSoldiers().filter((soldier) => soldier.alive && getTeam(soldier) === 'player')
   if (patrollers.length === 0) return
 
@@ -422,6 +432,7 @@ function updateAttackMoveInput(dt: number): void {
   }
 
   cancelAttackMove()
+  orderClickConsumedUntilRelease = true
   const attackers = getCommandableSoldiers().filter((soldier) => soldier.alive && getTeam(soldier) === 'player')
   if (attackers.length === 0) return
 
@@ -823,6 +834,7 @@ export function resetRtsGame(): void {
   cancelRallyPlacement()
   cancelAttackMove()
   cancelPatrol()
+  orderClickConsumedUntilRelease = false
   cancelPlacement()
 
   for (const worker of workers) destroySelectable(worker)
@@ -1815,6 +1827,7 @@ const dragSelectDeps = {
     rallyPlacementKind !== 'none' ||
     attackMovePending ||
     patrolPending ||
+    orderClickConsumedUntilRelease ||
     gameState.matchStatus !== MATCH_ACTIVE,
   onBoxSelect: selectPlayerUnitsInRect,
   isPressOnSelectable: isPointerPressOnSelectable,
@@ -1951,6 +1964,9 @@ function rtsTickSystem(dt: number): void {
   updateAttackMoveInput(dt)
   updatePatrolInput(dt)
   updateCancelInput()
+  if (orderClickConsumedUntilRelease && !inputSystem.isPressed(InputAction.IA_POINTER)) {
+    orderClickConsumedUntilRelease = false
+  }
   updateDragSelect(dragSelectDeps)
   updateWorkerAutoGather(dt)
   updateRallyMarker()
