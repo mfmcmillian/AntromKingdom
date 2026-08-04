@@ -44,10 +44,24 @@ type PartOptions = {
 
 type PartAdder = (position: Vector3, scale: Vector3, color: Color4, options?: PartOptions) => Entity
 
-const buildingParts = new Map<Entity, Entity[]>()
+type BuildingPart = {
+  entity: Entity
+  color: Color4
+  emissive: Color4
+  emissiveIntensity: number
+  metallic: number
+  roughness: number
+}
+
+type BuildingRig = {
+  parts: BuildingPart[]
+  damageLevel: number
+}
+
+const buildingRigs = new Map<Entity, BuildingRig>()
 
 export function buildBuildingModel(root: Entity, race: RaceId, kind: BuildableKind): void {
-  const parts: Entity[] = []
+  const parts: BuildingPart[] = []
   const addPart: PartAdder = (position, scale, color, options = {}) => {
     const part = engine.addEntity()
     Transform.create(part, {
@@ -62,15 +76,17 @@ export function buildBuildingModel(root: Entity, race: RaceId, kind: BuildableKi
     else if (options.cylinder) MeshRenderer.setCylinder(part)
     else MeshRenderer.setBox(part)
 
-    Material.setPbrMaterial(part, {
-      albedoColor: color,
-      emissiveColor: options.emissive ?? Color4.Black(),
+    const material: BuildingPart = {
+      entity: part,
+      color,
+      emissive: options.emissive ?? Color4.Black(),
       emissiveIntensity: options.emissiveIntensity ?? 0,
       metallic: options.metallic ?? 0.2,
       roughness: options.roughness ?? 0.75
-    })
+    }
+    applyPartMaterial(material, 0)
 
-    parts.push(part)
+    parts.push(material)
     return part
   }
 
@@ -78,30 +94,61 @@ export function buildBuildingModel(root: Entity, race: RaceId, kind: BuildableKi
   else if (race === 'alien') buildAlienBuilding(kind, addPart)
   else buildBioBuilding(kind, addPart)
 
-  buildingParts.set(root, parts)
+  buildingRigs.set(root, { parts, damageLevel: 0 })
 }
 
 export function isProceduralBuilding(entity: Entity): boolean {
-  return buildingParts.has(entity)
+  return buildingRigs.has(entity)
 }
 
 export function setBuildingModelVisible(entity: Entity, visible: boolean): void {
-  const parts = buildingParts.get(entity)
-  if (!parts) return
+  const rig = buildingRigs.get(entity)
+  if (!rig) return
 
-  for (const part of parts) {
-    VisibilityComponent.createOrReplace(part, { visible })
+  for (const part of rig.parts) {
+    VisibilityComponent.createOrReplace(part.entity, { visible })
   }
 }
 
+/**
+ * Chars the building as HP drops: albedo darkens toward soot and glow parts
+ * dim, in steps matching the smoke VFX thresholds. Repairs restore the paint.
+ */
+export function setBuildingModelDamage(entity: Entity, hpRatio: number): void {
+  const rig = buildingRigs.get(entity)
+  if (!rig) return
+
+  const level = hpRatio <= 0.2 ? 3 : hpRatio <= 0.4 ? 2 : hpRatio <= 0.7 ? 1 : 0
+  if (level === rig.damageLevel) return
+
+  rig.damageLevel = level
+  const char = [0, 0.35, 0.6, 0.82][level]
+  for (const part of rig.parts) {
+    applyPartMaterial(part, char)
+  }
+}
+
+function applyPartMaterial(part: BuildingPart, char: number): void {
+  const soot = (channel: number) => channel * (1 - char) + 0.04 * char
+  const glowFade = 1 - char * 0.9
+
+  Material.setPbrMaterial(part.entity, {
+    albedoColor: Color4.create(soot(part.color.r), soot(part.color.g), soot(part.color.b), part.color.a),
+    emissiveColor: Color4.create(part.emissive.r * glowFade, part.emissive.g * glowFade, part.emissive.b * glowFade, 1),
+    emissiveIntensity: part.emissiveIntensity * glowFade,
+    metallic: part.metallic * (1 - char),
+    roughness: Math.min(1, part.roughness + char * 0.4)
+  })
+}
+
 export function disposeBuildingModel(entity: Entity, removeParts: boolean): void {
-  const parts = buildingParts.get(entity)
-  if (!parts) return
+  const rig = buildingRigs.get(entity)
+  if (!rig) return
 
   if (removeParts) {
-    for (const part of parts) engine.removeEntity(part)
+    for (const part of rig.parts) engine.removeEntity(part.entity)
   }
-  buildingParts.delete(entity)
+  buildingRigs.delete(entity)
 }
 
 // ---------------------------------------------------------------------------

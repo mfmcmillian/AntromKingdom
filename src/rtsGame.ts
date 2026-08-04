@@ -63,7 +63,7 @@ import { initFogOfWar, resetFogOfWar } from './rts/fogOfWar'
 import { SelectionMarkerTarget, clearSelectionMarkers, updateSelectionMarkers } from './rts/selectionMarkers'
 import { buildEnvironmentEnclosure } from './rts/environment'
 import { buildUnitModel, disposeUnit, isProceduralUnit, setUnitAnimation, updateUnitCargo } from './rts/unitModels'
-import { BUILDING_MODEL_HEIGHTS, buildBuildingModel, disposeBuildingModel, isProceduralBuilding } from './rts/buildingModels'
+import { BUILDING_MODEL_HEIGHTS, buildBuildingModel, disposeBuildingModel, isProceduralBuilding, setBuildingModelDamage } from './rts/buildingModels'
 import { getBuildingDisplayName, getRace, getSoldierDefinition, getWorkerDefinition, pickEnemyRace } from './rts/races'
 import { buildResourceModel, disposeResourceModel, playResourceDepletion, playResourceGatherPulse } from './rts/resourceModels'
 import { showMoveMarker } from './rts/moveMarker'
@@ -1684,6 +1684,9 @@ function updateBuildingDamageVfxForBuilding(building: Building): void {
     clearBuildingDamageVfx(building)
     return
   }
+
+  // Char the model itself; repairs restore the original materials.
+  setBuildingModelDamage(building.entity, building.hp / building.maxHp)
 
   const level = getBuildingDamageVfxLevel(building)
   if (level === 0) {
