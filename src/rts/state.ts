@@ -1,7 +1,9 @@
 import { CONFIG } from './config'
-import type { BuildableKind, PlacementState, SelectableKind } from './types'
+import type { BuildableKind, PlacementState, RaceId, SelectableKind } from './types'
 
 export const gameState = {
+  playerRace: 'human' as RaceId,
+  enemyRace: 'alien' as RaceId,
   minerals: CONFIG.mineralsStart,
   gas: CONFIG.gasStart,
   supplyUsed: 0,

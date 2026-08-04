@@ -28,8 +28,7 @@ import {
   RESOURCE_DEFINITIONS,
   RESOURCE_FIELDS,
   ResourceField,
-  SCENE,
-  SOLDIER_DEFINITION
+  SCENE
 } from './rts/config'
 import {
   addSupplyUsed,
@@ -63,7 +62,8 @@ import { updateDragSelect } from './rts/dragSelect'
 import { initFogOfWar, resetFogOfWar } from './rts/fogOfWar'
 import { SelectionMarkerTarget, clearSelectionMarkers, updateSelectionMarkers } from './rts/selectionMarkers'
 import { buildEnvironmentEnclosure } from './rts/environment'
-import { buildMinerRobot, disposeRobot, isRobot, setRobotAnimation, updateRobotCargo } from './rts/robotModel'
+import { buildUnitModel, disposeUnit, isProceduralUnit, setUnitAnimation, updateUnitCargo } from './rts/unitModels'
+import { getBuildingDisplayName, getRace, getSoldierDefinition, getWorkerDefinition, pickEnemyRace } from './rts/races'
 import { buildResourceModel, disposeResourceModel, playResourceDepletion, playResourceGatherPulse } from './rts/resourceModels'
 import { showMoveMarker } from './rts/moveMarker'
 import { disableTopDownView, enableTopDownView, getCameraFocus, isTopDownViewActive } from './rts/topDownCamera'
@@ -153,15 +153,10 @@ export function initRtsGame(): void {
 export function startRtsMatch(): void {
   if (gameState.matchStatus === MATCH_ACTIVE) return
 
-  if (gameState.matchStatus === MATCH_ENDED) {
-    resetRtsGame()
-    return
-  }
-
-  gameState.matchStatus = MATCH_ACTIVE
+  // Always rebuild the base so the chosen race's units and buildings spawn fresh.
+  resetRtsGame()
   gameState.matchResult = 'none'
-  gameState.status = 'Match started. Select a worker to gather resources.'
-  enableTopDownView()
+  gameState.status = `${getRace('player').name} vs ${getRace('enemy').name}. Select a worker to gather resources.`
 }
 
 export function endRtsMatch(): void {
@@ -176,25 +171,27 @@ export function queueWorker(): void {
   const selected = getSelected()
   const homestead = selected?.kind === 'supplyHouse' ? (selected as Building) : undefined
 
+  const workerDef = getWorkerDefinition('player')
+  const supplyName = getBuildingDisplayName('supplyHouse', 'player')
+
   if (!homestead?.alive || !homestead.isComplete) {
-    setStatus('Select a completed Homestead to create workers.')
+    setStatus(`Select a completed ${supplyName} to create ${workerDef.name}s.`)
     return
   }
 
   if (getSupplyUsed('player') + gameState.workerQueue >= getSupplyCap('player')) {
-    setStatus('Need more supply before creating workers.')
+    setStatus(`Need more supply before creating ${workerDef.name}s.`)
     return
   }
 
-  const workerCost = { minerals: CONFIG.workerCost }
-  if (!spendResources('player', workerCost)) {
-    setStatus(`Need ${formatCost(workerCost)} for a miner.`)
+  if (!spendResources('player', workerDef.cost)) {
+    setStatus(`Need ${formatCost(workerDef.cost)} for a ${workerDef.name}.`)
     return
   }
 
-  workerProductionOrders.push({ homesteadId: homestead.id, timer: 0, productionTime: CONFIG.productionTime, team: 'player' })
+  workerProductionOrders.push({ homesteadId: homestead.id, timer: 0, productionTime: workerDef.productionTime, team: 'player' })
   gameState.workerQueue += 1
-  setStatus('Miner queued at Homestead.')
+  setStatus(`${workerDef.name} queued at the ${supplyName}.`)
 }
 
 export function setWorkerSpawnPoint(): void {
@@ -291,7 +288,7 @@ export function startWorkerBuildingPlacement(kind: BuildableKind): void {
   }
 
   if (!hasResources(worker.team ?? 'player', definition.cost)) {
-    setStatus(`Need ${formatCost(definition.cost)} to build ${definition.name}.`)
+    setStatus(`Need ${formatCost(definition.cost)} to build the ${getBuildingDisplayName(kind, 'player')}.`)
     return
   }
 
@@ -306,15 +303,15 @@ export function startWorkerBuildingPlacement(kind: BuildableKind): void {
   gameState.placementMode = 'placing'
   gameState.placementBuildingKind = kind
   placementConfirmCooldown = BUILDING_PLACEMENT_CLICK_COOLDOWN
-  setStatus(`Placing ${definition.name}. Click open ground to build. Press E to rotate.`)
+  setStatus(`Placing ${getBuildingDisplayName(kind, 'player')}. Click open ground to build. Press E to rotate.`)
 }
 
 export function cancelBuildingPlacement(): void {
   if (placementState.state !== 'placing') return
 
-  const definition = BUILDING_DEFINITIONS[placementState.buildingKind]
+  const kind = placementState.buildingKind
   cancelPlacement()
-  setStatus(`Cancelled ${definition.name} placement.`)
+  setStatus(`Cancelled ${getBuildingDisplayName(kind, 'player')} placement.`)
 }
 
 export function queueSoldier(): void {
@@ -322,38 +319,40 @@ export function queueSoldier(): void {
 
   const selected = getSelected()
   const barracks = selected?.kind === 'barracks' ? (selected as Building) : undefined
+  const soldierDef = getSoldierDefinition('player')
+  const barracksName = getBuildingDisplayName('barracks', 'player')
 
   if (!barracks?.alive || !barracks.isComplete) {
-    setStatus(`Select a completed Barracks to create ${SOLDIER_DEFINITION.name}s.`)
+    setStatus(`Select a completed ${barracksName} to create ${soldierDef.name}s.`)
     return
   }
 
   if (getSupplyUsed('player') + gameState.workerQueue + gameState.soldierQueue >= getSupplyCap('player')) {
-    setStatus(`Need more supply before creating ${SOLDIER_DEFINITION.name}s.`)
+    setStatus(`Need more supply before creating ${soldierDef.name}s.`)
     return
   }
 
-  if (!spendResources('player', SOLDIER_DEFINITION.cost)) {
-    setStatus(`Need ${formatCost(SOLDIER_DEFINITION.cost)} for an ${SOLDIER_DEFINITION.name}.`)
+  if (!spendResources('player', soldierDef.cost)) {
+    setStatus(`Need ${formatCost(soldierDef.cost)} for a ${soldierDef.name}.`)
     return
   }
 
-  soldierProductionOrders.push({ barracksId: barracks.id, timer: 0, productionTime: SOLDIER_DEFINITION.productionTime, team: 'player' })
+  soldierProductionOrders.push({ barracksId: barracks.id, timer: 0, productionTime: soldierDef.productionTime, team: 'player' })
   gameState.soldierQueue += 1
-  setStatus(`${SOLDIER_DEFINITION.name} queued at Barracks.`)
+  setStatus(`${soldierDef.name} queued at the ${barracksName}.`)
 }
 
 export function selectAllLikeSelected(): void {
   const selected = getSelected()
 
   if (selected?.kind !== 'worker' && selected?.kind !== 'soldier') {
-    setStatus(`Select a worker or ${SOLDIER_DEFINITION.name} first.`)
+    setStatus(`Select a ${getWorkerDefinition('player').name} or ${getSoldierDefinition('player').name} first.`)
     return
   }
 
   const units = selected.kind === 'worker' ? getAvailableWorkers() : getAvailableSoldiers()
   setUnitSelection(units)
-  const unitLabel = selected.kind === 'worker' ? 'workers' : `${SOLDIER_DEFINITION.name}s`
+  const unitLabel = selected.kind === 'worker' ? `${getWorkerDefinition('player').name}s` : `${getSoldierDefinition('player').name}s`
   setStatus(`Selected all ${unitLabel} (${units.length}). Click a valid target to command them.`)
 }
 
@@ -361,26 +360,26 @@ export function startSoldierMoveCommand(): void {
   const commandableSoldiers = getCommandableSoldiers()
 
   if (commandableSoldiers.length === 0) {
-    setStatus(`Select an ${SOLDIER_DEFINITION.name} first.`)
+    setStatus(`Select a ${getSoldierDefinition('player').name} first.`)
     return
   }
 
   soldierCommandMode = 'move'
   soldierCommandCooldown = SOLDIER_MOVE_COMMAND_CLICK_COOLDOWN
-  setStatus(`Move ${commandableSoldiers.length} ${SOLDIER_DEFINITION.name}${commandableSoldiers.length === 1 ? '' : 's'}: click open ground.`)
+  setStatus(`Move ${commandableSoldiers.length} ${getSoldierDefinition('player').name}${commandableSoldiers.length === 1 ? '' : 's'}: click open ground.`)
 }
 
 export function startSoldierAttackCommand(): void {
   const commandableSoldiers = getCommandableSoldiers()
 
   if (commandableSoldiers.length === 0) {
-    setStatus(`Select an ${SOLDIER_DEFINITION.name} first.`)
+    setStatus(`Select a ${getSoldierDefinition('player').name} first.`)
     return
   }
 
   soldierCommandMode = 'attack'
   soldierCommandCooldown = SOLDIER_MOVE_COMMAND_CLICK_COOLDOWN
-  setStatus(`Attack with ${commandableSoldiers.length} ${SOLDIER_DEFINITION.name}${commandableSoldiers.length === 1 ? '' : 's'}: click an enemy.`)
+  setStatus(`Attack with ${commandableSoldiers.length} ${getSoldierDefinition('player').name}${commandableSoldiers.length === 1 ? '' : 's'}: click an enemy.`)
 }
 
 export function selectIdleWorker(): void {
@@ -518,6 +517,7 @@ function saveResourcePlacement(resource: ResourceKind, position: Vector3): void 
 }
 
 export function resetRtsGame(): void {
+  gameState.enemyRace = pickEnemyRace(gameState.playerRace)
   resetEconomy()
   resetMatchState(MATCH_ACTIVE)
   gameState.selectedId = ''
@@ -573,8 +573,8 @@ function getGroupSelectionPrefix(): string {
   if (workerCount + soldierCount <= 1) return ''
 
   const parts: string[] = []
-  if (workerCount > 0) parts.push(`${workerCount} worker${workerCount === 1 ? '' : 's'}`)
-  if (soldierCount > 0) parts.push(`${soldierCount} ${SOLDIER_DEFINITION.name}${soldierCount === 1 ? '' : 's'}`)
+  if (workerCount > 0) parts.push(`${workerCount} ${getWorkerDefinition('player').name}${workerCount === 1 ? '' : 's'}`)
+  if (soldierCount > 0) parts.push(`${soldierCount} ${getSoldierDefinition('player').name}${soldierCount === 1 ? '' : 's'}`)
   return `Selected ${parts.join(' + ')}. `
 }
 
@@ -726,8 +726,8 @@ function scatterGroundDecorations(): void {
 }
 
 function createStartingBase(): void {
-  buildings.push(createBuilding('temple', 'Temple', POSITIONS.base, CONFIG.templeHp, 'complete', 0, 'player'))
-  buildings.push(createBuilding('temple', 'Enemy Temple', POSITIONS.enemyTemple, CONFIG.templeHp, 'complete', 180, 'enemy'))
+  buildings.push(createBuilding('temple', getBuildingDisplayName('temple', 'player'), POSITIONS.base, CONFIG.templeHp, 'complete', 0, 'player'))
+  buildings.push(createBuilding('temple', `Enemy ${getBuildingDisplayName('temple', 'enemy')}`, POSITIONS.enemyTemple, CONFIG.templeHp, 'complete', 180, 'enemy'))
 
   spawnResourceFields()
 
@@ -781,14 +781,17 @@ function generateFieldPositions(field: ResourceField, fieldIndex: number): Vecto
 }
 
 function createWorker(position: Vector3, team: Team = 'player'): Worker {
-  const worker = createRobotWorkerSelectable(
-    `${team === 'enemy' ? 'Enemy Miner' : 'Miner'} ${getTeamWorkerCount(team) + 1}`,
+  const definition = getWorkerDefinition(team)
+  const worker = createProceduralUnitSelectable(
+    'worker',
+    `${team === 'enemy' ? 'Enemy ' : ''}${definition.name} ${getTeamWorkerCount(team) + 1}`,
     position,
-    team
+    team,
+    Vector3.create(0.55, 1.6, 0.55)
   ) as Worker
 
-  worker.hp = CONFIG.workerHp
-  worker.maxHp = CONFIG.workerHp
+  worker.hp = definition.hp
+  worker.maxHp = definition.hp
   worker.state = 'idle'
   worker.timer = 0
   worker.carrying = 0
@@ -796,45 +799,43 @@ function createWorker(position: Vector3, team: Team = 'player'): Worker {
   return worker
 }
 
-/** Workers on the space branch are procedurally built mining robots instead of GLB villagers. */
-function createRobotWorkerSelectable(name: string, position: Vector3, team: Team): Selectable {
-  const id = createEntityId('worker')
-  const entity = engine.addEntity()
-  Transform.create(entity, { position: cloneVector(position) })
-  buildMinerRobot(entity, team)
-
-  const selectable: Selectable = { id, kind: 'worker', name, entity, alive: true, team }
-  selectable.colliderEntity = createModelColliderEntity(entity, {
-    position,
-    scale: Vector3.create(1, 1, 1),
-    src: '',
-    colliderScale: Vector3.create(0.55, 1.6, 0.55)
-  })
-  selectables.set(id, selectable)
-  registerSelectable(selectable)
-  return selectable
-}
-
 function createSoldier(position: Vector3, team: Team = 'player'): Soldier {
-  const soldier = createSelectableModel('soldier', `${team === 'enemy' ? 'Enemy Guard' : SOLDIER_DEFINITION.name} ${getTeamSoldierCount(team) + 1}`, {
+  const definition = getSoldierDefinition(team)
+  const soldier = createProceduralUnitSelectable(
+    'soldier',
+    `${team === 'enemy' ? 'Enemy ' : ''}${definition.name} ${getTeamSoldierCount(team) + 1}`,
     position,
-    scale: Vector3.create(1, 1, 1),
-    src: team === 'enemy' ? ASSETS.enemyFighter : ASSETS.playerFighter,
-    colliderScale: Vector3.create(0.7, 1.8, 0.7),
-    animations: [
-      { clip: 'idle', playing: true, loop: true },
-      { clip: 'walk', playing: false, loop: true },
-      { clip: 'attack', playing: false, loop: true },
-      { clip: 'impact', playing: false, loop: false }
-    ]
-  }, true, team) as Soldier
+    team,
+    Vector3.create(0.7, 1.7, 0.7)
+  ) as Soldier
 
-  soldier.hp = SOLDIER_DEFINITION.hp
-  soldier.maxHp = SOLDIER_DEFINITION.hp
+  soldier.hp = definition.hp
+  soldier.maxHp = definition.hp
+  soldier.damage = definition.damage ?? CONFIG.soldierDamage
+  soldier.moveSpeed = definition.moveSpeed ?? CONFIG.soldierMoveSpeed
   soldier.state = 'idle'
   soldier.attackTimer = 0
   soldier.activeAnimation = 'idle'
   return soldier
+}
+
+/** Units are procedurally built per race (no GLBs), so this replaces createSelectableModel for them. */
+function createProceduralUnitSelectable(kind: 'worker' | 'soldier', name: string, position: Vector3, team: Team, colliderScale: Vector3): Selectable {
+  const id = createEntityId(kind)
+  const entity = engine.addEntity()
+  Transform.create(entity, { position: cloneVector(position) })
+  buildUnitModel(entity, getRace(team).id, kind, team)
+
+  const selectable: Selectable = { id, kind, name, entity, alive: true, team }
+  selectable.colliderEntity = createModelColliderEntity(entity, {
+    position,
+    scale: Vector3.create(1, 1, 1),
+    src: '',
+    colliderScale
+  })
+  selectables.set(id, selectable)
+  registerSelectable(selectable)
+  return selectable
 }
 
 function createResourceNode(resource: ResourceKind, name: string, position: Vector3): ResourceNode {
@@ -876,7 +877,7 @@ function createResourceNode(resource: ResourceKind, name: string, position: Vect
 
 function createConstructionSite(kind: BuildableKind, position: Vector3, builderWorkerId: string, rotationY = 0, team: Team = 'player'): Building {
   const definition = BUILDING_DEFINITIONS[kind]
-  const site = createBuilding(kind, `${team === 'enemy' ? 'Enemy ' : ''}${definition.name} (Building)`, position, definition.hp, 'movingBuilder', rotationY, team)
+  const site = createBuilding(kind, `${team === 'enemy' ? 'Enemy ' : ''}${getBuildingDisplayName(kind, team)} (Building)`, position, definition.hp, 'movingBuilder', rotationY, team)
 
   site.builderWorkerId = builderWorkerId
   site.buildTime = definition.buildTime
@@ -928,7 +929,46 @@ function createBuilding(kind: Building['kind'], name: string, position: Vector3,
   building.buildTime = definition?.buildTime ?? 0
   building.isComplete = constructionState === 'complete'
   building.team = team
+  if (building.isComplete) ensureBuildingBeacon(building)
   return building
+}
+
+// Race identity marker: a floating glowing orb in the owner's race color above the roof.
+const BEACON_HEIGHTS: Record<BuildableKind, number> = {
+  temple: 13.5,
+  supplyHouse: 5.5,
+  barracks: 7.5,
+  fireplace: 3.5
+}
+
+function ensureBuildingBeacon(building: Building): void {
+  if (building.beaconEntity || !isBuildableKind(building.kind)) return
+
+  const race = getRace(getTeam(building))
+  const position = Transform.get(building.entity).position
+  const beacon = engine.addEntity()
+  Transform.create(beacon, {
+    position: Vector3.create(position.x, position.y + BEACON_HEIGHTS[building.kind], position.z),
+    scale: Vector3.create(0.55, 0.55, 0.55)
+  })
+  MeshRenderer.setSphere(beacon)
+  Material.setPbrMaterial(beacon, {
+    albedoColor: race.color,
+    emissiveColor: race.accent,
+    emissiveIntensity: 2.4,
+    metallic: 0.2,
+    roughness: 0.4,
+    castShadows: false
+  })
+  building.beaconEntity = beacon
+}
+
+function removeBuildingBeacon(selectable: Selectable): void {
+  const building = selectable as Building
+  if (!building.beaconEntity) return
+
+  engine.removeEntity(building.beaconEntity)
+  building.beaconEntity = undefined
 }
 
 function getBuildingScale(kind: Building['kind'], definition?: BuildingDefinition): Vector3 {
@@ -1206,7 +1246,7 @@ function assignCommandableSoldiersToAttack(target: Building | Soldier | Worker):
   const assignedSoldiers = getCommandableSoldiers()
 
   if (assignedSoldiers.length === 0) {
-    setStatus(`Select an ${SOLDIER_DEFINITION.name} first.`)
+    setStatus(`Select a ${getSoldierDefinition('player').name} first.`)
     return
   }
 
@@ -1215,7 +1255,7 @@ function assignCommandableSoldiersToAttack(target: Building | Soldier | Worker):
   }
 
   clearSelection()
-  setStatus(`${assignedSoldiers.length} ${SOLDIER_DEFINITION.name}s attacking ${target.name}.`)
+  setStatus(`${assignedSoldiers.length} ${getSoldierDefinition('player').name}s attacking ${target.name}.`)
 }
 
 function moveCommandableSoldiersTo(destination: Vector3): void {
@@ -1223,7 +1263,7 @@ function moveCommandableSoldiersTo(destination: Vector3): void {
 
   if (assignedSoldiers.length === 0) {
     cancelSoldierCommand()
-    setStatus(`Select an ${SOLDIER_DEFINITION.name} first.`)
+    setStatus(`Select a ${getSoldierDefinition('player').name} first.`)
     return
   }
 
@@ -1235,7 +1275,7 @@ function moveCommandableSoldiersTo(destination: Vector3): void {
 
   showMoveMarker(destination)
   clearSelection()
-  setStatus(`${assignedSoldiers.length} ${SOLDIER_DEFINITION.name}${assignedSoldiers.length === 1 ? '' : 's'} moving.`)
+  setStatus(`${assignedSoldiers.length} ${getSoldierDefinition('player').name}${assignedSoldiers.length === 1 ? '' : 's'} moving.`)
 }
 
 function confirmBuildingPlacement(hitPosition?: Vector3): void {
@@ -1257,13 +1297,13 @@ function confirmBuildingPlacement(hitPosition?: Vector3): void {
   }
 
   if (!canPlaceBuildingAt(definition, position)) {
-    setStatus(`Cannot place ${definition.name} there. Move the footprint to an open area.`)
+    setStatus(`Cannot place ${getBuildingDisplayName(definition.kind, 'player')} there. Move the footprint to an open area.`)
     return
   }
 
   if (!spendResources(builder.team ?? 'player', definition.cost)) {
     cancelPlacement()
-    setStatus(`Need ${formatCost(definition.cost)} to build ${definition.name}.`)
+    setStatus(`Need ${formatCost(definition.cost)} to build the ${getBuildingDisplayName(definition.kind, 'player')}.`)
     return
   }
 
@@ -1281,7 +1321,7 @@ function confirmBuildingPlacement(hitPosition?: Vector3): void {
   setWorkerAnimation(builder, 'walk')
   cancelPlacement()
   clearSelection()
-  setStatus(`${builder.name} moving to build ${definition.name}.`)
+  setStatus(`${builder.name} moving to build the ${getBuildingDisplayName(definition.kind, 'player')}.`)
 }
 
 function cancelPlacement(): void {
@@ -1488,7 +1528,7 @@ function rtsTickSystem(dt: number): void {
 function updateWorkerCargoVisuals(): void {
   for (const worker of workers) {
     if (!worker.alive) continue
-    updateRobotCargo(worker.entity, worker.carrying > 0 ? worker.carryingResource : undefined)
+    updateUnitCargo(worker.entity, worker.carrying > 0 ? worker.carryingResource : undefined)
   }
 }
 
@@ -1643,7 +1683,7 @@ function updateCancelInput(): void {
 
   if (soldierCommandMode !== 'none') {
     cancelSoldierCommand()
-    setStatus(`${SOLDIER_DEFINITION.name} command cancelled.`)
+    setStatus(`${getSoldierDefinition('player').name} command cancelled.`)
     return
   }
 
@@ -1772,17 +1812,19 @@ function pauseConstruction(site: Building, builder?: Worker): void {
 
 function completeConstruction(site: Building, builder: Worker): void {
   const definition = BUILDING_DEFINITIONS[site.kind as BuildableKind]
+  const displayName = `${getTeam(site) === 'enemy' ? 'Enemy ' : ''}${getBuildingDisplayName(site.kind as BuildableKind, getTeam(site))}`
 
   site.constructionState = 'complete'
   site.constructionProgress = 1
   site.isComplete = true
-  site.name = definition.name
+  site.name = displayName
   builder.state = 'idle'
   builder.buildSiteId = undefined
   builder.repairTargetId = undefined
   setWorkerAnimation(builder, 'idle')
   updateConstructionVisual(site)
-  updateLabel(site, definition.name)
+  updateLabel(site, displayName)
+  ensureBuildingBeacon(site)
 
   if (definition.supplyAdds > 0) {
     addSupplyCap(getTeam(site), definition.supplyAdds)
@@ -1849,7 +1891,7 @@ function damageSoldier(soldier: Soldier, amount: number, attacker?: Soldier): vo
   soldier.targetId = undefined
   soldier.attackPosition = undefined
   soldier.rallyPoint = undefined
-  addSupplyUsed(getTeam(soldier), -SOLDIER_DEFINITION.supply)
+  addSupplyUsed(getTeam(soldier), -getSoldierDefinition(getTeam(soldier)).supply)
   removeSelectable(soldier)
   clearAttackersTargeting(soldier.id)
 }
@@ -2047,16 +2089,19 @@ function getBuildingDetail(building: Building): string {
 
   if (building.kind === 'temple') {
     const templePosition = Transform.get(building.entity).position
-    if (getTeam(building) === 'enemy') return `Enemy Temple: AI resource dropoff. Location ${formatPosition(templePosition)}.`
-    return `Temple: workers deliver resources here. Location ${formatPosition(templePosition)}.`
+    const templeName = getBuildingDisplayName('temple', getTeam(building))
+    if (getTeam(building) === 'enemy') return `Enemy ${templeName}: AI resource dropoff. Location ${formatPosition(templePosition)}.`
+    return `${templeName}: workers deliver resources here. Location ${formatPosition(templePosition)}.`
   }
   if (building.kind === 'supplyHouse') {
     const rallyPoint = homesteadRallyPoints.get(building.id)
-    return rallyPoint ? `Homestead: creates workers and adds supply. Spawn ${formatPosition(rallyPoint)}.` : 'Homestead: creates workers and adds supply.'
+    const supplyName = getBuildingDisplayName('supplyHouse', getTeam(building))
+    return rallyPoint ? `${supplyName}: creates workers and adds supply. Spawn ${formatPosition(rallyPoint)}.` : `${supplyName}: creates workers and adds supply.`
   }
   if (building.kind === 'barracks') {
     const rallyPoint = barracksRallyPoints.get(building.id)
-    return rallyPoint ? `Complete: creates soldiers. Spawn ${formatPosition(rallyPoint)}.` : 'Complete: creates soldiers'
+    const soldierName = getSoldierDefinition(getTeam(building)).name
+    return rallyPoint ? `Complete: creates ${soldierName}s. Spawn ${formatPosition(rallyPoint)}.` : `Complete: creates ${soldierName}s`
   }
   if (building.kind === 'fireplace') return 'Complete: camp utility building.'
   if (building.kind === 'enemyBuilding') return 'Enemy structure'
@@ -2067,7 +2112,7 @@ function getBuildingDetail(building: Building): string {
 function getPlacementInstruction(): string {
   if (placementState.state !== 'placing') return ''
 
-  return `Placing ${BUILDING_DEFINITIONS[placementState.buildingKind].name}. Click ground to place.`
+  return `Placing ${getBuildingDisplayName(placementState.buildingKind, 'player')}. Click ground to place.`
 }
 
 function getHoverText(selectable: Selectable): string {
@@ -2106,7 +2151,7 @@ function depleteResourceNode(resource: ResourceNode): void {
 function setWorkerAnimation(worker: Worker, clipName: string, restart = false): void {
   if (worker.activeAnimation === clipName && !restart) return
 
-  if (isRobot(worker.entity)) setRobotAnimation(worker.entity, clipName)
+  if (isProceduralUnit(worker.entity)) setUnitAnimation(worker.entity, clipName)
   else playAnimation(worker.entity, clipName)
   worker.activeAnimation = clipName
 }
@@ -2114,7 +2159,8 @@ function setWorkerAnimation(worker: Worker, clipName: string, restart = false): 
 function setSoldierAnimation(soldier: Soldier, clipName: string, restart = false): void {
   if (soldier.activeAnimation === clipName && !restart) return
 
-  playAnimation(soldier.entity, clipName)
+  if (isProceduralUnit(soldier.entity)) setUnitAnimation(soldier.entity, clipName)
+  else playAnimation(soldier.entity, clipName)
   soldier.activeAnimation = clipName
 }
 
@@ -2388,8 +2434,9 @@ function removeSelectable(selectable: Selectable): void {
   selectable.alive = false
   removeSelectableInteractivity(selectable)
   // Procedural model parts follow the hidden root, so only the animation rigs need unregistering.
-  disposeRobot(selectable.entity, false)
+  disposeUnit(selectable.entity, false)
   disposeResourceModel(selectable.entity, false)
+  removeBuildingBeacon(selectable)
   hideEntity(selectable.entity)
   if (selectable.labelEntity) hideEntity(selectable.labelEntity)
   selectables.delete(selectable.id)
@@ -2406,8 +2453,9 @@ function removeSelectable(selectable: Selectable): void {
 function destroySelectable(selectable: Selectable): void {
   selectable.alive = false
   removeSelectableInteractivity(selectable)
-  disposeRobot(selectable.entity, true)
+  disposeUnit(selectable.entity, true)
   disposeResourceModel(selectable.entity, true)
+  removeBuildingBeacon(selectable)
   if (selectable.labelEntity) engine.removeEntity(selectable.labelEntity)
   engine.removeEntity(selectable.entity)
   selectables.delete(selectable.id)

@@ -3,6 +3,7 @@ import type { Color4, Vector3 } from '@dcl/sdk/math'
 
 export type ResourceKind = 'minerals' | 'gas'
 export type Team = 'player' | 'enemy'
+export type RaceId = 'human' | 'alien' | 'bio'
 export type SelectableKind = 'temple' | 'worker' | 'resource' | 'supplyHouse' | 'barracks' | 'fireplace' | 'soldier' | 'enemyBuilding'
 export type WorkerState =
   | 'idle'
@@ -76,6 +77,8 @@ export type Soldier = Selectable & {
   kind: 'soldier'
   hp: number
   maxHp: number
+  damage: number
+  moveSpeed: number
   state: SoldierState
   targetId?: string
   attackPosition?: Vector3
@@ -102,6 +105,7 @@ export type Building = Selectable & {
   isComplete: boolean
   damageVfxEntity?: Entity
   damageVfxLevel?: number
+  beaconEntity?: Entity
 }
 
 export type BuildingDefinition = {
@@ -125,6 +129,16 @@ export type UnitDefinition = {
   productionTime: number
   scale: Vector3
   color: Color4
+}
+
+export type RaceUnitStats = {
+  name: string
+  hp: number
+  cost: ResourceCost
+  productionTime: number
+  supply: number
+  damage?: number
+  moveSpeed?: number
 }
 
 export type ResourceDefinition = {

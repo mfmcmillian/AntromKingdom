@@ -22,7 +22,10 @@ import {
 } from './rtsGame'
 import { getDragScreenRect } from './rts/dragSelect'
 import { minimapPanel } from './rts/minimap'
+import { BUILDING_DEFINITIONS } from './rts/config'
+import { RACES, RACE_IDS, formatRaceCost, getBuildingDisplayName, getRace, getSoldierDefinition, getWorkerDefinition } from './rts/races'
 import { isTopDownViewActive, toggleTopDownView } from './rts/topDownCamera'
+import type { RaceId } from './rts/types'
 
 const UI = {
   panel: Color4.create(0.04, 0.05, 0.08, 0.92),
@@ -110,19 +113,19 @@ export const uiMenu = () => {
 
         <UiEntity uiTransform={{ width: '100%', height: 106, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-start', margin: { top: 14 } }}>
           {showCancelPlacement ? actionButton('Cancel Placement', 'no cost spent', cancelBuildingPlacement, UI.red) : null}
-          {isPlayerSelection && selected.kind === 'supplyHouse' ? actionButton('Create Miner', '50 minerals', queueWorker, UI.accent) : null}
+          {isPlayerSelection && selected.kind === 'supplyHouse' ? actionButton(`Create ${getWorkerDefinition('player').name}`, formatRaceCost(getWorkerDefinition('player').cost), queueWorker, UI.accent) : null}
           {isPlayerSelection && selected.kind === 'supplyHouse' ? actionButton('Set Spawn', 'current position', setWorkerSpawnPoint, UI.card) : null}
-          {isPlayerSelection && selected.kind === 'worker' ? actionButton('Build Temple', '300 minerals', () => startWorkerBuildingPlacement('temple'), UI.accent) : null}
-          {isPlayerSelection && selected.kind === 'worker' ? actionButton('Build Homestead', '100 minerals', () => startWorkerBuildingPlacement('supplyHouse'), UI.gold) : null}
-          {isPlayerSelection && selected.kind === 'worker' ? actionButton('Build Barracks', '150 minerals', () => startWorkerBuildingPlacement('barracks'), UI.green) : null}
-          {isPlayerSelection && selected.kind === 'worker' ? actionButton('Build Fireplace', '50 minerals', () => startWorkerBuildingPlacement('fireplace'), UI.red) : null}
-          {isPlayerSelection && selected.kind === 'worker' ? actionButton('Select All', 'miners', selectAllLikeSelected, UI.card) : null}
-          {isPlayerSelection && selected.kind === 'barracks' ? actionButton('Create Gaurd', '100 minerals / 25 gas', queueSoldier, UI.green) : null}
+          {isPlayerSelection && selected.kind === 'worker' ? actionButton(`Build ${getBuildingDisplayName('temple', 'player')}`, formatRaceCost(BUILDING_DEFINITIONS.temple.cost), () => startWorkerBuildingPlacement('temple'), UI.accent) : null}
+          {isPlayerSelection && selected.kind === 'worker' ? actionButton(`Build ${getBuildingDisplayName('supplyHouse', 'player')}`, formatRaceCost(BUILDING_DEFINITIONS.supplyHouse.cost), () => startWorkerBuildingPlacement('supplyHouse'), UI.gold) : null}
+          {isPlayerSelection && selected.kind === 'worker' ? actionButton(`Build ${getBuildingDisplayName('barracks', 'player')}`, formatRaceCost(BUILDING_DEFINITIONS.barracks.cost), () => startWorkerBuildingPlacement('barracks'), UI.green) : null}
+          {isPlayerSelection && selected.kind === 'worker' ? actionButton(`Build ${getBuildingDisplayName('fireplace', 'player')}`, formatRaceCost(BUILDING_DEFINITIONS.fireplace.cost), () => startWorkerBuildingPlacement('fireplace'), UI.red) : null}
+          {isPlayerSelection && selected.kind === 'worker' ? actionButton('Select All', `${getWorkerDefinition('player').name.toLowerCase()}s`, selectAllLikeSelected, UI.card) : null}
+          {isPlayerSelection && selected.kind === 'barracks' ? actionButton(`Create ${getSoldierDefinition('player').name}`, formatRaceCost(getSoldierDefinition('player').cost), queueSoldier, UI.green) : null}
           {isPlayerSelection && selected.kind === 'barracks' ? actionButton('Set Spawn', 'current position', setBarracksSpawnPoint, UI.card) : null}
           {showCancelBuild ? actionButton('Cancel Build', 'refund unbuilt cost', cancelSelectedConstruction, UI.red) : null}
           {isPlayerSelection && selected.kind === 'soldier' ? actionButton('Attack', 'click enemy', startSoldierAttackCommand, UI.red) : null}
           {isPlayerSelection && selected.kind === 'soldier' ? actionButton('Move', 'click ground', startSoldierMoveCommand, UI.accent) : null}
-          {isPlayerSelection && selected.kind === 'soldier' ? actionButton('Select All', 'guards', selectAllLikeSelected, UI.card) : null}
+          {isPlayerSelection && selected.kind === 'soldier' ? actionButton('Select All', `${getSoldierDefinition('player').name.toLowerCase()}s`, selectAllLikeSelected, UI.card) : null}
           {selected.kind !== 'temple' && selected.kind !== 'worker' ? infoCard(getContextHint(selected.kind)) : null}
         </UiEntity>
       </UiEntity>
@@ -134,6 +137,40 @@ export const uiMenu = () => {
       {gameState.matchStatus === 'ended' ? endGameOverlay() : null}
       {!showSettingsMenu ? settingsButton() : null}
       {showSettingsMenu ? settingsOverlay() : null}
+    </UiEntity>
+  )
+}
+
+function raceCard(raceId: RaceId) {
+  const race = RACES[raceId]
+  const isSelected = gameState.playerRace === raceId
+
+  return (
+    <UiEntity
+      key={`race-${raceId}`}
+      uiTransform={{
+        width: 190,
+        height: 96,
+        margin: { left: 8, right: 8 },
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 8
+      }}
+      uiBackground={{ color: isSelected ? Color4.create(race.color.r * 0.35, race.color.g * 0.35, race.color.b * 0.35, 0.95) : Color4.create(0.07, 0.08, 0.1, 0.9) }}
+      onMouseDown={() => {
+        gameState.playerRace = raceId
+      }}
+    >
+      <UiEntity uiTransform={{ width: '100%', height: 3, margin: { bottom: 10 } }} uiBackground={{ color: isSelected ? race.accent : Color4.create(0.25, 0.26, 0.3, 0.8) }} />
+      <Label value={race.name} fontSize={17} color={isSelected ? Color4.White() : Color4.create(0.7, 0.7, 0.72, 1)} textAlign="middle-center" />
+      <Label
+        value={`${race.worker.name}s + ${race.soldier.name}s`}
+        fontSize={11}
+        color={isSelected ? race.accent : Color4.create(0.5, 0.5, 0.54, 0.9)}
+        textAlign="middle-center"
+        uiTransform={{ margin: { top: 6 } }}
+      />
     </UiEntity>
   )
 }
@@ -372,8 +409,21 @@ function startScreenOverlay() {
           fontSize={18}
           color={Color4.create(0.85, 0.65, 0.35, 0.9)}
           textAlign="middle-center"
+          uiTransform={{ margin: { bottom: 26 } }}
+        />
+
+        <Label value="CHOOSE YOUR RACE" fontSize={13} color={Color4.create(0.58, 0.55, 0.5, 0.85)} textAlign="middle-center" uiTransform={{ margin: { bottom: 12 } }} />
+        <UiEntity uiTransform={{ flexDirection: 'row', justifyContent: 'center', margin: { bottom: 10 } }}>
+          {RACE_IDS.map((raceId) => raceCard(raceId))}
+        </UiEntity>
+        <Label
+          value={RACES[gameState.playerRace].tagline}
+          fontSize={13}
+          color={Color4.create(0.75, 0.73, 0.7, 0.9)}
+          textAlign="middle-center"
           uiTransform={{ margin: { bottom: 22 } }}
         />
+
         <UiEntity
           uiTransform={{
             width: 260,
@@ -433,8 +483,8 @@ function endGameOverlay() {
           {statsHeader('KILLS')}
           {statsHeader('RESOURCES')}
         </UiEntity>
-        {statsRow('PLAYER', gameState.matchStats.player.unitsProduced, gameState.matchStats.player.unitsKilled, gameState.matchStats.player.resourcesGathered, UI.accent)}
-        {statsRow('AI', gameState.matchStats.enemy.unitsProduced, gameState.matchStats.enemy.unitsKilled, gameState.matchStats.enemy.resourcesGathered, UI.red)}
+        {statsRow(`PLAYER (${RACES[gameState.playerRace].name})`, gameState.matchStats.player.unitsProduced, gameState.matchStats.player.unitsKilled, gameState.matchStats.player.resourcesGathered, UI.accent)}
+        {statsRow(`AI (${RACES[gameState.enemyRace].name})`, gameState.matchStats.enemy.unitsProduced, gameState.matchStats.enemy.unitsKilled, gameState.matchStats.enemy.resourcesGathered, UI.red)}
 
         <Button
           value="REPLAY"
@@ -486,13 +536,17 @@ function getCommandTitle(kind: string): string {
 }
 
 function getContextHint(kind: string): string {
-  if (kind === 'resource') return 'Select a worker, then click this resource.'
-  if (kind === 'supplyHouse') return 'Homesteads create miners and increase your unit cap.'
-  if (kind === 'barracks') return 'Create Antrom Gaurds here.'
+  const workerName = getWorkerDefinition('player').name
+  const soldierName = getSoldierDefinition('player').name
+  const supplyName = getBuildingDisplayName('supplyHouse', 'player')
+
+  if (kind === 'resource') return `Select a ${workerName}, then click this resource.`
+  if (kind === 'supplyHouse') return `${supplyName}s create ${workerName}s and increase your unit cap.`
+  if (kind === 'barracks') return `Create ${soldierName}s here.`
   if (kind === 'fireplace') return 'A camp utility building.'
   if (kind === 'soldier') return 'Click an enemy building to attack.'
-  if (kind === 'enemyBuilding') return 'Select an Antrom Gaurd, then click this building to attack.'
-  return 'Select a Homestead to create miners, or a miner to build.'
+  if (kind === 'enemyBuilding') return `Select a ${soldierName}, then click this building to attack.`
+  return `Select a ${supplyName} to create ${workerName}s, or a ${workerName} to build.`
 }
 
 function infoCard(text: string) {

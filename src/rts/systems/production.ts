@@ -1,7 +1,7 @@
 import type { Building, Soldier, Team, Worker } from '../types'
 import type { Vector3 } from '@dcl/sdk/math'
-import { CONFIG, SOLDIER_DEFINITION } from '../config'
 import { addSupplyUsed, decrementSoldierQueue, decrementWorkerQueue } from '../economy'
+import { getBuildingDisplayName, getSoldierDefinition, getWorkerDefinition } from '../races'
 import { gameState } from '../state'
 import { getTeamSoldierCount, getTeamWorkerCount, soldierProductionOrders, soldiers, workerProductionOrders, workers } from '../world'
 
@@ -28,7 +28,7 @@ export function updateWorkerProduction(dt: number, deps: ProductionDeps): void {
     if (!homestead?.alive || !homestead.isComplete) {
       workerProductionOrders.splice(i, 1)
       decrementWorkerQueue(order.team)
-      if (order.team === 'player') deps.setStatus('Worker production cancelled: Homestead unavailable.')
+      if (order.team === 'player') deps.setStatus(`${getWorkerDefinition('player').name} production cancelled: ${getBuildingDisplayName('supplyHouse', 'player')} unavailable.`)
       continue
     }
 
@@ -51,7 +51,11 @@ export function updateWorkerProduction(dt: number, deps: ProductionDeps): void {
     addSupplyUsed(order.team, 1)
     decrementWorkerQueue(order.team)
     workerProductionOrders.splice(i, 1)
-    if (order.team === 'player') deps.setStatus(rallyPoint ? 'Worker ready and moving to Homestead spawn point.' : 'Worker ready outside Homestead.')
+    if (order.team === 'player') {
+      const workerName = getWorkerDefinition('player').name
+      const supplyName = getBuildingDisplayName('supplyHouse', 'player')
+      deps.setStatus(rallyPoint ? `${workerName} ready and moving to the ${supplyName} spawn point.` : `${workerName} ready outside the ${supplyName}.`)
+    }
   }
 }
 
@@ -65,7 +69,7 @@ export function updateSoldierProduction(dt: number, deps: ProductionDeps): void 
     if (!barracks?.alive || !barracks.isComplete) {
       soldierProductionOrders.splice(i, 1)
       decrementSoldierQueue(order.team)
-      if (order.team === 'player') deps.setStatus(`${SOLDIER_DEFINITION.name} production cancelled: Barracks unavailable.`)
+      if (order.team === 'player') deps.setStatus(`${getSoldierDefinition('player').name} production cancelled: ${getBuildingDisplayName('barracks', 'player')} unavailable.`)
       continue
     }
 
@@ -85,10 +89,14 @@ export function updateSoldierProduction(dt: number, deps: ProductionDeps): void 
     if (rallyPoint) {
       deps.sendSoldierToRally(soldier, rallyPoint)
     }
-    addSupplyUsed(order.team, SOLDIER_DEFINITION.supply)
+    addSupplyUsed(order.team, getSoldierDefinition(order.team).supply)
     decrementSoldierQueue(order.team)
     soldierProductionOrders.splice(i, 1)
-    if (order.team === 'player') deps.setStatus(rallyPoint ? `${SOLDIER_DEFINITION.name} ready and moving to Barracks spawn point.` : `${SOLDIER_DEFINITION.name} ready outside Barracks.`)
+    if (order.team === 'player') {
+      const soldierName = getSoldierDefinition('player').name
+      const barracksName = getBuildingDisplayName('barracks', 'player')
+      deps.setStatus(rallyPoint ? `${soldierName} ready and moving to the ${barracksName} spawn point.` : `${soldierName} ready outside the ${barracksName}.`)
+    }
   }
 }
 

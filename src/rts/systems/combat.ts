@@ -38,7 +38,7 @@ export function updateSoldiers(dt: number, deps: CombatSystemDeps): void {
     if (soldier.state === 'movingToAttack') {
       const attackPosition = getAttackPosition(soldier, target, deps)
       soldier.attackPosition = attackPosition
-      moveTowardPosition(soldier.entity, attackPosition, CONFIG.soldierMoveSpeed, dt)
+      moveTowardPosition(soldier.entity, attackPosition, soldier.moveSpeed, dt)
       deps.setSoldierAnimation(soldier, 'walk')
       if (distanceToPosition(soldier.entity, attackPosition) <= 0.25) {
         soldier.state = 'attacking'
@@ -50,7 +50,7 @@ export function updateSoldiers(dt: number, deps: CombatSystemDeps): void {
       if (soldier.attackTimer >= CONFIG.soldierAttackRate) {
         soldier.attackTimer = 0
         deps.setSoldierAnimation(soldier, 'attack', true)
-        deps.damageCombatTarget(target, CONFIG.soldierDamage, soldier)
+        deps.damageCombatTarget(target, soldier.damage, soldier)
       }
     }
   }
@@ -64,7 +64,7 @@ function updateSoldierRallyMovement(soldier: Soldier, dt: number, deps: CombatSy
     return
   }
 
-  moveTowardPosition(soldier.entity, soldier.rallyPoint, CONFIG.soldierMoveSpeed, dt)
+  moveTowardPosition(soldier.entity, soldier.rallyPoint, soldier.moveSpeed, dt)
   if (distanceToPosition(soldier.entity, soldier.rallyPoint) <= 0.35) {
     soldier.state = 'idle'
     soldier.rallyPoint = undefined

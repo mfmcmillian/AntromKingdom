@@ -4,17 +4,12 @@ import type { BuildableKind, BuildingDefinition, ResourceDefinition, ResourceKin
 export const CONFIG = {
   mineralsStart: 50,
   gasStart: 0,
-  workerCost: 50,
-  soldierCost: 100,
-  soldierGasCost: 25,
   startSupplyCap: 5,
   workerMineTime: 3,
   workerCarryAmount: 10,
   workerMoveSpeed: 2.5,
   builderMoveSpeed: 2.2,
-  productionTime: 2,
-  workerHp: 35,
-  soldierHp: 80,
+  // Per-race unit stats live in races.ts; these are engine-level fallbacks.
   soldierMoveSpeed: 3,
   soldierDamage: 10,
   soldierAttackRate: 1,
@@ -214,14 +209,4 @@ export const BUILDING_DEFINITIONS: Record<BuildableKind, BuildingDefinition> = {
     color: COLORS.fireplace,
     completeStatus: 'Fireplace complete.'
   }
-}
-
-export const SOLDIER_DEFINITION: UnitDefinition = {
-  name: 'Antrom Gaurd',
-  cost: { minerals: CONFIG.soldierCost, gas: CONFIG.soldierGasCost },
-  supply: 1,
-  hp: CONFIG.soldierHp,
-  productionTime: 3,
-  scale: Vector3.create(0.55, 0.7, 0.55),
-  color: COLORS.soldier
 }
