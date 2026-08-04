@@ -100,7 +100,7 @@ function queueEnemyProduction(): void {
   const enemyHomestead = getCompletedTeamBuildings('enemy', 'supplyHouse')[0]
   const enemyBarracks = getCompletedTeamBuildings('enemy', 'barracks')[0]
 
-  if (enemyHomestead && enemyWorkers < CONFIG.enemyAiTargetWorkers && canQueueUnit('enemy', 1) && spendResources('enemy', { meat: CONFIG.workerCost })) {
+  if (enemyHomestead && enemyWorkers < CONFIG.enemyAiTargetWorkers && canQueueUnit('enemy', 1) && spendResources('enemy', { minerals: CONFIG.workerCost })) {
     workerProductionOrders.push({ homesteadId: enemyHomestead.id, timer: 0, productionTime: CONFIG.productionTime, team: 'enemy' })
     gameState.enemyWorkerQueue += 1
   }
@@ -160,17 +160,14 @@ function getEnemyBuilder(): Worker | undefined {
 
 function getEnemyWorkerResourcePriority(): ResourceKind {
   const assigned = {
-    rocks: getEnemyAssignedResourceCount('rocks'),
-    wood: getEnemyAssignedResourceCount('wood'),
-    meat: getEnemyAssignedResourceCount('meat')
+    minerals: getEnemyAssignedResourceCount('minerals'),
+    gas: getEnemyAssignedResourceCount('gas')
   }
 
-  if (assigned.rocks < 2) return 'rocks'
-  if (assigned.wood < 2) return 'wood'
-  if (assigned.meat < 1) return 'meat'
-  if (getResourceAmount('enemy', 'meat') < CONFIG.workerCost) return 'meat'
-  if (getResourceAmount('enemy', 'wood') < 100) return 'wood'
-  return 'rocks'
+  if (assigned.minerals < 3) return 'minerals'
+  if (assigned.gas < 1) return 'gas'
+  if (getResourceAmount('enemy', 'gas') < CONFIG.soldierGasCost * 2) return 'gas'
+  return 'minerals'
 }
 
 function getEnemyAssignedResourceCount(resource: ResourceKind): number {

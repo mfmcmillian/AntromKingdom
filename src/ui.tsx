@@ -110,14 +110,14 @@ export const uiMenu = () => {
 
         <UiEntity uiTransform={{ width: '100%', height: 106, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-start', margin: { top: 14 } }}>
           {showCancelPlacement ? actionButton('Cancel Placement', 'no cost spent', cancelBuildingPlacement, UI.red) : null}
-          {isPlayerSelection && selected.kind === 'supplyHouse' ? actionButton('Create Miner', '50 plasma', queueWorker, UI.accent) : null}
+          {isPlayerSelection && selected.kind === 'supplyHouse' ? actionButton('Create Miner', '50 minerals', queueWorker, UI.accent) : null}
           {isPlayerSelection && selected.kind === 'supplyHouse' ? actionButton('Set Spawn', 'current position', setWorkerSpawnPoint, UI.card) : null}
-          {isPlayerSelection && selected.kind === 'worker' ? actionButton('Build Temple', '150 ore / 100 crystal', () => startWorkerBuildingPlacement('temple'), UI.accent) : null}
-          {isPlayerSelection && selected.kind === 'worker' ? actionButton('Build Homestead', '50 ore', () => startWorkerBuildingPlacement('supplyHouse'), UI.gold) : null}
-          {isPlayerSelection && selected.kind === 'worker' ? actionButton('Build Barracks', '100 ore / 75 crystal', () => startWorkerBuildingPlacement('barracks'), UI.green) : null}
-          {isPlayerSelection && selected.kind === 'worker' ? actionButton('Build Fireplace', '25 ore / 50 crystal', () => startWorkerBuildingPlacement('fireplace'), UI.red) : null}
+          {isPlayerSelection && selected.kind === 'worker' ? actionButton('Build Temple', '300 minerals', () => startWorkerBuildingPlacement('temple'), UI.accent) : null}
+          {isPlayerSelection && selected.kind === 'worker' ? actionButton('Build Homestead', '100 minerals', () => startWorkerBuildingPlacement('supplyHouse'), UI.gold) : null}
+          {isPlayerSelection && selected.kind === 'worker' ? actionButton('Build Barracks', '150 minerals', () => startWorkerBuildingPlacement('barracks'), UI.green) : null}
+          {isPlayerSelection && selected.kind === 'worker' ? actionButton('Build Fireplace', '50 minerals', () => startWorkerBuildingPlacement('fireplace'), UI.red) : null}
           {isPlayerSelection && selected.kind === 'worker' ? actionButton('Select All', 'miners', selectAllLikeSelected, UI.card) : null}
-          {isPlayerSelection && selected.kind === 'barracks' ? actionButton('Create Gaurd', '100 ore / 50 plasma', queueSoldier, UI.green) : null}
+          {isPlayerSelection && selected.kind === 'barracks' ? actionButton('Create Gaurd', '100 minerals / 25 gas', queueSoldier, UI.green) : null}
           {isPlayerSelection && selected.kind === 'barracks' ? actionButton('Set Spawn', 'current position', setBarracksSpawnPoint, UI.card) : null}
           {showCancelBuild ? actionButton('Cancel Build', 'refund unbuilt cost', cancelSelectedConstruction, UI.red) : null}
           {isPlayerSelection && selected.kind === 'soldier' ? actionButton('Attack', 'click enemy', startSoldierAttackCommand, UI.red) : null}
@@ -180,7 +180,7 @@ function topResourceStrip() {
       uiTransform={{
         positionType: 'absolute',
         position: { top: 22, right: 282 },
-        width: 700,
+        width: 610,
         height: 40,
         flexDirection: 'row',
         alignItems: 'center',
@@ -188,9 +188,8 @@ function topResourceStrip() {
       }}
       uiBackground={{ color: UI.panel }}
     >
-      {stripStat('ORE', gameState.rocks.toString(), UI.gold, 136)}
-      {stripStat('CRYSTAL', gameState.wood.toString(), UI.gold, 126)}
-      {stripStat('PLASMA', gameState.meat.toString(), UI.gold, 122)}
+      {stripStat('MINERALS', gameState.minerals.toString(), UI.gold, 168)}
+      {stripStat('GAS', gameState.gas.toString(), UI.gold, 122)}
       {stripStat('SUPPLY', `${gameState.supplyUsed}/${gameState.supplyCap}`, supplyCapped ? UI.red : UI.green, 152)}
       {stripStat('TIME', formatMatchTime(gameState.matchTime), UI.dim, 126)}
     </UiEntity>
@@ -206,7 +205,7 @@ function stripStat(label: string, value: string, color: Color4, width: number) {
         color={UI.dim}
         textAlign="middle-left"
         textWrap="nowrap"
-        uiTransform={{ width: 58, height: '100%' }}
+        uiTransform={{ width: 68, height: '100%' }}
       />
       <Label
         value={value}
@@ -214,7 +213,7 @@ function stripStat(label: string, value: string, color: Color4, width: number) {
         color={color}
         textAlign="middle-left"
         textWrap="nowrap"
-        uiTransform={{ width: width - 64, height: '100%' }}
+        uiTransform={{ width: width - 74, height: '100%' }}
       />
     </UiEntity>
   )

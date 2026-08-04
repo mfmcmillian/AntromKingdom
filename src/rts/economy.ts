@@ -4,55 +4,45 @@ import type { ResourceCost, ResourceKind, Team } from './types'
 import { clamp } from './math'
 
 export function hasResources(team: Team, cost: ResourceCost): boolean {
-  return (cost.rocks ?? 0) <= getResourceAmount(team, 'rocks') && (cost.wood ?? 0) <= getResourceAmount(team, 'wood') && (cost.meat ?? 0) <= getResourceAmount(team, 'meat')
+  return (cost.minerals ?? 0) <= getResourceAmount(team, 'minerals') && (cost.gas ?? 0) <= getResourceAmount(team, 'gas')
 }
 
 export function spendResources(team: Team, cost: ResourceCost): boolean {
   if (!hasResources(team, cost)) return false
 
-  addResource(team, 'rocks', -(cost.rocks ?? 0))
-  addResource(team, 'wood', -(cost.wood ?? 0))
-  addResource(team, 'meat', -(cost.meat ?? 0))
+  addResource(team, 'minerals', -(cost.minerals ?? 0))
+  addResource(team, 'gas', -(cost.gas ?? 0))
   return true
 }
 
 export function addResource(team: Team, resource: ResourceKind, amount: number): void {
-  if (resource === 'rocks') {
-    if (team === 'enemy') gameState.enemyRocks += amount
-    else gameState.rocks += amount
+  if (resource === 'minerals') {
+    if (team === 'enemy') gameState.enemyMinerals += amount
+    else gameState.minerals += amount
     return
   }
 
-  if (resource === 'wood') {
-    if (team === 'enemy') gameState.enemyWood += amount
-    else gameState.wood += amount
-    return
-  }
-
-  if (team === 'enemy') gameState.enemyMeat += amount
-  else gameState.meat += amount
+  if (team === 'enemy') gameState.enemyGas += amount
+  else gameState.gas += amount
 }
 
 export function addResources(team: Team, cost: ResourceCost): void {
-  addResource(team, 'rocks', cost.rocks ?? 0)
-  addResource(team, 'wood', cost.wood ?? 0)
-  addResource(team, 'meat', cost.meat ?? 0)
+  addResource(team, 'minerals', cost.minerals ?? 0)
+  addResource(team, 'gas', cost.gas ?? 0)
 }
 
 export function getConstructionRefund(cost: ResourceCost, progress: number): ResourceCost {
   const refundMultiplier = 1 - clamp(progress, 0, 1)
 
   return {
-    rocks: Math.floor((cost.rocks ?? 0) * refundMultiplier),
-    wood: Math.floor((cost.wood ?? 0) * refundMultiplier),
-    meat: Math.floor((cost.meat ?? 0) * refundMultiplier)
+    minerals: Math.floor((cost.minerals ?? 0) * refundMultiplier),
+    gas: Math.floor((cost.gas ?? 0) * refundMultiplier)
   }
 }
 
 export function getResourceAmount(team: Team, resource: ResourceKind): number {
-  if (resource === 'rocks') return team === 'enemy' ? gameState.enemyRocks : gameState.rocks
-  if (resource === 'wood') return team === 'enemy' ? gameState.enemyWood : gameState.wood
-  return team === 'enemy' ? gameState.enemyMeat : gameState.meat
+  if (resource === 'minerals') return team === 'enemy' ? gameState.enemyMinerals : gameState.minerals
+  return team === 'enemy' ? gameState.enemyGas : gameState.gas
 }
 
 export function getSupplyUsed(team: Team): number {
@@ -89,14 +79,12 @@ export function canQueueUnit(team: Team, supply: number): boolean {
 }
 
 export function resetEconomy(): void {
-  gameState.rocks = CONFIG.rocksStart
-  gameState.wood = CONFIG.woodStart
-  gameState.meat = CONFIG.meatStart
+  gameState.minerals = CONFIG.mineralsStart
+  gameState.gas = CONFIG.gasStart
   gameState.supplyUsed = 0
   gameState.supplyCap = CONFIG.startSupplyCap
-  gameState.enemyRocks = CONFIG.rocksStart
-  gameState.enemyWood = CONFIG.woodStart
-  gameState.enemyMeat = CONFIG.meatStart
+  gameState.enemyMinerals = CONFIG.mineralsStart
+  gameState.enemyGas = CONFIG.gasStart
   gameState.enemySupplyUsed = 0
   gameState.enemySupplyCap = CONFIG.startSupplyCap
   gameState.enemyWorkerQueue = 0

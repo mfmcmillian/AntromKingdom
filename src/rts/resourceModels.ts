@@ -1,9 +1,9 @@
-import { Entity, Material, MeshRenderer, Transform, VisibilityComponent, engine } from '@dcl/sdk/ecs'
+import { Entity, Material, MeshRenderer, ParticleSystem, Transform, VisibilityComponent, engine } from '@dcl/sdk/ecs'
 import { Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { ResourceKind } from './types'
 
-// Procedural space resource deposits, in the same primitive style as the mining robot:
-// ore (was rocks), crystal veins (was trees), and plasma vents (was pigs).
+// Procedural StarCraft-style resource nodes: faceted blue mineral crystal fields
+// and rocky gas geysers with a glowing green pool and a rising smoke plume.
 // Idle nodes are static for performance; only gather pulses and depletion animate.
 
 interface ResourceRig {
@@ -11,34 +11,37 @@ interface ResourceRig {
   parts: Entity[]
   pulseTimer: number
   dyingTimer: number
-  column?: Entity
-  columnBaseScale?: Vector3
+  depleted: boolean
+  // Gas geysers: glowing pool that collapses on depletion, and the smoke emitter.
+  pool?: Entity
+  poolBaseScale?: Vector3
+  smoke?: Entity
+  smokeActive: boolean
 }
 
 const rigs = new Map<Entity, ResourceRig>()
 
 const PULSE_DURATION = 0.45
 const DIE_DURATION = 1.4
+const PARTICLE_BLEND_ALPHA = 0
 
-// Muted albedos with restrained emissive so deposits read as colored shapes
-// from the overhead camera instead of blown-out white blobs.
-const ROCK_DARK = Color4.create(0.3, 0.3, 0.35, 1)
-const ROCK_DARKER = Color4.create(0.24, 0.24, 0.28, 1)
-const ORE_VEIN = Color4.create(1, 0.58, 0.16, 1)
-const CRYSTAL_TEAL = Color4.create(0.1, 0.52, 0.6, 1)
-const CRYSTAL_GLOW = Color4.create(0.1, 0.7, 0.8, 1)
-const PLASMA_ORANGE = Color4.create(1, 0.38, 0.1, 1)
-const PLASMA_CORE = Color4.create(1, 0.45, 0.15, 1)
+const ROCK_BROWN = Color4.create(0.32, 0.3, 0.32, 1)
+const ROCK_DARK = Color4.create(0.24, 0.23, 0.26, 1)
+const CRATER_DARK = Color4.create(0.1, 0.11, 0.1, 1)
+const MINERAL_BLUE = Color4.create(0.4, 0.62, 0.95, 1)
+const MINERAL_ICE = Color4.create(0.62, 0.8, 1, 1)
+const MINERAL_GLOW = Color4.create(0.45, 0.7, 1, 1)
+const GAS_GREEN = Color4.create(0.3, 0.85, 0.4, 1)
+const GAS_GLOW = Color4.create(0.35, 0.95, 0.45, 1)
 
 export function buildResourceModel(root: Entity, kind: ResourceKind): void {
   const bodyRoot = engine.addEntity()
   Transform.create(bodyRoot, { parent: root })
 
-  const rig: ResourceRig = { bodyRoot, parts: [bodyRoot], pulseTimer: 0, dyingTimer: -1 }
+  const rig: ResourceRig = { bodyRoot, parts: [bodyRoot], pulseTimer: 0, dyingTimer: -1, depleted: false, smokeActive: false }
 
-  if (kind === 'rocks') buildOreDeposit(rig)
-  else if (kind === 'wood') buildCrystalFormation(rig)
-  else buildPlasmaVent(rig)
+  if (kind === 'minerals') buildMineralField(rig)
+  else buildGasGeyser(rig)
 
   rigs.set(root, rig)
 }
@@ -48,7 +51,7 @@ function addPart(
   position: Vector3,
   scale: Vector3,
   color: Color4,
-  options: { emissive?: Color4; emissiveIntensity?: number; cylinder?: boolean; rotation?: Quaternion } = {}
+  options: { emissive?: Color4; emissiveIntensity?: number; cylinder?: boolean; rotation?: Quaternion; metallic?: number; roughness?: number } = {}
 ): Entity {
   const part = engine.addEntity()
   Transform.create(part, {
@@ -63,113 +66,143 @@ function addPart(
     albedoColor: color,
     emissiveColor: options.emissive ?? Color4.Black(),
     emissiveIntensity: options.emissiveIntensity ?? 0,
-    metallic: 0.2,
-    roughness: 0.85,
+    metallic: options.metallic ?? 0.2,
+    roughness: options.roughness ?? 0.8,
     castShadows: false
   })
   rig.parts.push(part)
   return part
 }
 
-function buildOreDeposit(rig: ResourceRig): void {
-  // Low cluster of angular chunks with glinting ore veins.
-  addPart(rig, Vector3.create(0, 0.3, 0), Vector3.create(1, 0.6, 0.95), ROCK_DARK, {
-    rotation: Quaternion.fromEulerDegrees(4, 25, -3)
-  })
-  addPart(rig, Vector3.create(0.5, 0.22, -0.35), Vector3.create(0.65, 0.45, 0.6), ROCK_DARKER, {
-    rotation: Quaternion.fromEulerDegrees(-6, 70, 5)
-  })
-  addPart(rig, Vector3.create(-0.5, 0.2, 0.4), Vector3.create(0.55, 0.4, 0.5), ROCK_DARKER, {
-    rotation: Quaternion.fromEulerDegrees(8, 130, -4)
-  })
-  addPart(rig, Vector3.create(0.15, 0.62, 0.18), Vector3.create(0.28, 0.18, 0.22), ORE_VEIN, {
-    emissive: ORE_VEIN,
-    emissiveIntensity: 1.1,
-    rotation: Quaternion.fromEulerDegrees(15, 40, 10)
-  })
-  addPart(rig, Vector3.create(-0.35, 0.42, -0.25), Vector3.create(0.22, 0.16, 0.18), ORE_VEIN, {
-    emissive: ORE_VEIN,
-    emissiveIntensity: 1.1,
-    rotation: Quaternion.fromEulerDegrees(-10, 100, 20)
-  })
-  addPart(rig, Vector3.create(0.55, 0.42, 0.3), Vector3.create(0.18, 0.14, 0.16), ORE_VEIN, {
-    emissive: ORE_VEIN,
-    emissiveIntensity: 1.1,
-    rotation: Quaternion.fromEulerDegrees(20, 160, -12)
+/** A shard is a box rotated 45 degrees on its long axis so the corners read as gem facets. */
+function addCrystalShard(rig: ResourceRig, position: Vector3, width: number, height: number, yaw: number, lean: number, bright: boolean): void {
+  addPart(rig, position, Vector3.create(width, height, width), bright ? MINERAL_ICE : MINERAL_BLUE, {
+    emissive: MINERAL_GLOW,
+    emissiveIntensity: bright ? 1.2 : 0.85,
+    rotation: Quaternion.multiply(Quaternion.fromEulerDegrees(0, yaw, 0), Quaternion.fromEulerDegrees(lean, 45, 0)),
+    metallic: 0.1,
+    roughness: 0.25
   })
 }
 
-function buildCrystalFormation(rig: ResourceRig): void {
-  // Rock base with a stocky pyramid-like cluster of teal shards. Kept short and
-  // wide: tall thin spikes lean badly at the screen edges of the overhead camera.
-  addPart(rig, Vector3.create(0, 0.14, 0), Vector3.create(1.35, 0.28, 1.35), ROCK_DARKER, { cylinder: true })
-  addPart(rig, Vector3.create(0, 0.8, 0), Vector3.create(0.46, 1.4, 0.46), CRYSTAL_TEAL, {
-    emissive: CRYSTAL_GLOW,
-    emissiveIntensity: 0.9,
-    rotation: Quaternion.fromEulerDegrees(3, 20, -4)
+function buildMineralField(rig: ResourceRig): void {
+  // Regolith mound the crystals grow out of.
+  addPart(rig, Vector3.create(0, 0.1, 0), Vector3.create(1.9, 0.2, 1.9), ROCK_DARK, { cylinder: true })
+  addPart(rig, Vector3.create(0.55, 0.16, -0.45), Vector3.create(0.4, 0.24, 0.36), ROCK_BROWN, {
+    rotation: Quaternion.fromEulerDegrees(6, 40, -8)
   })
-  addPart(rig, Vector3.create(0.42, 0.55, 0.15), Vector3.create(0.3, 0.95, 0.3), CRYSTAL_TEAL, {
-    emissive: CRYSTAL_GLOW,
-    emissiveIntensity: 0.8,
-    rotation: Quaternion.fromEulerDegrees(6, 65, -16)
+  addPart(rig, Vector3.create(-0.6, 0.14, 0.4), Vector3.create(0.34, 0.2, 0.3), ROCK_BROWN, {
+    rotation: Quaternion.fromEulerDegrees(-5, 150, 7)
   })
-  addPart(rig, Vector3.create(-0.38, 0.45, -0.2), Vector3.create(0.26, 0.75, 0.26), CRYSTAL_TEAL, {
-    emissive: CRYSTAL_GLOW,
-    emissiveIntensity: 0.8,
-    rotation: Quaternion.fromEulerDegrees(-8, 140, 14)
+
+  // Soft ambient glow between the shards.
+  addPart(rig, Vector3.create(0, 0.22, 0), Vector3.create(1.1, 0.04, 1.1), MINERAL_BLUE, {
+    cylinder: true,
+    emissive: MINERAL_GLOW,
+    emissiveIntensity: 0.7
   })
-  addPart(rig, Vector3.create(0.1, 0.32, -0.45), Vector3.create(0.2, 0.55, 0.2), CRYSTAL_TEAL, {
-    emissive: CRYSTAL_GLOW,
-    emissiveIntensity: 0.8,
-    rotation: Quaternion.fromEulerDegrees(-12, 200, -10)
-  })
+
+  // The crystal cluster: one dominant shard ringed by smaller ones.
+  addCrystalShard(rig, Vector3.create(0, 0.75, 0), 0.4, 1.15, 15, 4, true)
+  addCrystalShard(rig, Vector3.create(0.45, 0.5, 0.2), 0.28, 0.8, 70, 14, false)
+  addCrystalShard(rig, Vector3.create(-0.42, 0.45, -0.15), 0.26, 0.7, 200, -12, false)
+  addCrystalShard(rig, Vector3.create(0.1, 0.35, -0.5), 0.2, 0.55, 130, -10, true)
+  addCrystalShard(rig, Vector3.create(-0.2, 0.3, 0.48), 0.18, 0.45, 300, 12, false)
+  addCrystalShard(rig, Vector3.create(0.55, 0.25, -0.35), 0.14, 0.35, 250, 16, true)
 }
 
-function buildPlasmaVent(rig: ResourceRig): void {
-  // Rock ring with a glowing plasma column rising out of it.
-  addPart(rig, Vector3.create(0, 0.16, 0), Vector3.create(1.5, 0.32, 1.5), ROCK_DARK, { cylinder: true })
-  addPart(rig, Vector3.create(0, 0.34, 0), Vector3.create(0.9, 0.06, 0.9), PLASMA_ORANGE, {
+function buildGasGeyser(rig: ResourceRig): void {
+  // Layered rock mound.
+  addPart(rig, Vector3.create(0, 0.2, 0), Vector3.create(2.5, 0.4, 2.5), ROCK_BROWN, { cylinder: true })
+  addPart(rig, Vector3.create(0, 0.52, 0), Vector3.create(1.9, 0.3, 1.9), ROCK_DARK, { cylinder: true })
+  addPart(rig, Vector3.create(0, 0.76, 0), Vector3.create(1.35, 0.22, 1.35), ROCK_BROWN, { cylinder: true })
+
+  // Crater mouth with the glowing gas pool inside.
+  addPart(rig, Vector3.create(0, 0.88, 0), Vector3.create(1.05, 0.06, 1.05), CRATER_DARK, { cylinder: true })
+  const pool = addPart(rig, Vector3.create(0, 0.93, 0), Vector3.create(0.85, 0.05, 0.85), GAS_GREEN, {
     cylinder: true,
-    emissive: PLASMA_ORANGE,
-    emissiveIntensity: 1.4
+    emissive: GAS_GLOW,
+    emissiveIntensity: 1.6
+  })
+  rig.pool = pool
+  rig.poolBaseScale = Vector3.create(0.85, 0.05, 0.85)
+
+  // Rim rocks and a few green mineral crusts around the mouth.
+  addPart(rig, Vector3.create(0.95, 0.45, 0.4), Vector3.create(0.42, 0.5, 0.38), ROCK_DARK, {
+    rotation: Quaternion.fromEulerDegrees(8, 30, -10)
+  })
+  addPart(rig, Vector3.create(-0.9, 0.4, -0.5), Vector3.create(0.38, 0.44, 0.34), ROCK_BROWN, {
+    rotation: Quaternion.fromEulerDegrees(-7, 120, 9)
+  })
+  addPart(rig, Vector3.create(-0.5, 0.42, 0.85), Vector3.create(0.3, 0.36, 0.28), ROCK_DARK, {
+    rotation: Quaternion.fromEulerDegrees(6, 220, -6)
+  })
+  addPart(rig, Vector3.create(0.55, 0.86, -0.55), Vector3.create(0.16, 0.1, 0.14), GAS_GREEN, {
+    emissive: GAS_GLOW,
+    emissiveIntensity: 1.2,
+    rotation: Quaternion.fromEulerDegrees(12, 60, 8)
+  })
+  addPart(rig, Vector3.create(-0.62, 0.84, 0.3), Vector3.create(0.13, 0.08, 0.12), GAS_GREEN, {
+    emissive: GAS_GLOW,
+    emissiveIntensity: 1.2,
+    rotation: Quaternion.fromEulerDegrees(-10, 160, -6)
   })
 
-  const column = addPart(rig, Vector3.create(0, 0.72, 0), Vector3.create(0.5, 0.85, 0.5), PLASMA_CORE, {
-    cylinder: true,
-    emissive: PLASMA_CORE,
-    emissiveIntensity: 1.2
-  })
-  rig.column = column
-  rig.columnBaseScale = Vector3.create(0.5, 0.85, 0.5)
+  // Rising gas plume.
+  const smoke = engine.addEntity()
+  Transform.create(smoke, { parent: rig.bodyRoot, position: Vector3.create(0, 1, 0) })
+  ParticleSystem.create(smoke, createGeyserSmokeOptions())
+  rig.parts.push(smoke)
+  rig.smoke = smoke
+  rig.smokeActive = true
+}
 
-  // A few chunks around the rim.
-  addPart(rig, Vector3.create(0.7, 0.28, 0.35), Vector3.create(0.3, 0.32, 0.28), ROCK_DARKER, {
-    rotation: Quaternion.fromEulerDegrees(5, 45, -8)
-  })
-  addPart(rig, Vector3.create(-0.65, 0.24, -0.4), Vector3.create(0.26, 0.26, 0.24), ROCK_DARKER, {
-    rotation: Quaternion.fromEulerDegrees(-6, 120, 10)
-  })
+function createGeyserSmokeOptions() {
+  return {
+    rate: 7,
+    maxParticles: 32,
+    lifetime: 2.4,
+    // Negative gravity makes the plume rise.
+    gravity: -0.55,
+    initialSize: { start: 0.24, end: 0.5 },
+    sizeOverTime: { start: 0.6, end: 1.9 },
+    initialVelocitySpeed: { start: 0.3, end: 0.7 },
+    initialColor: {
+      start: Color4.create(0.5, 0.85, 0.55, 0.42),
+      end: Color4.create(0.42, 0.72, 0.46, 0.3)
+    },
+    colorOverTime: {
+      start: Color4.create(0.45, 0.75, 0.5, 0.36),
+      end: Color4.create(0.3, 0.4, 0.32, 0)
+    },
+    blendMode: PARTICLE_BLEND_ALPHA,
+    shape: ParticleSystem.Shape.Cone({ angle: 10, radius: 0.28 }),
+    loop: true,
+    prewarm: true
+  }
 }
 
 export function isProceduralResource(root: Entity): boolean {
   return rigs.has(root)
 }
 
-/** Quick scale punch when a miner drills the node. */
+/** Quick scale punch when a miner works the node. */
 export function playResourceGatherPulse(root: Entity): void {
   const rig = rigs.get(root)
-  if (!rig || rig.dyingTimer >= 0) return
+  if (!rig || rig.depleted) return
 
   rig.pulseTimer = PULSE_DURATION
 }
 
-/** Plasma vents "die out": the column collapses and stays dark until the node is hidden. */
+/** Gas geysers "die out": the pool collapses and the plume stops until the node is hidden. */
 export function playResourceDepletion(root: Entity): void {
   const rig = rigs.get(root)
   if (!rig) return
 
   rig.pulseTimer = 0
   rig.dyingTimer = DIE_DURATION
+  rig.depleted = true
+  setSmokeActive(rig, false)
 }
 
 /** Visibility doesn't cascade to children, so fog of war toggles every part. */
@@ -180,6 +213,16 @@ export function setResourceModelVisible(root: Entity, visible: boolean): void {
   for (const part of rig.parts) {
     VisibilityComponent.createOrReplace(part, { visible })
   }
+  // Particles ignore VisibilityComponent, so the plume is toggled by removing the emitter.
+  setSmokeActive(rig, visible && !rig.depleted)
+}
+
+function setSmokeActive(rig: ResourceRig, active: boolean): void {
+  if (!rig.smoke || rig.smokeActive === active) return
+
+  rig.smokeActive = active
+  if (active) ParticleSystem.createOrReplace(rig.smoke, createGeyserSmokeOptions())
+  else ParticleSystem.deleteFrom(rig.smoke)
 }
 
 /** Unregisters the rig; optionally removes the part entities (children aren't removed with their root). */
@@ -187,6 +230,7 @@ export function disposeResourceModel(root: Entity, removeParts: boolean): void {
   const rig = rigs.get(root)
   if (!rig) return
 
+  setSmokeActive(rig, false)
   if (removeParts) {
     for (const part of rig.parts) engine.removeEntity(part)
   }
@@ -198,18 +242,18 @@ function resourceAnimationSystem(dt: number): void {
     if (rig.pulseTimer > 0) {
       rig.pulseTimer = Math.max(0, rig.pulseTimer - dt)
       const progress = 1 - rig.pulseTimer / PULSE_DURATION
-      const factor = 1 + 0.14 * Math.sin(Math.PI * progress)
+      const factor = 1 + 0.12 * Math.sin(Math.PI * progress)
       Transform.getMutable(rig.bodyRoot).scale = Vector3.create(factor, factor, factor)
     }
 
-    if (rig.dyingTimer >= 0 && rig.column && rig.columnBaseScale) {
+    if (rig.dyingTimer >= 0 && rig.pool && rig.poolBaseScale) {
       rig.dyingTimer -= dt
       const progress = Math.min(1, Math.max(0, 1 - rig.dyingTimer / DIE_DURATION))
-      const remaining = Math.max(0.02, 1 - progress)
-      Transform.getMutable(rig.column).scale = Vector3.create(
-        rig.columnBaseScale.x * remaining,
-        rig.columnBaseScale.y * remaining,
-        rig.columnBaseScale.z * remaining
+      const remaining = Math.max(0.05, 1 - progress)
+      Transform.getMutable(rig.pool).scale = Vector3.create(
+        rig.poolBaseScale.x * remaining,
+        rig.poolBaseScale.y,
+        rig.poolBaseScale.z * remaining
       )
       if (rig.dyingTimer < 0) rig.dyingTimer = -1
     }

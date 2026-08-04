@@ -2,14 +2,12 @@ import { CONFIG } from './config'
 import type { BuildableKind, PlacementState, SelectableKind } from './types'
 
 export const gameState = {
-  rocks: CONFIG.rocksStart,
-  wood: CONFIG.woodStart,
-  meat: CONFIG.meatStart,
+  minerals: CONFIG.mineralsStart,
+  gas: CONFIG.gasStart,
   supplyUsed: 0,
   supplyCap: CONFIG.startSupplyCap,
-  enemyRocks: CONFIG.rocksStart,
-  enemyWood: CONFIG.woodStart,
-  enemyMeat: CONFIG.meatStart,
+  enemyMinerals: CONFIG.mineralsStart,
+  enemyGas: CONFIG.gasStart,
   enemySupplyUsed: 0,
   enemySupplyCap: CONFIG.startSupplyCap,
   enemyWorkerQueue: 0,
@@ -17,7 +15,7 @@ export const gameState = {
   selectedId: '',
   selectedKind: '' as SelectableKind | '',
   selectedUnitIds: [] as string[],
-  status: 'Select a worker, then click a rock or tree.',
+  status: 'Select a miner, then click a mineral field or gas geyser.',
   attackAlert: '',
   attackAlertTimer: 0,
   matchTime: 0,
@@ -40,7 +38,6 @@ export const gameState = {
   placementMode: 'none' as PlacementState['state'],
   placementBuildingKind: '' as BuildableKind | '',
   currentPlayerLocation: '',
-  savedTreeLocations: [] as string[],
-  savedRockLocations: [] as string[],
-  savedMeatLocations: [] as string[]
+  savedMineralLocations: [] as string[],
+  savedGasLocations: [] as string[]
 }

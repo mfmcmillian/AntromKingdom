@@ -25,7 +25,8 @@ const MINIMAP_COLORS = {
   playerUnit: Color4.create(0.3, 0.75, 1, 1),
   playerBuilding: Color4.create(0.2, 0.9, 0.4, 1),
   enemy: Color4.create(0.95, 0.2, 0.2, 1),
-  resource: Color4.create(0.85, 0.7, 0.3, 1),
+  minerals: Color4.create(0.45, 0.7, 1, 1),
+  gas: Color4.create(0.35, 0.9, 0.45, 1),
   avatar: Color4.create(1, 1, 1, 1)
 }
 
@@ -87,7 +88,7 @@ function resourceDots() {
     if (!resource.alive) continue
     const position = Transform.get(resource.entity).position
     if (!isPositionExplored(position)) continue
-    dots.push(dot(`res-${resource.id}`, position, 5, MINIMAP_COLORS.resource))
+    dots.push(dot(`res-${resource.id}`, position, resource.resource === 'gas' ? 6 : 5, resource.resource === 'gas' ? MINIMAP_COLORS.gas : MINIMAP_COLORS.minerals))
   }
   return dots
 }

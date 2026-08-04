@@ -1,7 +1,7 @@
 import type { Entity } from '@dcl/sdk/ecs'
 import type { Color4, Vector3 } from '@dcl/sdk/math'
 
-export type ResourceKind = 'rocks' | 'wood' | 'meat'
+export type ResourceKind = 'minerals' | 'gas'
 export type Team = 'player' | 'enemy'
 export type SelectableKind = 'temple' | 'worker' | 'resource' | 'supplyHouse' | 'barracks' | 'fireplace' | 'soldier' | 'enemyBuilding'
 export type WorkerState =

@@ -2,12 +2,11 @@ import { Color4, Vector3 } from '@dcl/sdk/math'
 import type { BuildableKind, BuildingDefinition, ResourceDefinition, ResourceKind, UnitDefinition } from './types'
 
 export const CONFIG = {
-  rocksStart: 50,
-  woodStart: 0,
-  meatStart: 0,
+  mineralsStart: 50,
+  gasStart: 0,
   workerCost: 50,
   soldierCost: 100,
-  soldierMeatCost: 50,
+  soldierGasCost: 25,
   startSupplyCap: 5,
   workerMineTime: 3,
   workerCarryAmount: 10,
@@ -23,7 +22,7 @@ export const CONFIG = {
   soldierUnitEngageRadius: 1.35,
   templeHp: 400,
   repairHpPerSecond: 12,
-  repairRockCostPerSecond: 2,
+  repairMineralCostPerSecond: 2,
   enemyBuildingHp: 300,
   enemyAiDecisionRate: 1.5,
   enemyAiAttackInterval: 90,
@@ -61,37 +60,27 @@ export const MODEL_TRANSFORMS = {
   }
 }
 
-// Space re-theme: the internal keys stay rocks/wood/meat so the economy code is
-// untouched, but the deposits are procedural ore chunks, crystal veins, and plasma vents.
+// StarCraft-style two-resource economy: mineral crystal fields and gas geysers.
 export const RESOURCE_LABELS: Record<ResourceKind, string> = {
-  rocks: 'ore',
-  wood: 'crystal',
-  meat: 'plasma'
+  minerals: 'minerals',
+  gas: 'gas'
 }
 
 export const RESOURCE_DEFINITIONS: Record<ResourceKind, ResourceDefinition> = {
-  rocks: {
-    name: 'Ore Deposit',
-    amount: 400,
+  minerals: {
+    name: 'Mineral Field',
+    amount: 500,
     placementY: 0,
-    colliderScale: Vector3.create(1.7, 1.2, 1.7),
+    colliderScale: Vector3.create(1.8, 1.5, 1.8),
     audioClipUrl: ASSETS.rockSound,
-    hoverText: 'Mine ore'
+    hoverText: 'Mine minerals'
   },
-  wood: {
-    name: 'Crystal Vein',
-    amount: 300,
+  gas: {
+    name: 'Gas Geyser',
+    amount: 1000,
     placementY: 0,
-    colliderScale: Vector3.create(1.5, 2.5, 1.5),
-    audioClipUrl: ASSETS.rockSound,
-    hoverText: 'Harvest crystal'
-  },
-  meat: {
-    name: 'Plasma Vent',
-    amount: 250,
-    placementY: 0,
-    colliderScale: Vector3.create(1.7, 1.6, 1.7),
-    hoverText: 'Siphon plasma'
+    colliderScale: Vector3.create(2.4, 1.8, 2.4),
+    hoverText: 'Harvest gas'
   }
 }
 
@@ -104,8 +93,6 @@ export const COLORS = {
   ground: Color4.create(0.42, 0.42, 0.47, 1),
   temple: Color4.create(0.1, 0.35, 1, 1),
   worker: Color4.create(0.3, 0.75, 1, 1),
-  rock: Color4.create(0.45, 0.48, 0.52, 1),
-  wood: Color4.create(0.2, 0.55, 0.18, 1),
   supply: Color4.create(0.95, 0.75, 0.25, 1),
   barracks: Color4.create(0.45, 0.35, 0.95, 1),
   fireplace: Color4.create(1, 0.35, 0.12, 1),
@@ -154,37 +141,35 @@ export type ResourceField = {
   radius: number
 }
 
-// Classic RTS resource layout: a handful of distinct fields instead of scattered
-// clutter. Each side gets an ore, crystal, and plasma field near its base, with
-// mirrored expansions and a contested cluster in the middle of the map.
+// StarCraft-style layout: each base gets a mineral line plus two gas geysers,
+// with mirrored expansions and a contested cluster in the middle of the map.
 export const RESOURCE_FIELDS: ResourceField[] = [
-  // Player side (base in the south-west corner). Starter ore sits right by the Temple.
-  { kind: 'rocks', center: Vector3.create(20, 0, 12), count: 5, radius: 3.5 },
-  { kind: 'rocks', center: Vector3.create(12, 0, 54), count: 5, radius: 4 },
-  { kind: 'wood', center: Vector3.create(24, 0, 21), count: 5, radius: 4 },
-  { kind: 'meat', center: Vector3.create(28, 0, 9), count: 4, radius: 3.5 },
-  // Enemy side (base in the north-east corner), mirrored.
-  { kind: 'rocks', center: Vector3.create(140, 0, 148), count: 5, radius: 3.5 },
-  { kind: 'rocks', center: Vector3.create(148, 0, 106), count: 5, radius: 4 },
-  { kind: 'wood', center: Vector3.create(136, 0, 139), count: 5, radius: 4 },
-  { kind: 'meat', center: Vector3.create(132, 0, 151), count: 4, radius: 3.5 },
+  // Player main (base in the south-west corner).
+  { kind: 'minerals', center: Vector3.create(21, 0, 13), count: 7, radius: 4.5 },
+  { kind: 'gas', center: Vector3.create(9, 0, 22), count: 1, radius: 0 },
+  { kind: 'gas', center: Vector3.create(29, 0, 5), count: 1, radius: 0 },
+  // Enemy main (base in the north-east corner), mirrored.
+  { kind: 'minerals', center: Vector3.create(139, 0, 147), count: 7, radius: 4.5 },
+  { kind: 'gas', center: Vector3.create(151, 0, 138), count: 1, radius: 0 },
+  { kind: 'gas', center: Vector3.create(131, 0, 155), count: 1, radius: 0 },
   // Mirrored expansions.
-  { kind: 'rocks', center: Vector3.create(60, 0, 14), count: 5, radius: 4 },
-  { kind: 'rocks', center: Vector3.create(100, 0, 146), count: 5, radius: 4 },
-  { kind: 'wood', center: Vector3.create(50, 0, 128), count: 5, radius: 4 },
-  { kind: 'wood', center: Vector3.create(110, 0, 32), count: 5, radius: 4 },
-  { kind: 'meat', center: Vector3.create(22, 0, 68), count: 4, radius: 3.5 },
-  { kind: 'meat', center: Vector3.create(138, 0, 92), count: 4, radius: 3.5 },
+  { kind: 'minerals', center: Vector3.create(12, 0, 54), count: 6, radius: 4 },
+  { kind: 'gas', center: Vector3.create(21, 0, 63), count: 1, radius: 0 },
+  { kind: 'minerals', center: Vector3.create(148, 0, 106), count: 6, radius: 4 },
+  { kind: 'gas', center: Vector3.create(139, 0, 97), count: 1, radius: 0 },
+  { kind: 'minerals', center: Vector3.create(110, 0, 32), count: 6, radius: 4 },
+  { kind: 'minerals', center: Vector3.create(50, 0, 128), count: 6, radius: 4 },
   // Contested center.
-  { kind: 'rocks', center: Vector3.create(76, 0, 84), count: 6, radius: 4.5 },
-  { kind: 'wood', center: Vector3.create(85, 0, 74), count: 5, radius: 4 }
+  { kind: 'minerals', center: Vector3.create(80, 0, 80), count: 7, radius: 5 },
+  { kind: 'gas', center: Vector3.create(70, 0, 90), count: 1, radius: 0 },
+  { kind: 'gas', center: Vector3.create(90, 0, 70), count: 1, radius: 0 }
 ]
 
 export const BUILDING_DEFINITIONS: Record<BuildableKind, BuildingDefinition> = {
   temple: {
     kind: 'temple',
     name: 'Temple',
-    cost: { rocks: 150, wood: 100 },
+    cost: { minerals: 300 },
     hp: CONFIG.templeHp,
     buildTime: 10,
     supplyAdds: 0,
@@ -196,7 +181,7 @@ export const BUILDING_DEFINITIONS: Record<BuildableKind, BuildingDefinition> = {
   supplyHouse: {
     kind: 'supplyHouse',
     name: 'Homestead',
-    cost: { rocks: 50 },
+    cost: { minerals: 100 },
     hp: 150,
     buildTime: 5,
     supplyAdds: 5,
@@ -208,7 +193,7 @@ export const BUILDING_DEFINITIONS: Record<BuildableKind, BuildingDefinition> = {
   barracks: {
     kind: 'barracks',
     name: 'Barracks',
-    cost: { rocks: 100, wood: 75 },
+    cost: { minerals: 150 },
     hp: 250,
     buildTime: 8,
     supplyAdds: 0,
@@ -220,7 +205,7 @@ export const BUILDING_DEFINITIONS: Record<BuildableKind, BuildingDefinition> = {
   fireplace: {
     kind: 'fireplace',
     name: 'Fireplace',
-    cost: { rocks: 25, wood: 50 },
+    cost: { minerals: 50 },
     hp: 120,
     buildTime: 4,
     supplyAdds: 0,
@@ -233,7 +218,7 @@ export const BUILDING_DEFINITIONS: Record<BuildableKind, BuildingDefinition> = {
 
 export const SOLDIER_DEFINITION: UnitDefinition = {
   name: 'Antrom Gaurd',
-  cost: { rocks: CONFIG.soldierCost, meat: CONFIG.soldierMeatCost },
+  cost: { minerals: CONFIG.soldierCost, gas: CONFIG.soldierGasCost },
   supply: 1,
   hp: CONFIG.soldierHp,
   productionTime: 3,

@@ -11,7 +11,8 @@ type RobotState = 'idle' | 'walk' | 'talk'
 interface RobotRig {
   bodyRoot: Entity
   drillCollar: Entity
-  cargo: Entity
+  mineralCargo: Entity[]
+  gasCargo: Entity[]
   cargoKind?: ResourceKind
   fogHidden: boolean
   parts: Entity[]
@@ -24,6 +25,10 @@ const rigs = new Map<Entity, RobotRig>()
 const METAL_DARK = Color4.create(0.16, 0.17, 0.2, 1)
 const METAL_LIGHT = Color4.create(0.42, 0.44, 0.5, 1)
 const DRILL_STEEL = Color4.create(0.55, 0.5, 0.42, 1)
+const MINERAL_CARGO_BLUE = Color4.create(0.45, 0.65, 0.95, 1)
+const MINERAL_CARGO_GLOW = Color4.create(0.45, 0.7, 1, 1)
+const GAS_BARREL_GREEN = Color4.create(0.2, 0.55, 0.28, 1)
+const GAS_BARREL_GLOW = Color4.create(0.35, 0.95, 0.45, 1)
 
 const TEAM_HULL: Record<Team, Color4> = {
   player: Color4.create(0.22, 0.32, 0.45, 1),
@@ -100,13 +105,41 @@ export function buildMinerRobot(root: Entity, team: Team): void {
     rotation: Quaternion.fromEulerDegrees(90, 0, 0)
   })
 
-  // Cargo bundle strapped to the back, shown only while hauling resources.
-  const cargo = addPart(Vector3.create(0, 0.92, -0.3), Vector3.create(0.3, 0.28, 0.24), METAL_LIGHT, {
-    rotation: Quaternion.fromEulerDegrees(12, 8, 0)
-  })
-  VisibilityComponent.createOrReplace(cargo, { visible: false })
+  // Cargo strapped to the back, shown only while hauling: a faceted mineral
+  // crystal, or a banded gas barrel. Both hidden until loaded.
+  const mineralCargo = [
+    addPart(Vector3.create(0, 0.95, -0.32), Vector3.create(0.24, 0.34, 0.24), MINERAL_CARGO_BLUE, {
+      emissive: MINERAL_CARGO_GLOW,
+      emissiveIntensity: 1,
+      rotation: Quaternion.fromEulerDegrees(18, 45, 0)
+    }),
+    addPart(Vector3.create(0.12, 0.82, -0.3), Vector3.create(0.14, 0.2, 0.14), MINERAL_CARGO_BLUE, {
+      emissive: MINERAL_CARGO_GLOW,
+      emissiveIntensity: 1,
+      rotation: Quaternion.fromEulerDegrees(-12, 70, 8)
+    })
+  ]
+  const gasCargo = [
+    addPart(Vector3.create(0, 0.9, -0.32), Vector3.create(0.22, 0.34, 0.22), GAS_BARREL_GREEN, {
+      cylinder: true,
+      emissive: GAS_BARREL_GLOW,
+      emissiveIntensity: 0.5,
+      rotation: Quaternion.fromEulerDegrees(10, 0, 0)
+    }),
+    addPart(Vector3.create(0, 0.99, -0.335), Vector3.create(0.24, 0.04, 0.24), METAL_LIGHT, {
+      cylinder: true,
+      rotation: Quaternion.fromEulerDegrees(10, 0, 0)
+    }),
+    addPart(Vector3.create(0, 0.81, -0.305), Vector3.create(0.24, 0.04, 0.24), METAL_LIGHT, {
+      cylinder: true,
+      rotation: Quaternion.fromEulerDegrees(10, 0, 0)
+    })
+  ]
+  for (const part of [...mineralCargo, ...gasCargo]) {
+    VisibilityComponent.createOrReplace(part, { visible: false })
+  }
 
-  rigs.set(root, { bodyRoot, drillCollar, cargo, fogHidden: false, parts, state: 'idle', time: Math.random() * 10 })
+  rigs.set(root, { bodyRoot, drillCollar, mineralCargo, gasCargo, fogHidden: false, parts, state: 'idle', time: Math.random() * 10 })
 }
 
 export function isRobot(root: Entity): boolean {
@@ -121,30 +154,25 @@ export function setRobotAnimation(root: Entity, clipName: string): void {
   rig.state = clipName === 'walk' ? 'walk' : clipName === 'talk' ? 'talk' : 'idle'
 }
 
-const CARGO_COLORS: Record<ResourceKind, { albedo: Color4; emissive: Color4; intensity: number }> = {
-  rocks: { albedo: Color4.create(0.4, 0.36, 0.32, 1), emissive: Color4.create(1, 0.58, 0.16, 1), intensity: 0.7 },
-  wood: { albedo: Color4.create(0.1, 0.52, 0.6, 1), emissive: Color4.create(0.1, 0.7, 0.8, 1), intensity: 1.1 },
-  meat: { albedo: Color4.create(1, 0.42, 0.12, 1), emissive: Color4.create(1, 0.45, 0.15, 1), intensity: 1.4 }
-}
-
-/** Shows a resource-colored bundle on the robot's back while it hauls cargo. Idempotent per kind. */
+/** Shows the mineral crystal or gas barrel on the robot's back while it hauls cargo. Idempotent per kind. */
 export function updateRobotCargo(root: Entity, kind: ResourceKind | undefined): void {
   const rig = rigs.get(root)
   if (!rig || rig.cargoKind === kind) return
 
   rig.cargoKind = kind
-  if (kind) {
-    const colors = CARGO_COLORS[kind]
-    Material.setPbrMaterial(rig.cargo, {
-      albedoColor: colors.albedo,
-      emissiveColor: colors.emissive,
-      emissiveIntensity: colors.intensity,
-      metallic: 0.2,
-      roughness: 0.7,
-      castShadows: false
-    })
+  applyCargoVisibility(rig)
+}
+
+function applyCargoVisibility(rig: RobotRig): void {
+  const showMinerals = rig.cargoKind === 'minerals' && !rig.fogHidden
+  const showGas = rig.cargoKind === 'gas' && !rig.fogHidden
+
+  for (const part of rig.mineralCargo) {
+    VisibilityComponent.createOrReplace(part, { visible: showMinerals })
   }
-  VisibilityComponent.createOrReplace(rig.cargo, { visible: kind !== undefined && !rig.fogHidden })
+  for (const part of rig.gasCargo) {
+    VisibilityComponent.createOrReplace(part, { visible: showGas })
+  }
 }
 
 /** Visibility doesn't cascade to children, so fog of war toggles every part. */
@@ -153,11 +181,13 @@ export function setRobotVisible(root: Entity, visible: boolean): void {
   if (!rig) return
 
   rig.fogHidden = !visible
+  const cargoParts = new Set([...rig.mineralCargo, ...rig.gasCargo])
   for (const part of rig.parts) {
-    // The cargo bundle stays hidden unless the robot is actually carrying something.
-    const partVisible = part === rig.cargo ? visible && rig.cargoKind !== undefined : visible
-    VisibilityComponent.createOrReplace(part, { visible: partVisible })
+    if (cargoParts.has(part)) continue
+    VisibilityComponent.createOrReplace(part, { visible })
   }
+  // Cargo pieces stay hidden unless the robot is actually carrying that resource.
+  applyCargoVisibility(rig)
 }
 
 /** Unregisters the rig; optionally removes the part entities (children aren't removed with their root). */

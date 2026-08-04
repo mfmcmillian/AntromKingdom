@@ -76,7 +76,7 @@ function updateWorkerGathering(worker: Worker, dt: number, deps: WorkerSystemDep
     const dropoffPosition = deps.getTempleDropoffPosition(temple, worker)
     moveTowardPosition(worker.entity, dropoffPosition, CONFIG.workerMoveSpeed, dt)
     if (distanceToPosition(worker.entity, dropoffPosition) < 0.35) {
-      const deliveredResource = worker.carryingResource ?? 'rocks'
+      const deliveredResource = worker.carryingResource ?? 'minerals'
       const deliveredAmount = worker.carrying
       addResource(getTeam(worker), deliveredResource, worker.carrying)
       gameState.matchStats[getTeam(worker)].resourcesGathered += deliveredAmount
@@ -147,10 +147,10 @@ function updateWorkerRepairMovement(worker: Worker, dt: number, deps: WorkerSyst
   worker.timer -= 1
 
   const repairAmount = Math.min(CONFIG.repairHpPerSecond, site.maxHp - site.hp)
-  const repairCost = Math.max(1, Math.ceil((repairAmount / CONFIG.repairHpPerSecond) * CONFIG.repairRockCostPerSecond))
-  if (!spendResources(getTeam(worker), { rocks: repairCost })) {
+  const repairCost = Math.max(1, Math.ceil((repairAmount / CONFIG.repairHpPerSecond) * CONFIG.repairMineralCostPerSecond))
+  if (!spendResources(getTeam(worker), { minerals: repairCost })) {
     stopRepairing(worker, deps)
-    if (getTeam(worker) === 'player') deps.setStatus(`Need rocks to keep repairing ${site.name}.`)
+    if (getTeam(worker) === 'player') deps.setStatus(`Need minerals to keep repairing ${site.name}.`)
     return
   }
 

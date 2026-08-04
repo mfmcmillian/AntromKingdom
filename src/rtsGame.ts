@@ -128,7 +128,7 @@ const BUILDING_PLACEMENT_GRID_SIZE = 0.5
 const BUILDING_PLACEMENT_PADDING = 0.6
 const BUILDING_FOOTPRINT_VALID = Color4.create(0.2, 0.95, 0.35, 0.45)
 const BUILDING_FOOTPRINT_BLOCKED = Color4.create(0.95, 0.15, 0.12, 0.5)
-const DEPLETED_MEAT_HIDE_DELAY = 180
+const DEPLETED_GAS_HIDE_DELAY = 180
 const PLAYER_ATTACK_ALERT_DURATION = 4
 const SOLDIER_MOVE_COMMAND_CLICK_COOLDOWN = 0.2
 const SOLDIER_MOVE_FORMATION_RADIUS = 0.9
@@ -186,15 +186,15 @@ export function queueWorker(): void {
     return
   }
 
-  const workerCost = { meat: CONFIG.workerCost }
+  const workerCost = { minerals: CONFIG.workerCost }
   if (!spendResources('player', workerCost)) {
-    setStatus(`Need ${formatCost(workerCost)} for a worker.`)
+    setStatus(`Need ${formatCost(workerCost)} for a miner.`)
     return
   }
 
   workerProductionOrders.push({ homesteadId: homestead.id, timer: 0, productionTime: CONFIG.productionTime, team: 'player' })
   gameState.workerQueue += 1
-  setStatus('Worker queued at Homestead.')
+  setStatus('Miner queued at Homestead.')
 }
 
 export function setWorkerSpawnPoint(): void {
@@ -394,16 +394,12 @@ export function selectIdleWorker(): void {
   selectObject(idleWorker)
 }
 
-export function placeTreeResource(): void {
-  placeResourceAtPlayer('wood')
+export function placeMineralResource(): void {
+  placeResourceAtPlayer('minerals')
 }
 
-export function placeRockResource(): void {
-  placeResourceAtPlayer('rocks')
-}
-
-export function placeMeatResource(): void {
-  placeResourceAtPlayer('meat')
+export function placeGasResource(): void {
+  placeResourceAtPlayer('gas')
 }
 
 export function moveSelectedBuilding(deltaX: number, deltaY: number, deltaZ: number): void {
@@ -534,9 +530,8 @@ export function resetRtsGame(): void {
   gameState.soldierQueue = 0
   gameState.placementMode = 'none'
   gameState.placementBuildingKind = ''
-  gameState.savedTreeLocations = []
-  gameState.savedRockLocations = []
-  gameState.savedMeatLocations = []
+  gameState.savedMineralLocations = []
+  gameState.savedGasLocations = []
   homesteadRallyPoints.clear()
   barracksRallyPoints.clear()
   cancelRallyPlacement()
@@ -590,7 +585,7 @@ export function getSelectedSummary(): SelectedSummary {
     return {
       name: 'None',
       kind: 'none',
-      detail: getPlacementInstruction() || 'Select Temple, miner, ore, crystal, or building.'
+      detail: getPlacementInstruction() || 'Select the Temple, a miner, a resource, or a building.'
     }
   }
 
@@ -743,7 +738,7 @@ function createStartingBase(): void {
 }
 
 function spawnResourceFields(): void {
-  const counters: Record<ResourceKind, number> = { rocks: 0, wood: 0, meat: 0 }
+  const counters: Record<ResourceKind, number> = { minerals: 0, gas: 0 }
 
   RESOURCE_FIELDS.forEach((field, fieldIndex) => {
     const definition = RESOURCE_DEFINITIONS[field.kind]
@@ -2078,17 +2073,16 @@ function getHoverText(selectable: Selectable): string {
 function formatCost(cost: ResourceCost): string {
   const parts = []
 
-  if (cost.rocks) parts.push(`${cost.rocks} ore`)
-  if (cost.wood) parts.push(`${cost.wood} crystal`)
-  if (cost.meat) parts.push(`${cost.meat} plasma`)
+  if (cost.minerals) parts.push(`${cost.minerals} minerals`)
+  if (cost.gas) parts.push(`${cost.gas} gas`)
   return parts.length > 0 ? parts.join(', ') : '0 resources'
 }
 
 function depleteResourceNode(resource: ResourceNode): void {
   resource.amount = 0
-  if (resource.resource === 'meat') {
+  if (resource.resource === 'gas') {
     resource.alive = false
-    resource.depletionTimer = DEPLETED_MEAT_HIDE_DELAY
+    resource.depletionTimer = DEPLETED_GAS_HIDE_DELAY
     removeSelectableInteractivity(resource)
     playResourceDepletion(resource.entity)
     selectables.delete(resource.id)
@@ -2253,13 +2247,12 @@ function isPlacementInsideMap(position: Vector3, footprintRadius: number): boole
 }
 
 function printResourcePlacementLists(): void {
-  const trees = gameState.savedTreeLocations.map((location) => `  ${location}`).join(',\n')
-  const rocks = gameState.savedRockLocations.map((location) => `  ${location}`).join(',\n')
-  const pigs = gameState.savedMeatLocations.map((location) => `  ${location}`).join(',\n')
+  const minerals = gameState.savedMineralLocations.map((location) => `  ${location}`).join(',\n')
+  const gas = gameState.savedGasLocations.map((location) => `  ${location}`).join(',\n')
   const temple = getStartingTemple()
   const templeLocation = temple ? formatVectorForPaste(Transform.get(temple.entity).position) : 'undefined'
 
-  console.log(`Saved RTS resource locations:\nconst templeLocation = ${templeLocation}\n\nconst treeLocations = [\n${trees}\n]\n\nconst rockLocations = [\n${rocks}\n]\n\nconst pigLocations = [\n${pigs}\n]`)
+  console.log(`Saved RTS resource locations:\nconst templeLocation = ${templeLocation}\n\nconst mineralLocations = [\n${minerals}\n]\n\nconst gasLocations = [\n${gas}\n]`)
 }
 
 function printBuildingTransform(building: Building): void {
@@ -2271,16 +2264,15 @@ function printBuildingTransform(building: Building): void {
 }
 
 function getSavedResourceLocations(resource: ResourceKind): string[] {
-  if (resource === 'wood') return gameState.savedTreeLocations
-  if (resource === 'meat') return gameState.savedMeatLocations
-  return gameState.savedRockLocations
+  return resource === 'gas' ? gameState.savedGasLocations : gameState.savedMineralLocations
 }
 
 function getWorkerGatherPosition(worker: Worker, resource: ResourceNode): Vector3 {
   const resourcePosition = Transform.get(resource.entity).position
   const targetWorkers = workers.filter((otherWorker) => otherWorker.alive && otherWorker.targetResourceId === resource.id)
   const slot = Math.max(0, targetWorkers.findIndex((targetWorker) => targetWorker.id === worker.id))
-  const radius = resource.resource === 'wood' ? 1.25 : resource.resource === 'meat' ? 1.1 : 0.95
+  // Geysers are wide mounds, so miners work them from further out.
+  const radius = resource.resource === 'gas' ? 1.7 : 1.1
 
   return getFormationPosition(resourcePosition, slot, radius)
 }
