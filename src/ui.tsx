@@ -16,8 +16,6 @@ import {
   setBarracksSpawnPoint,
   setWorkerSpawnPoint,
   startRtsMatch,
-  startSoldierAttackCommand,
-  startSoldierMoveCommand,
   startWorkerBuildingPlacement
 } from './rtsGame'
 import { getDragScreenRect } from './rts/dragSelect'
@@ -124,8 +122,6 @@ export const uiMenu = () => {
           {isPlayerSelection && selected.kind === 'barracks' ? actionButton(`Create ${getSoldierDefinition('player', 'ranged').name}`, formatRaceCost(getSoldierDefinition('player', 'ranged').cost), () => queueSoldier('ranged'), UI.accent) : null}
           {isPlayerSelection && selected.kind === 'barracks' ? actionButton('Set Spawn', 'current position', setBarracksSpawnPoint, UI.card) : null}
           {showCancelBuild ? actionButton('Cancel Build', 'refund unbuilt cost', cancelSelectedConstruction, UI.red) : null}
-          {isPlayerSelection && selected.kind === 'soldier' ? actionButton('Attack', 'click enemy', startSoldierAttackCommand, UI.red) : null}
-          {isPlayerSelection && selected.kind === 'soldier' ? actionButton('Move', 'click ground', startSoldierMoveCommand, UI.accent) : null}
           {isPlayerSelection && selected.kind === 'soldier' ? actionButton('Select All', 'fighters', selectAllLikeSelected, UI.card) : null}
           {selected.kind !== 'temple' && selected.kind !== 'worker' ? infoCard(getContextHint(selected.kind)) : null}
         </UiEntity>
@@ -545,7 +541,7 @@ function getContextHint(kind: string): string {
   if (kind === 'supplyHouse') return `${supplyName}s create ${workerName}s and increase your unit cap.`
   if (kind === 'barracks') return `Create ${race.melee.name}s (melee) and ${race.ranged.name}s (ranged) here.`
   if (kind === 'fireplace') return 'A camp utility building.'
-  if (kind === 'soldier') return 'Click an enemy building to attack.'
+  if (kind === 'soldier') return 'Click an enemy to attack, or click ground to move.'
   if (kind === 'enemyBuilding') return 'Select a fighter, then click this building to attack.'
   return `Select a ${supplyName} to create ${workerName}s, or a ${workerName} to build.`
 }

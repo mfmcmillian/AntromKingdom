@@ -132,7 +132,6 @@ const BUILDING_FOOTPRINT_VALID = Color4.create(0.2, 0.95, 0.35, 0.45)
 const BUILDING_FOOTPRINT_BLOCKED = Color4.create(0.95, 0.15, 0.12, 0.5)
 const DEPLETED_GAS_HIDE_DELAY = 180
 const PLAYER_ATTACK_ALERT_DURATION = 4
-const SOLDIER_MOVE_COMMAND_CLICK_COOLDOWN = 0.2
 const SOLDIER_MOVE_FORMATION_RADIUS = 0.9
 const SOLDIER_ATTACK_SPACING = 0.7
 const SOLDIER_UNIT_ATTACK_SPACING = 1.2
@@ -141,9 +140,6 @@ const TEMPLE_ATTACK_DISTANCE_PADDING = 3
 const MATCH_NOT_STARTED = 'notStarted'
 const MATCH_ACTIVE = 'active'
 const MATCH_ENDED = 'ended'
-
-let soldierCommandMode: 'none' | 'move' | 'attack' = 'none'
-let soldierCommandCooldown = 0
 
 export function initRtsGame(): void {
   createStaticScene()
@@ -358,32 +354,6 @@ export function selectAllLikeSelected(): void {
   setStatus(`Selected all ${unitLabel} (${units.length}). Click a valid target to command them.`)
 }
 
-export function startSoldierMoveCommand(): void {
-  const commandableSoldiers = getCommandableSoldiers()
-
-  if (commandableSoldiers.length === 0) {
-    setStatus('Select a fighter first.')
-    return
-  }
-
-  soldierCommandMode = 'move'
-  soldierCommandCooldown = SOLDIER_MOVE_COMMAND_CLICK_COOLDOWN
-  setStatus(`Move ${commandableSoldiers.length} fighter${commandableSoldiers.length === 1 ? '' : 's'}: click open ground.`)
-}
-
-export function startSoldierAttackCommand(): void {
-  const commandableSoldiers = getCommandableSoldiers()
-
-  if (commandableSoldiers.length === 0) {
-    setStatus('Select a fighter first.')
-    return
-  }
-
-  soldierCommandMode = 'attack'
-  soldierCommandCooldown = SOLDIER_MOVE_COMMAND_CLICK_COOLDOWN
-  setStatus(`Attack with ${commandableSoldiers.length} fighter${commandableSoldiers.length === 1 ? '' : 's'}: click an enemy.`)
-}
-
 export function selectIdleWorker(): void {
   const idleWorker = getIdleWorkers()[0]
 
@@ -537,7 +507,6 @@ export function resetRtsGame(): void {
   homesteadRallyPoints.clear()
   barracksRallyPoints.clear()
   cancelRallyPlacement()
-  cancelSoldierCommand()
   cancelPlacement()
 
   for (const worker of workers) destroySelectable(worker)
@@ -1102,26 +1071,6 @@ function handleSelectableClick(id: string): void {
   // The pending spawn-point click is handled globally; don't also run selection commands.
   if (rallyPlacementKind !== 'none') return
 
-  if (soldierCommandMode === 'move') {
-    if (isEnemyAttackTarget(clicked)) {
-      assignCommandableSoldiersToAttack(clicked)
-    } else {
-      cancelSoldierCommand()
-      setStatus('Move cancelled. Click open ground after pressing Move.')
-    }
-    return
-  }
-
-  if (soldierCommandMode === 'attack') {
-    if (isEnemyAttackTarget(clicked)) {
-      assignCommandableSoldiersToAttack(clicked)
-    } else {
-      cancelSoldierCommand()
-      setStatus('Attack cancelled. Click an enemy building, guard, or worker after pressing Attack.')
-    }
-    return
-  }
-
   const selectedWorkers = getSelectedWorkers()
 
   if (selectedWorkers.length > 0 && clicked.kind === 'resource') {
@@ -1153,7 +1102,6 @@ function clearSelection(): void {
   gameState.selectedId = ''
   gameState.selectedKind = ''
   gameState.selectedUnitIds = []
-  cancelSoldierCommand()
   clearSelectionMarkers()
 }
 
@@ -1259,28 +1207,8 @@ function assignCommandableSoldiersToAttack(target: Building | Soldier | Worker):
     assignSoldierToAttack(assignedSoldiers[i], target, i)
   }
 
-  clearSelection()
+  // Selection persists so the player can keep issuing commands to the same group.
   setStatus(`${assignedSoldiers.length} fighter${assignedSoldiers.length === 1 ? '' : 's'} attacking ${target.name}.`)
-}
-
-function moveCommandableSoldiersTo(destination: Vector3): void {
-  const assignedSoldiers = getCommandableSoldiers()
-
-  if (assignedSoldiers.length === 0) {
-    cancelSoldierCommand()
-    setStatus('Select a fighter first.')
-    return
-  }
-
-  for (let i = 0; i < assignedSoldiers.length; i++) {
-    const soldier = assignedSoldiers[i]
-    const movePosition = getFormationPosition(destination, i, SOLDIER_MOVE_FORMATION_RADIUS)
-    sendSoldierToRally(soldier, Vector3.create(movePosition.x, 0.25, movePosition.z))
-  }
-
-  showMoveMarker(destination)
-  clearSelection()
-  setStatus(`${assignedSoldiers.length} fighter${assignedSoldiers.length === 1 ? '' : 's'} moving.`)
 }
 
 function confirmBuildingPlacement(hitPosition?: Vector3): void {
@@ -1394,7 +1322,6 @@ const combatSystemDeps = {
 const dragSelectDeps = {
   isBlocked: () =>
     placementState.state === 'placing' ||
-    soldierCommandMode !== 'none' ||
     rallyPlacementKind !== 'none' ||
     gameState.matchStatus !== MATCH_ACTIVE,
   onBoxSelect: selectPlayerUnitsInRect,
@@ -1510,7 +1437,6 @@ function rtsTickSystem(dt: number): void {
   updateCoordinateLogger(dt)
   updateGhostPreview()
   updatePlacementConfirmInput(dt)
-  updateSoldierMoveCommandInput(dt)
   updateRallyPlacementInput(dt)
   updateCancelInput()
   updateDragSelect(dragSelectDeps)
@@ -1611,7 +1537,6 @@ function endMatch(result: 'win' | 'loss'): void {
   gameState.attackAlert = ''
   gameState.attackAlertTimer = 0
   disableTopDownView()
-  cancelSoldierCommand()
   cancelPlacement()
   clearSelection()
   const time = formatRuntimeMatchTime(gameState.matchTime)
@@ -1649,24 +1574,6 @@ function updatePlacementConfirmInput(dt: number): void {
   confirmBuildingPlacement()
 }
 
-function updateSoldierMoveCommandInput(dt: number): void {
-  if (soldierCommandMode !== 'move' && soldierCommandMode !== 'attack') return
-  if (placementState.state === 'placing') return
-
-  soldierCommandCooldown = Math.max(0, soldierCommandCooldown - dt)
-  if (soldierCommandCooldown > 0) return
-  if (soldierCommandMode === 'attack') return
-  if (!inputSystem.isTriggered(InputAction.IA_POINTER, PointerEventType.PET_DOWN)) return
-
-  const destination = getPointerGroundPosition()
-  if (!destination) {
-    setStatus('Move command needs a ground click.')
-    return
-  }
-
-  moveCommandableSoldiersTo(Vector3.create(destination.x, 0.25, destination.z))
-}
-
 function updateCancelInput(): void {
   const secondaryIsPressed = inputSystem.isPressed(InputAction.IA_SECONDARY)
   const actionIsPressed = inputSystem.isPressed(InputAction.IA_ACTION_3)
@@ -1683,12 +1590,6 @@ function updateCancelInput(): void {
 
   if (placementState.state === 'placing') {
     cancelBuildingPlacement()
-    return
-  }
-
-  if (soldierCommandMode !== 'none') {
-    cancelSoldierCommand()
-    setStatus('Fighter command cancelled.')
     return
   }
 
@@ -2455,11 +2356,6 @@ function getAttackSlotForTarget(targetId: string, attackerId: string): number {
   const slot = attackers.findIndex((soldier) => soldier.id === attackerId)
 
   return slot >= 0 ? slot : attackers.length
-}
-
-function cancelSoldierCommand(): void {
-  soldierCommandMode = 'none'
-  soldierCommandCooldown = 0
 }
 
 function removeSelectable(selectable: Selectable): void {
