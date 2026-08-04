@@ -1,6 +1,6 @@
 import { Entity, Material, MeshRenderer, Transform, VisibilityComponent, engine } from '@dcl/sdk/ecs'
 import { Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
-import { Team } from './types'
+import { ResourceKind, Team } from './types'
 
 // Procedurally "generated" mining robot built from primitives, so it needs no GLB
 // or rigged animations. A small system drives hover-bob, tilt, and drill spin to
@@ -11,6 +11,9 @@ type RobotState = 'idle' | 'walk' | 'talk'
 interface RobotRig {
   bodyRoot: Entity
   drillCollar: Entity
+  cargo: Entity
+  cargoKind?: ResourceKind
+  fogHidden: boolean
   parts: Entity[]
   state: RobotState
   time: number
@@ -97,7 +100,13 @@ export function buildMinerRobot(root: Entity, team: Team): void {
     rotation: Quaternion.fromEulerDegrees(90, 0, 0)
   })
 
-  rigs.set(root, { bodyRoot, drillCollar, parts, state: 'idle', time: Math.random() * 10 })
+  // Cargo bundle strapped to the back, shown only while hauling resources.
+  const cargo = addPart(Vector3.create(0, 0.92, -0.3), Vector3.create(0.3, 0.28, 0.24), METAL_LIGHT, {
+    rotation: Quaternion.fromEulerDegrees(12, 8, 0)
+  })
+  VisibilityComponent.createOrReplace(cargo, { visible: false })
+
+  rigs.set(root, { bodyRoot, drillCollar, cargo, fogHidden: false, parts, state: 'idle', time: Math.random() * 10 })
 }
 
 export function isRobot(root: Entity): boolean {
@@ -112,13 +121,42 @@ export function setRobotAnimation(root: Entity, clipName: string): void {
   rig.state = clipName === 'walk' ? 'walk' : clipName === 'talk' ? 'talk' : 'idle'
 }
 
+const CARGO_COLORS: Record<ResourceKind, { albedo: Color4; emissive: Color4; intensity: number }> = {
+  rocks: { albedo: Color4.create(0.4, 0.36, 0.32, 1), emissive: Color4.create(1, 0.58, 0.16, 1), intensity: 0.7 },
+  wood: { albedo: Color4.create(0.1, 0.52, 0.6, 1), emissive: Color4.create(0.1, 0.7, 0.8, 1), intensity: 1.1 },
+  meat: { albedo: Color4.create(1, 0.42, 0.12, 1), emissive: Color4.create(1, 0.45, 0.15, 1), intensity: 1.4 }
+}
+
+/** Shows a resource-colored bundle on the robot's back while it hauls cargo. Idempotent per kind. */
+export function updateRobotCargo(root: Entity, kind: ResourceKind | undefined): void {
+  const rig = rigs.get(root)
+  if (!rig || rig.cargoKind === kind) return
+
+  rig.cargoKind = kind
+  if (kind) {
+    const colors = CARGO_COLORS[kind]
+    Material.setPbrMaterial(rig.cargo, {
+      albedoColor: colors.albedo,
+      emissiveColor: colors.emissive,
+      emissiveIntensity: colors.intensity,
+      metallic: 0.2,
+      roughness: 0.7,
+      castShadows: false
+    })
+  }
+  VisibilityComponent.createOrReplace(rig.cargo, { visible: kind !== undefined && !rig.fogHidden })
+}
+
 /** Visibility doesn't cascade to children, so fog of war toggles every part. */
 export function setRobotVisible(root: Entity, visible: boolean): void {
   const rig = rigs.get(root)
   if (!rig) return
 
+  rig.fogHidden = !visible
   for (const part of rig.parts) {
-    VisibilityComponent.createOrReplace(part, { visible })
+    // The cargo bundle stays hidden unless the robot is actually carrying something.
+    const partVisible = part === rig.cargo ? visible && rig.cargoKind !== undefined : visible
+    VisibilityComponent.createOrReplace(part, { visible: partVisible })
   }
 }
 

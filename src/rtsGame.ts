@@ -63,7 +63,7 @@ import { updateDragSelect } from './rts/dragSelect'
 import { initFogOfWar, resetFogOfWar } from './rts/fogOfWar'
 import { SelectionMarkerTarget, clearSelectionMarkers, updateSelectionMarkers } from './rts/selectionMarkers'
 import { buildEnvironmentEnclosure } from './rts/environment'
-import { buildMinerRobot, disposeRobot, isRobot, setRobotAnimation } from './rts/robotModel'
+import { buildMinerRobot, disposeRobot, isRobot, setRobotAnimation, updateRobotCargo } from './rts/robotModel'
 import { buildResourceModel, disposeResourceModel, playResourceDepletion, playResourceGatherPulse } from './rts/resourceModels'
 import { showMoveMarker } from './rts/moveMarker'
 import { disableTopDownView, enableTopDownView, getCameraFocus, isTopDownViewActive } from './rts/topDownCamera'
@@ -1473,11 +1473,20 @@ function rtsTickSystem(dt: number): void {
   updateSoldierProductionSystem(dt, productionDeps)
   updateEnemyAiSystem(dt, enemyAiDeps)
   updateWorkersSystem(dt, workerSystemDeps)
+  updateWorkerCargoVisuals()
   updateSoldiersSystem(dt, combatSystemDeps)
   updateConstructionSites(dt)
   updateBuildingDamageVfxSystem()
   updateDepletedResources(dt)
   updateMatchEndState()
+}
+
+/** Keeps the robots' back-mounted cargo bundle in sync with what they're carrying. */
+function updateWorkerCargoVisuals(): void {
+  for (const worker of workers) {
+    if (!worker.alive) continue
+    updateRobotCargo(worker.entity, worker.carrying > 0 ? worker.carryingResource : undefined)
+  }
 }
 
 function getSelectionMarkerTargets(): SelectionMarkerTarget[] {
