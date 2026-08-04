@@ -30,6 +30,7 @@ import {
   setWorkerSpawnPoint,
   STANCE_LABELS,
   startAttackMove,
+  startPatrol,
   startRtsMatch,
   startUpgradeResearch,
   startWorkerBuildingPlacement
@@ -114,6 +115,7 @@ const ICON = {
     cancel: 'images/icons/icon-action-cancel.png',
     selectAll: 'images/icons/icon-action-selectall.png',
     attackMove: 'images/icons/icon-action-attackmove.png',
+    patrol: 'images/icons/icon-action-patrol.png',
     stance: 'images/icons/icon-action-stance.png'
   }
 }
@@ -647,6 +649,13 @@ function getCommandSlots(selected: SelectedSummary): CommandSlot[] {
       name: 'Attack-Move',
       description: 'March to a point, engaging every hostile on the way. Click ground after pressing.',
       onClick: startAttackMove
+    })
+    slots.push({
+      id: 'patrol',
+      icon: ICON.action.patrol,
+      name: 'Patrol',
+      description: 'Walk back and forth between here and a point, engaging hostiles on the way. Click ground after pressing.',
+      onClick: startPatrol
     })
     const stance = getSelectedStance() ?? 'defensive'
     slots.push({

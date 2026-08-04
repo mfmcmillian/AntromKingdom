@@ -23,7 +23,7 @@ export type WorkerState =
   | 'movingToAttack'
   | 'attacking'
   | 'dead'
-export type SoldierState = 'idle' | 'movingToAttack' | 'attacking' | 'movingToRally' | 'attackMoving' | 'dead'
+export type SoldierState = 'idle' | 'movingToAttack' | 'attacking' | 'movingToRally' | 'attackMoving' | 'patrolling' | 'dead'
 /** aggressive: chase forever; defensive: chase a short leash then return; hold: never move, only fire in range. */
 export type SoldierStance = 'aggressive' | 'defensive' | 'hold'
 export type SoldierVariant = 'melee' | 'ranged' | 'caster' | 'flyer' | 'titan' | 'hero'
@@ -106,6 +106,11 @@ export type Soldier = Selectable & {
   rallyPoint?: Vector3
   /** Attack-move destination; the unit resumes marching here after clearing hostiles. */
   attackMovePoint?: Vector3
+  /** Patrol route endpoints; the unit ping-pongs between them, engaging hostiles on the way. */
+  patrolPointA?: Vector3
+  patrolPointB?: Vector3
+  /** True while walking toward patrolPointB, false toward patrolPointA. */
+  patrolToB?: boolean
   /** Where a defensive unit returns to after a leash-limited chase. */
   guardPoint?: Vector3
   /** True when the current target was auto-acquired rather than player/AI ordered. */

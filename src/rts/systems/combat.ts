@@ -43,6 +43,11 @@ export function updateSoldiers(dt: number, deps: CombatSystemDeps): void {
       continue
     }
 
+    if (soldier.state === 'patrolling') {
+      updatePatrol(soldier, dt, scanForTargets, deps)
+      continue
+    }
+
     if (scanForTargets && soldier.state === 'idle') {
       // Hold-stance units only fire at what is already in weapon range; others scan wider and chase.
       const acquireRange = soldier.stance === 'hold' ? soldier.attackRange : AUTO_ACQUIRE_RANGE
@@ -67,21 +72,32 @@ export function updateSoldiers(dt: number, deps: CombatSystemDeps): void {
   }
 }
 
-/** Assign a target found by the auto-scan, preserving the attack-move destination and marking it leashable. */
+/** Assign a target found by the auto-scan, preserving the standing orders (attack-move / patrol) and marking it leashable. */
 function autoEngage(soldier: Soldier, target: CombatTarget, deps: CombatSystemDeps): void {
   const destination = soldier.attackMovePoint
+  const patrolA = soldier.patrolPointA
+  const patrolB = soldier.patrolPointB
+  const patrolToB = soldier.patrolToB
   if (!soldier.guardPoint) soldier.guardPoint = clonePosition(Transform.get(soldier.entity).position)
   deps.assignSoldierToAttack(soldier, target, 0, false)
   soldier.attackMovePoint = destination
+  soldier.patrolPointA = patrolA
+  soldier.patrolPointB = patrolB
+  soldier.patrolToB = patrolToB
   soldier.autoEngaged = true
 }
 
-/** Target destroyed: resume the attack-move march if one is pending, otherwise stand guard here. */
+/** Target destroyed: resume the attack-move march or patrol route if one is pending, otherwise stand guard here. */
 function finishEngagement(soldier: Soldier, deps: CombatSystemDeps): void {
   soldier.targetId = undefined
   soldier.attackPosition = undefined
   if (soldier.attackMovePoint) {
     soldier.state = 'attackMoving'
+    deps.setSoldierAnimation(soldier, 'walk')
+    return
+  }
+  if (soldier.patrolPointA && soldier.patrolPointB) {
+    soldier.state = 'patrolling'
     deps.setSoldierAnimation(soldier, 'walk')
     return
   }
@@ -113,6 +129,30 @@ function updateAttackMove(soldier: Soldier, dt: number, scanForTargets: boolean,
     soldier.guardPoint = clonePosition(soldier.attackMovePoint)
     soldier.attackMovePoint = undefined
     deps.setSoldierAnimation(soldier, 'idle')
+  }
+}
+
+/** Walk the patrol route, flipping direction at each endpoint, engaging anything spotted. */
+function updatePatrol(soldier: Soldier, dt: number, scanForTargets: boolean, deps: CombatSystemDeps): void {
+  if (!soldier.patrolPointA || !soldier.patrolPointB) {
+    soldier.state = 'idle'
+    deps.setSoldierAnimation(soldier, 'idle')
+    return
+  }
+
+  if (scanForTargets) {
+    const target = findNearestEnemyInRange(soldier, AUTO_ACQUIRE_RANGE)
+    if (target) {
+      autoEngage(soldier, target, deps)
+      return
+    }
+  }
+
+  const waypoint = soldier.patrolToB ? soldier.patrolPointB : soldier.patrolPointA
+  moveTowardPosition(soldier.entity, waypoint, getUpgradedMoveSpeed(soldier), dt)
+  deps.setSoldierAnimation(soldier, 'walk')
+  if (distanceToPosition(soldier.entity, waypoint) <= 0.35) {
+    soldier.patrolToB = !soldier.patrolToB
   }
 }
 

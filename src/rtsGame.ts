@@ -327,6 +327,7 @@ export function startAttackMove(): void {
     return
   }
 
+  cancelPatrol()
   attackMovePending = true
   attackMoveCooldown = BUILDING_PLACEMENT_CLICK_COOLDOWN
   setStatus('Attack-move: click the ground. Fighters engage everything on the way.')
@@ -335,6 +336,75 @@ export function startAttackMove(): void {
 function cancelAttackMove(): void {
   attackMovePending = false
   attackMoveCooldown = 0
+}
+
+// ---------------------------------------------------------------------------
+// Patrol: click the button, then click the ground. Fighters walk back and
+// forth between where they stood and the clicked point, engaging any hostile
+// they spot and resuming the route once the fight is over.
+// ---------------------------------------------------------------------------
+
+let patrolPending = false
+let patrolCooldown = 0
+
+export function startPatrol(): void {
+  if (!isMatchActive()) return
+
+  const patrollers = getCommandableSoldiers().filter((soldier) => soldier.alive && getTeam(soldier) === 'player')
+  if (patrollers.length === 0) {
+    setStatus('Select fighters first, then order the patrol.')
+    return
+  }
+
+  cancelAttackMove()
+  patrolPending = true
+  patrolCooldown = BUILDING_PLACEMENT_CLICK_COOLDOWN
+  setStatus('Patrol: click the ground. Fighters walk the route and engage hostiles on the way.')
+}
+
+function cancelPatrol(): void {
+  patrolPending = false
+  patrolCooldown = 0
+}
+
+function updatePatrolInput(dt: number): void {
+  if (!patrolPending) return
+
+  patrolCooldown = Math.max(0, patrolCooldown - dt)
+  if (patrolCooldown > 0) return
+  if (!inputSystem.isTriggered(InputAction.IA_POINTER, PointerEventType.PET_DOWN)) return
+  if (isPointerOverHud()) return
+
+  const ground = getPointerGroundPosition()
+  if (!ground) {
+    setStatus('Patrol needs a ground click.')
+    return
+  }
+
+  cancelPatrol()
+  const patrollers = getCommandableSoldiers().filter((soldier) => soldier.alive && getTeam(soldier) === 'player')
+  if (patrollers.length === 0) return
+
+  const destination = Vector3.create(ground.x, 0.25, ground.z)
+  for (let i = 0; i < patrollers.length; i++) {
+    const soldier = patrollers[i]
+    const here = Transform.get(soldier.entity).position
+    const slotPosition = getFormationPosition(destination, i, SOLDIER_MOVE_FORMATION_RADIUS)
+    soldier.state = 'patrolling'
+    soldier.targetId = undefined
+    soldier.attackPosition = undefined
+    soldier.rallyPoint = undefined
+    soldier.attackMovePoint = undefined
+    soldier.autoEngaged = false
+    soldier.patrolPointA = Vector3.create(here.x, 0.25, here.z)
+    soldier.patrolPointB = Vector3.create(slotPosition.x, 0.25, slotPosition.z)
+    soldier.patrolToB = true
+    setSoldierAnimation(soldier, 'walk')
+  }
+
+  showMoveMarker(ground)
+  playAcknowledge()
+  setStatus(`${patrollers.length} fighter${patrollers.length === 1 ? '' : 's'} patrolling.`)
 }
 
 function updateAttackMoveInput(dt: number): void {
@@ -364,6 +434,8 @@ function updateAttackMoveInput(dt: number): void {
     soldier.attackPosition = undefined
     soldier.rallyPoint = undefined
     soldier.autoEngaged = false
+    soldier.patrolPointA = undefined
+    soldier.patrolPointB = undefined
     soldier.attackMovePoint = Vector3.create(slotPosition.x, 0.25, slotPosition.z)
     setSoldierAnimation(soldier, 'walk')
   }
@@ -750,6 +822,7 @@ export function resetRtsGame(): void {
   incomeSampleTimer = 0
   cancelRallyPlacement()
   cancelAttackMove()
+  cancelPatrol()
   cancelPlacement()
 
   for (const worker of workers) destroySelectable(worker)
@@ -1424,8 +1497,8 @@ function handleSelectableClick(id: string): void {
     return
   }
 
-  // Pending spawn-point / attack-move clicks are handled globally; don't also run selection commands.
-  if (rallyPlacementKind !== 'none' || attackMovePending) return
+  // Pending spawn-point / attack-move / patrol clicks are handled globally; don't also run selection commands.
+  if (rallyPlacementKind !== 'none' || attackMovePending || patrolPending) return
 
   const selectedWorkers = getSelectedWorkers()
 
@@ -1527,6 +1600,8 @@ function sendSoldierToRally(soldier: Soldier, rallyPoint: Vector3): void {
   soldier.targetId = undefined
   soldier.attackPosition = undefined
   soldier.attackMovePoint = undefined
+  soldier.patrolPointA = undefined
+  soldier.patrolPointB = undefined
   soldier.autoEngaged = false
   soldier.rallyPoint = cloneVector(rallyPoint)
   soldier.attackTimer = 0
@@ -1541,8 +1616,11 @@ function assignSoldierToAttack(soldier: Soldier, target: Building | Soldier | Wo
   soldier.targetId = target.id
   soldier.attackPosition = target.kind === 'soldier' || target.kind === 'worker' ? undefined : getSoldierAttackPosition(target, slot, soldier)
   soldier.rallyPoint = undefined
-  // Ordered attacks chase without a leash; the combat system re-marks auto-acquired ones.
+  // Ordered attacks chase without a leash; the combat system re-marks auto-acquired
+  // ones and restores their standing attack-move / patrol orders afterwards.
   soldier.attackMovePoint = undefined
+  soldier.patrolPointA = undefined
+  soldier.patrolPointB = undefined
   soldier.autoEngaged = false
   soldier.attackTimer = 0
   setSoldierAnimation(soldier, 'walk')
@@ -1736,6 +1814,7 @@ const dragSelectDeps = {
     placementState.state === 'placing' ||
     rallyPlacementKind !== 'none' ||
     attackMovePending ||
+    patrolPending ||
     gameState.matchStatus !== MATCH_ACTIVE,
   onBoxSelect: selectPlayerUnitsInRect,
   isPressOnSelectable: isPointerPressOnSelectable,
@@ -1870,6 +1949,7 @@ function rtsTickSystem(dt: number): void {
   updatePlacementConfirmInput(dt)
   updateRallyPlacementInput(dt)
   updateAttackMoveInput(dt)
+  updatePatrolInput(dt)
   updateCancelInput()
   updateDragSelect(dragSelectDeps)
   updateWorkerAutoGather(dt)
