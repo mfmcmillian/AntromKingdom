@@ -27,8 +27,9 @@ export const CONFIG = {
   enemyAiDefenderCount: 4,
   enemyAiTargetWorkers: 14,
   enemyAiTargetGuards: 18,
-  // Pointer click distance. Large so everything on screen is clickable from the overhead camera.
-  commandRange: 100,
+  // Pointer click distance, measured from the (parked) avatar - must exceed the
+  // map diagonal (~226m) so the far enemy base stays clickable from the free camera.
+  commandRange: 300,
   // Idle workers automatically start gathering resources within this range.
   workerAutoGatherRange: 12,
   placementRange: 100,
