@@ -10,10 +10,10 @@ import { buildings, getTeam, resources, soldiers, workers } from './world'
 // Must match the virtual resolution passed to ReactEcsRenderer.setUiRenderer.
 const VIRTUAL_WIDTH = 1920
 const VIRTUAL_HEIGHT = 1080
-// Screen-space rect of the panel (see uiTransform below): anchored bottom-left,
-// inside the StarCraft-style bottom console.
+// Screen-space rect of the panel (see uiTransform below): anchored bottom-right,
+// inside the console - Decentraland's chat window owns the bottom-left corner.
 const PANEL_BOTTOM = 12
-const PANEL_LEFT = 12
+const PANEL_RIGHT = 12
 
 const MAP_SIZE = 236
 const BORDER = 5
@@ -38,7 +38,7 @@ export function minimapPanel() {
     <UiEntity
       uiTransform={{
         positionType: 'absolute',
-        position: { bottom: PANEL_BOTTOM, left: PANEL_LEFT },
+        position: { bottom: PANEL_BOTTOM, right: PANEL_RIGHT },
         width: MAP_SIZE + BORDER * 2,
         height: MAP_SIZE + BORDER * 2,
         padding: BORDER
@@ -73,7 +73,7 @@ function jumpCameraToClickedPoint(): void {
   const virtualX = coordinates.x * (VIRTUAL_WIDTH / canvas.width)
   const virtualYFromTop = (canvas.height - coordinates.y) * (VIRTUAL_HEIGHT / canvas.height)
 
-  const mapLeft = PANEL_LEFT + BORDER
+  const mapLeft = VIRTUAL_WIDTH - PANEL_RIGHT - BORDER - MAP_SIZE
   const mapTop = VIRTUAL_HEIGHT - PANEL_BOTTOM - BORDER - MAP_SIZE
 
   const u = clamp((virtualX - mapLeft) / MAP_SIZE, 0, 1)

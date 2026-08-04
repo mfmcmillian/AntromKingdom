@@ -84,10 +84,14 @@ const ICON = {
 
 // Bottom console geometry (virtual 1920x1080).
 const CONSOLE_HEIGHT = 250
-const SLOT_SIZE = 74
-const SLOT_GAP = 8
+const SLOT_SIZE = 66
+const SLOT_GAP = 6
 const CARD_COLUMNS = 3
-const CARD_WIDTH = CARD_COLUMNS * (SLOT_SIZE + SLOT_GAP) + 16
+const CARD_WIDTH = CARD_COLUMNS * (SLOT_SIZE + SLOT_GAP) + 12
+// Minimap sits in the bottom-right corner (DCL chat owns the bottom-left);
+// the command card is anchored just left of it.
+const MINIMAP_SPAN = 246 + 10
+const CARD_RIGHT = 12 + MINIMAP_SPAN + 8
 
 type CommandSlot = {
   id: string
@@ -243,8 +247,7 @@ function infoPanel(selected: SelectedSummary) {
   if (selected.kind === 'none') return null
 
   const units = getSelectedUnitsInfo()
-  if (units.length > 1) return multiSelectPanel(units)
-
+  const multi = units.length > 1
   const race = getRace(selected.team ?? 'player')
   const portrait = getPortraitIcon(selected)
   const isEnemy = selected.team === 'enemy'
@@ -254,23 +257,25 @@ function infoPanel(selected: SelectedSummary) {
     <UiEntity
       uiTransform={{
         positionType: 'absolute',
-        position: { bottom: 14, left: 300 },
-        width: 1180,
+        position: { bottom: 14, left: 320 },
+        width: 1160,
         height: CONSOLE_HEIGHT - 34,
         flexDirection: 'row'
       }}
     >
+      {multi ? wireframeGrid(units) : null}
+
       {portrait ? (
         <UiEntity uiTransform={{ width: 156, height: 156, padding: 3, margin: { top: 20, right: 22 } }} uiBackground={{ color: UI.slotFrame }}>
           <UiEntity uiTransform={{ width: '100%', height: '100%' }} uiBackground={{ textureMode: 'stretch', texture: { src: portrait } }} />
         </UiEntity>
       ) : null}
 
-      <UiEntity uiTransform={{ flexDirection: 'column', width: 560, height: '100%', padding: { top: 24 } }}>
+      <UiEntity uiTransform={{ flexDirection: 'column', width: 470, height: '100%', padding: { top: 24 } }}>
         <Label value={getCommandTitle(selected.kind)} fontSize={13} color={isEnemy ? UI.red : UI.dim} textAlign="middle-left" />
         <Label value={selected.name} fontSize={30} color={UI.text} textAlign="middle-left" uiTransform={{ margin: { top: 2, bottom: 8 } }} />
 
-        {hpRatio !== undefined ? (
+        {!multi && hpRatio !== undefined ? (
           <UiEntity uiTransform={{ flexDirection: 'column', width: 340 }}>
             <UiEntity uiTransform={{ width: 340, height: 16, padding: 2 }} uiBackground={{ color: UI.panelStrong }}>
               <UiEntity
@@ -294,7 +299,51 @@ function infoPanel(selected: SelectedSummary) {
         ) : null}
       </UiEntity>
 
-      {productionQueuePanel(selected)}
+      {multi ? null : productionQueuePanel(selected)}
+    </UiEntity>
+  )
+}
+
+/** SC-style multi-selection wireframes, left of the portrait: unit images whose
+ * frame color shows their HP (green / gold / red). Clicking one selects it. */
+function wireframeGrid(units: ReturnType<typeof getSelectedUnitsInfo>) {
+  const shown = units.slice(0, 15)
+  const extra = units.length - shown.length
+
+  return (
+    <UiEntity
+      uiTransform={{
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        alignContent: 'flex-start',
+        width: 305,
+        height: '100%',
+        margin: { right: 20 },
+        padding: { top: 20 }
+      }}
+    >
+      {shown.map((unit) => {
+        const ratio = unit.maxHp > 0 ? Math.max(0, Math.min(1, unit.hp / unit.maxHp)) : 0
+        const outline = ratio > 0.55 ? UI.green : ratio > 0.25 ? UI.gold : UI.red
+        return (
+          <UiEntity
+            key={`sel-${unit.id}`}
+            uiTransform={{ width: 54, height: 54, margin: { right: 6, bottom: 6 }, padding: 2 }}
+            uiBackground={{ color: outline }}
+            onMouseDown={() => selectUnitById(unit.id)}
+          >
+            <UiEntity
+              uiTransform={{ width: '100%', height: '100%' }}
+              uiBackground={{ textureMode: 'stretch', texture: { src: unit.kind === 'worker' ? ICON.unit.worker : ICON.unit[unit.variant ?? 'melee'] } }}
+            />
+          </UiEntity>
+        )
+      })}
+      {extra > 0 ? (
+        <UiEntity uiTransform={{ width: 54, height: 54, justifyContent: 'center', alignItems: 'center', margin: { right: 6, bottom: 6 } }} uiBackground={{ color: UI.cardSoft }}>
+          <Label value={`+${extra}`} fontSize={16} color={UI.text} textAlign="middle-center" />
+        </UiEntity>
+      ) : null}
     </UiEntity>
   )
 }
@@ -325,44 +374,6 @@ function productionQueuePanel(selected: SelectedSummary) {
   )
 }
 
-/** SC-style wireframe grid for multi-selection; clicking a tile selects that single unit. */
-function multiSelectPanel(units: ReturnType<typeof getSelectedUnitsInfo>) {
-  const shown = units.slice(0, 24)
-
-  return (
-    <UiEntity
-      uiTransform={{
-        positionType: 'absolute',
-        position: { bottom: 14, left: 300 },
-        width: 1180,
-        height: CONSOLE_HEIGHT - 34,
-        flexDirection: 'column',
-        padding: { top: 16 }
-      }}
-    >
-      <Label value={`${units.length} UNITS SELECTED`} fontSize={13} color={UI.dim} textAlign="middle-left" uiTransform={{ margin: { bottom: 8 } }} />
-      <UiEntity uiTransform={{ flexDirection: 'row', flexWrap: 'wrap', width: 830 }}>
-        {shown.map((unit) => {
-          const ratio = unit.maxHp > 0 ? Math.max(0, Math.min(1, unit.hp / unit.maxHp)) : 0
-          return (
-            <UiEntity key={`sel-${unit.id}`} uiTransform={{ flexDirection: 'column', width: 56, margin: { right: 8, bottom: 6 } }} onMouseDown={() => selectUnitById(unit.id)}>
-              <UiEntity uiTransform={{ width: 56, height: 56, padding: 2 }} uiBackground={{ color: UI.slotFrame }}>
-                <UiEntity
-                  uiTransform={{ width: '100%', height: '100%' }}
-                  uiBackground={{ textureMode: 'stretch', texture: { src: unit.kind === 'worker' ? ICON.unit.worker : ICON.unit[unit.variant ?? 'melee'] } }}
-                />
-              </UiEntity>
-              <UiEntity uiTransform={{ width: 56, height: 5, margin: { top: 2 } }} uiBackground={{ color: UI.panelStrong }}>
-                <UiEntity uiTransform={{ width: Math.max(1, 56 * ratio), height: '100%' }} uiBackground={{ color: ratio > 0.55 ? UI.green : ratio > 0.25 ? UI.gold : UI.red }} />
-              </UiEntity>
-            </UiEntity>
-          )
-        })}
-      </UiEntity>
-    </UiEntity>
-  )
-}
-
 // ---------------------------------------------------------------------------
 // Command card: SC-style 3-wide grid of icon buttons, bottom-right.
 // ---------------------------------------------------------------------------
@@ -374,13 +385,13 @@ function commandCard(slots: CommandSlot[]) {
     <UiEntity
       uiTransform={{
         positionType: 'absolute',
-        position: { bottom: 10, right: 12 },
+        position: { bottom: 6, right: CARD_RIGHT },
         width: CARD_WIDTH,
-        height: CONSOLE_HEIGHT - 20,
+        height: CONSOLE_HEIGHT - 12,
         flexDirection: 'row',
         flexWrap: 'wrap',
         alignContent: 'flex-start',
-        padding: 8
+        padding: 6
       }}
       uiBackground={{ color: UI.panelStrong }}
     >
@@ -442,7 +453,7 @@ function commandTooltip(slot: CommandSlot) {
     <UiEntity
       uiTransform={{
         positionType: 'absolute',
-        position: { bottom: CONSOLE_HEIGHT - 8, right: 12 },
+        position: { bottom: CONSOLE_HEIGHT - 8, right: CARD_RIGHT },
         width: 380,
         flexDirection: 'column',
         padding: { top: 10, bottom: 10, left: 14, right: 14 }
@@ -669,7 +680,8 @@ function idleWorkerButton() {
     <UiEntity
       uiTransform={{
         positionType: 'absolute',
-        position: { bottom: CONSOLE_HEIGHT + 14, left: 12 },
+        // Floats just above the minimap in the bottom-right corner.
+        position: { bottom: MINIMAP_SPAN + 20, right: 12 },
         width: 62,
         height: 62,
         padding: 2
