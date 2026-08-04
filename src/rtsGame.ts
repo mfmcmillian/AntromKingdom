@@ -73,6 +73,7 @@ import { buildResourceModel, disposeResourceModel, playResourceDepletion, playRe
 import { showMoveMarker } from './rts/moveMarker'
 import { fireProjectile } from './rts/projectiles'
 import { spawnBlastRing, spawnDeathBurst, spawnImpactFlash } from './rts/impactVfx'
+import { clearAllConstructionVfx } from './rts/constructionVfx'
 import { playAcknowledge, playExplosion, playLaser, playUnderAttackAlert, startAmbientMusic, stopAmbientMusic } from './rts/sound'
 import {
   getDamageMultiplier,
@@ -844,6 +845,7 @@ export function resetRtsGame(): void {
     clearBuildingDamageVfx(building)
     destroySelectable(building)
   }
+  clearAllConstructionVfx()
 
   resetWorld()
   resetUpgrades()
