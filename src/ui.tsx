@@ -110,14 +110,14 @@ export const uiMenu = () => {
 
         <UiEntity uiTransform={{ width: '100%', height: 106, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-start', margin: { top: 14 } }}>
           {showCancelPlacement ? actionButton('Cancel Placement', 'no cost spent', cancelBuildingPlacement, UI.red) : null}
-          {isPlayerSelection && selected.kind === 'supplyHouse' ? actionButton('Create Worker', '50 meat', queueWorker, UI.accent) : null}
+          {isPlayerSelection && selected.kind === 'supplyHouse' ? actionButton('Create Miner', '50 plasma', queueWorker, UI.accent) : null}
           {isPlayerSelection && selected.kind === 'supplyHouse' ? actionButton('Set Spawn', 'current position', setWorkerSpawnPoint, UI.card) : null}
-          {isPlayerSelection && selected.kind === 'worker' ? actionButton('Build Temple', '150 rocks / 100 wood', () => startWorkerBuildingPlacement('temple'), UI.accent) : null}
-          {isPlayerSelection && selected.kind === 'worker' ? actionButton('Build Homestead', '50 rocks', () => startWorkerBuildingPlacement('supplyHouse'), UI.gold) : null}
-          {isPlayerSelection && selected.kind === 'worker' ? actionButton('Build Barracks', '100 rocks / 75 wood', () => startWorkerBuildingPlacement('barracks'), UI.green) : null}
-          {isPlayerSelection && selected.kind === 'worker' ? actionButton('Build Fireplace', '25 rocks / 50 wood', () => startWorkerBuildingPlacement('fireplace'), UI.red) : null}
-          {isPlayerSelection && selected.kind === 'worker' ? actionButton('Select All', 'workers', selectAllLikeSelected, UI.card) : null}
-          {isPlayerSelection && selected.kind === 'barracks' ? actionButton('Create Gaurd', '100 rocks / 50 meat', queueSoldier, UI.green) : null}
+          {isPlayerSelection && selected.kind === 'worker' ? actionButton('Build Temple', '150 ore / 100 crystal', () => startWorkerBuildingPlacement('temple'), UI.accent) : null}
+          {isPlayerSelection && selected.kind === 'worker' ? actionButton('Build Homestead', '50 ore', () => startWorkerBuildingPlacement('supplyHouse'), UI.gold) : null}
+          {isPlayerSelection && selected.kind === 'worker' ? actionButton('Build Barracks', '100 ore / 75 crystal', () => startWorkerBuildingPlacement('barracks'), UI.green) : null}
+          {isPlayerSelection && selected.kind === 'worker' ? actionButton('Build Fireplace', '25 ore / 50 crystal', () => startWorkerBuildingPlacement('fireplace'), UI.red) : null}
+          {isPlayerSelection && selected.kind === 'worker' ? actionButton('Select All', 'miners', selectAllLikeSelected, UI.card) : null}
+          {isPlayerSelection && selected.kind === 'barracks' ? actionButton('Create Gaurd', '100 ore / 50 plasma', queueSoldier, UI.green) : null}
           {isPlayerSelection && selected.kind === 'barracks' ? actionButton('Set Spawn', 'current position', setBarracksSpawnPoint, UI.card) : null}
           {showCancelBuild ? actionButton('Cancel Build', 'refund unbuilt cost', cancelSelectedConstruction, UI.red) : null}
           {isPlayerSelection && selected.kind === 'soldier' ? actionButton('Attack', 'click enemy', startSoldierAttackCommand, UI.red) : null}
@@ -188,9 +188,9 @@ function topResourceStrip() {
       }}
       uiBackground={{ color: UI.panel }}
     >
-      {stripStat('ROCKS', gameState.rocks.toString(), UI.gold, 136)}
-      {stripStat('WOOD', gameState.wood.toString(), UI.gold, 126)}
-      {stripStat('MEAT', gameState.meat.toString(), UI.gold, 122)}
+      {stripStat('ORE', gameState.rocks.toString(), UI.gold, 136)}
+      {stripStat('CRYSTAL', gameState.wood.toString(), UI.gold, 126)}
+      {stripStat('PLASMA', gameState.meat.toString(), UI.gold, 122)}
       {stripStat('SUPPLY', `${gameState.supplyUsed}/${gameState.supplyCap}`, supplyCapped ? UI.red : UI.green, 152)}
       {stripStat('TIME', formatMatchTime(gameState.matchTime), UI.dim, 126)}
     </UiEntity>

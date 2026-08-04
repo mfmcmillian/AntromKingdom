@@ -61,48 +61,31 @@ export const MODEL_TRANSFORMS = {
   }
 }
 
+// Space re-theme: the internal keys stay rocks/wood/meat so the economy code is
+// untouched, but the deposits are procedural ore chunks, crystal veins, and plasma vents.
 export const RESOURCE_DEFINITIONS: Record<ResourceKind, ResourceDefinition> = {
   rocks: {
-    name: 'Rocks',
+    name: 'Ore Deposit',
     amount: 300,
     placementY: 0,
-    src: ASSETS.rock,
-    colliderScale: Vector3.create(1.5, 1.5, 1.5),
-    animations: [
-      { clip: 'idle', playing: true, loop: true },
-      { clip: 'mine', playing: false, loop: false }
-    ],
-    gatherClip: 'mine',
+    colliderScale: Vector3.create(1.7, 1.2, 1.7),
     audioClipUrl: ASSETS.rockSound,
-    hoverText: 'Mine rocks'
+    hoverText: 'Mine ore'
   },
   wood: {
-    name: 'Tree',
+    name: 'Crystal Vein',
     amount: 220,
     placementY: 0,
-    src: ASSETS.tree,
-    colliderScale: Vector3.create(1.8, 3, 1.8),
-    animations: [
-      { clip: 'idle', playing: true, loop: true },
-      { clip: 'chop', playing: false, loop: false }
-    ],
-    gatherClip: 'chop',
-    audioClipUrl: ASSETS.treeSound,
-    hoverText: 'Chop wood'
+    colliderScale: Vector3.create(1.5, 2.5, 1.5),
+    audioClipUrl: ASSETS.rockSound,
+    hoverText: 'Harvest crystal'
   },
   meat: {
-    name: 'Pig',
+    name: 'Plasma Vent',
     amount: 160,
     placementY: 0,
-    src: ASSETS.pig,
-    colliderScale: Vector3.create(1.4, 1, 1.8),
-    animations: [
-      { clip: 'idle', playing: true, loop: true },
-      { clip: 'die', playing: false, loop: false }
-    ],
-    gatherClip: 'idle',
-    depletionClip: 'die',
-    hoverText: 'Gather meat'
+    colliderScale: Vector3.create(1.7, 1.6, 1.7),
+    hoverText: 'Siphon plasma'
   }
 }
 

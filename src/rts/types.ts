@@ -89,7 +89,6 @@ export type ResourceNode = Selectable & {
   resource: ResourceKind
   amount: number
   depletionTimer?: number
-  animationResetTimer?: number
 }
 
 export type Building = Selectable & {
@@ -132,11 +131,7 @@ export type ResourceDefinition = {
   name: string
   amount: number
   placementY: number
-  src: string
   colliderScale: Vector3
-  animations: AnimationStateConfig[]
-  gatherClip: string
-  depletionClip?: string
   audioClipUrl?: string
   hoverText: string
 }

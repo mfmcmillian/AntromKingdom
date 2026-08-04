@@ -62,6 +62,7 @@ import { initFogOfWar, resetFogOfWar } from './rts/fogOfWar'
 import { SelectionMarkerTarget, clearSelectionMarkers, updateSelectionMarkers } from './rts/selectionMarkers'
 import { buildEnvironmentEnclosure } from './rts/environment'
 import { buildMinerRobot, disposeRobot, isRobot, setRobotAnimation } from './rts/robotModel'
+import { buildResourceModel, disposeResourceModel, playResourceDepletion, playResourceGatherPulse } from './rts/resourceModels'
 import { showMoveMarker } from './rts/moveMarker'
 import { disableTopDownView, enableTopDownView, getCameraFocus, isTopDownViewActive } from './rts/topDownCamera'
 import { createBuildingDamageVfx, removeBuildingDamageVfx, updateBuildingDamageVfx } from './rts/vfx'
@@ -133,7 +134,6 @@ const SOLDIER_ATTACK_SPACING = 0.7
 const SOLDIER_UNIT_ATTACK_SPACING = 1.2
 const ENEMY_DEFENSE_RADIUS = 20
 const TEMPLE_ATTACK_DISTANCE_PADDING = 3
-const RESOURCE_ANIMATION_RESET_DELAY = 1.2
 const MATCH_NOT_STARTED = 'notStarted'
 const MATCH_ACTIVE = 'active'
 const MATCH_ENDED = 'ended'
@@ -588,7 +588,7 @@ export function getSelectedSummary(): SelectedSummary {
     return {
       name: 'None',
       kind: 'none',
-      detail: getPlacementInstruction() || 'Select Temple, worker, rock, tree, or building.'
+      detail: getPlacementInstruction() || 'Select Temple, miner, ore, crystal, or building.'
     }
   }
 
@@ -809,17 +809,36 @@ function createSoldier(position: Vector3, team: Team = 'player'): Soldier {
 
 function createResourceNode(resource: ResourceKind, name: string, position: Vector3): ResourceNode {
   const definition = RESOURCE_DEFINITIONS[resource]
-  const patch = createSelectableModel('resource', name, {
+  const id = createEntityId('resource')
+  const entity = engine.addEntity()
+  Transform.create(entity, { position: cloneVector(position) })
+  buildResourceModel(entity, resource)
+
+  if (definition.audioClipUrl) {
+    AudioSource.create(entity, {
+      audioClipUrl: definition.audioClipUrl,
+      playing: false,
+      loop: false,
+      volume: 0.55
+    })
+  }
+
+  const patch: ResourceNode = {
+    id,
+    kind: 'resource',
+    name,
+    entity,
+    alive: true,
+    resource,
+    amount: definition.amount
+  }
+  patch.colliderEntity = createModelColliderEntity(entity, {
     position,
     scale: Vector3.create(1, 1, 1),
-    src: definition.src,
-    colliderScale: definition.colliderScale,
-    animations: definition.animations.map((animation) => ({ ...animation })),
-    audioClipUrl: definition.audioClipUrl
-  }, false) as ResourceNode
-
-  patch.resource = resource
-  patch.amount = definition.amount
+    src: '',
+    colliderScale: definition.colliderScale
+  })
+  selectables.set(id, patch)
   registerSelectable(patch)
   updateLabel(patch, `${name}\n${definition.amount}`)
   return patch
@@ -1642,14 +1661,6 @@ function updateConstructionSites(dt: number): void {
 
 function updateDepletedResources(dt: number): void {
   for (const resource of resources) {
-    if (resource.animationResetTimer !== undefined) {
-      resource.animationResetTimer -= dt
-      if (resource.animationResetTimer <= 0) {
-        resource.animationResetTimer = undefined
-        resetResourceAnimation(resource)
-      }
-    }
-
     if (resource.depletionTimer === undefined) continue
 
     resource.depletionTimer -= dt
@@ -2031,21 +2042,19 @@ function getHoverText(selectable: Selectable): string {
 function formatCost(cost: ResourceCost): string {
   const parts = []
 
-  if (cost.rocks) parts.push(`${cost.rocks} rocks`)
-  if (cost.wood) parts.push(`${cost.wood} wood`)
-  if (cost.meat) parts.push(`${cost.meat} meat`)
+  if (cost.rocks) parts.push(`${cost.rocks} ore`)
+  if (cost.wood) parts.push(`${cost.wood} crystal`)
+  if (cost.meat) parts.push(`${cost.meat} plasma`)
   return parts.length > 0 ? parts.join(', ') : '0 resources'
 }
 
 function depleteResourceNode(resource: ResourceNode): void {
   resource.amount = 0
-  resource.animationResetTimer = undefined
   if (resource.resource === 'meat') {
     resource.alive = false
     resource.depletionTimer = DEPLETED_MEAT_HIDE_DELAY
-    pointerEventsSystem.removeOnPointerDown(resource.entity)
-    MeshCollider.deleteFrom(resource.entity)
-    playAnimation(resource.entity, RESOURCE_DEFINITIONS.meat.depletionClip ?? 'die')
+    removeSelectableInteractivity(resource)
+    playResourceDepletion(resource.entity)
     selectables.delete(resource.id)
     setStatus(`${resource.name} is depleted.`)
     return
@@ -2076,20 +2085,13 @@ function playAnimation(entity: Entity, clipName: string): void {
 }
 
 function playResourceGatherFeedback(resource: ResourceNode): void {
-  playAnimation(resource.entity, RESOURCE_DEFINITIONS[resource.resource].gatherClip)
-  resource.animationResetTimer = RESOURCE_ANIMATION_RESET_DELAY
+  playResourceGatherPulse(resource.entity)
 
   const audio = AudioSource.getMutableOrNull(resource.entity)
   if (!audio) return
 
   audio.playing = false
   audio.playing = true
-}
-
-function resetResourceAnimation(resource: ResourceNode): void {
-  if (!resource.alive || !Animator.has(resource.entity)) return
-
-  Animator.playSingleAnimation(resource.entity, 'idle', true)
 }
 
 function updateLabel(selectable: Selectable, text: string): void {
@@ -2349,8 +2351,9 @@ function cancelSoldierCommand(): void {
 function removeSelectable(selectable: Selectable): void {
   selectable.alive = false
   removeSelectableInteractivity(selectable)
-  // Robot parts follow the hidden root, so only the animation rig needs unregistering.
+  // Procedural model parts follow the hidden root, so only the animation rigs need unregistering.
   disposeRobot(selectable.entity, false)
+  disposeResourceModel(selectable.entity, false)
   hideEntity(selectable.entity)
   if (selectable.labelEntity) hideEntity(selectable.labelEntity)
   selectables.delete(selectable.id)
@@ -2368,6 +2371,7 @@ function destroySelectable(selectable: Selectable): void {
   selectable.alive = false
   removeSelectableInteractivity(selectable)
   disposeRobot(selectable.entity, true)
+  disposeResourceModel(selectable.entity, true)
   if (selectable.labelEntity) engine.removeEntity(selectable.labelEntity)
   engine.removeEntity(selectable.entity)
   selectables.delete(selectable.id)
