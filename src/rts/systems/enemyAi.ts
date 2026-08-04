@@ -153,8 +153,9 @@ function queueEnemyAdvancedProduction(): void {
   ).length
   if (advancedCount >= 8) return
 
-  // Every fourth advanced unit is a titan; the rest alternate caster / flyer.
-  const variant: SoldierVariant = advancedCount % 4 === 3 ? 'titan' : advancedCount % 2 === 0 ? 'caster' : 'flyer'
+  // Every fourth advanced unit is a titan (tech-gated behind the forge); the rest alternate caster / flyer.
+  const hasForge = getCompletedTeamBuildings('enemy', 'forge').length > 0
+  const variant: SoldierVariant = hasForge && advancedCount % 4 === 3 ? 'titan' : advancedCount % 2 === 0 ? 'caster' : 'flyer'
   const soldierDef = getSoldierDefinition('enemy', variant)
 
   if (!canQueueUnit('enemy', soldierDef.supply) || !hasResources('enemy', soldierDef.cost)) return

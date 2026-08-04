@@ -129,6 +129,8 @@ export type BuildingDefinition = {
   scale: Vector3
   color: Color4
   completeStatus: string
+  /** Tech tier gate: this building can only be placed once the team owns a completed building of this kind. */
+  requires?: BuildableKind
 }
 
 export type UnitDefinition = {
@@ -205,4 +207,8 @@ export type SelectedSummary = {
   hp?: number
   maxHp?: number
   detail: string
+  /** Soldier variant of the primary selection, for portrait icons. */
+  variant?: SoldierVariant
+  /** Which resource a selected resource node yields, for portrait icons. */
+  resourceKind?: ResourceKind
 }

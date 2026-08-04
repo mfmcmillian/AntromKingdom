@@ -116,6 +116,11 @@ export function getSoldierDefinition(team: Team, variant: SoldierVariant): RaceU
 /** Variants trained at the advanced structure instead of the barracks. */
 export const ADVANCED_VARIANTS: SoldierVariant[] = ['caster', 'flyer', 'titan']
 
+/** StarCraft-style tech tiers: these variants also need this building to exist before they can be trained. */
+export const UNIT_REQUIREMENTS: Partial<Record<SoldierVariant, BuildableKind>> = {
+  titan: 'forge'
+}
+
 export function getBuildingDisplayName(kind: BuildableKind, team: Team): string {
   return getRace(team).buildingNames[kind]
 }

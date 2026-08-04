@@ -64,7 +64,7 @@ import { SelectionMarkerTarget, clearSelectionMarkers, updateSelectionMarkers } 
 import { buildEnvironmentEnclosure } from './rts/environment'
 import { buildUnitModel, disposeUnit, isProceduralUnit, setUnitAnimation, updateUnitCargo } from './rts/unitModels'
 import { BUILDING_MODEL_HEIGHTS, buildBuildingModel, disposeBuildingModel, isProceduralBuilding, setBuildingModelDamage } from './rts/buildingModels'
-import { getBuildingDisplayName, getRace, getSoldierDefinition, getWorkerDefinition, pickEnemyRace } from './rts/races'
+import { UNIT_REQUIREMENTS, getBuildingDisplayName, getRace, getSoldierDefinition, getWorkerDefinition, pickEnemyRace } from './rts/races'
 import { buildResourceModel, disposeResourceModel, playResourceDepletion, playResourceGatherPulse } from './rts/resourceModels'
 import { showMoveMarker } from './rts/moveMarker'
 import { fireProjectile } from './rts/projectiles'
@@ -138,6 +138,8 @@ const BUILDING_FOOTPRINT_Y = 0.18
 const BUILDING_FOOTPRINT_HEIGHT = 0.16
 const BUILDING_PREVIEW_PADDING = 1.5
 const BUILDING_PLACEMENT_CLICK_COOLDOWN = 0.25
+// How long a status prompt stays on screen before fading (StarCraft-style transient messages).
+const STATUS_MESSAGE_DURATION = 4
 const BUILDING_PLACEMENT_GRID_SIZE = 0.5
 const BUILDING_PLACEMENT_PADDING = 0.6
 const BUILDING_FOOTPRINT_VALID = Color4.create(0.2, 0.95, 0.35, 0.45)
@@ -297,6 +299,11 @@ export function startWorkerBuildingPlacement(kind: BuildableKind): void {
     return
   }
 
+  if (definition.requires && !hasCompletedBuilding('player', definition.requires)) {
+    setStatus(`${getBuildingDisplayName(kind, 'player')} requires a completed ${getBuildingDisplayName(definition.requires, 'player')}.`)
+    return
+  }
+
   if (!hasResources(worker.team ?? 'player', definition.cost)) {
     setStatus(`Need ${formatCost(definition.cost)} to build the ${getBuildingDisplayName(kind, 'player')}.`)
     return
@@ -336,6 +343,12 @@ export function queueSoldier(variant: SoldierVariant = 'melee'): void {
 
   if (!trainer?.alive || !trainer.isComplete) {
     setStatus(`Select a completed ${trainerName} to create ${soldierDef.name}s.`)
+    return
+  }
+
+  const requiredKind = UNIT_REQUIREMENTS[variant]
+  if (requiredKind && !hasCompletedBuilding('player', requiredKind)) {
+    setStatus(`Cannot train ${soldierDef.name}: requires a completed ${getBuildingDisplayName(requiredKind, 'player')}.`)
     return
   }
 
@@ -587,6 +600,77 @@ export function getSoldierCount(): number {
   return soldiers.filter((soldier) => soldier.alive && getTeam(soldier) === 'player').length
 }
 
+export function hasCompletedBuilding(team: Team, kind: BuildableKind): boolean {
+  return buildings.some((building) => building.alive && building.isComplete && building.kind === kind && getTeam(building) === team)
+}
+
+/** Whether the player's tech tier allows placing this building (see BuildingDefinition.requires). */
+export function isBuildingUnlocked(kind: BuildableKind): boolean {
+  const requires = BUILDING_DEFINITIONS[kind].requires
+  return !requires || hasCompletedBuilding('player', requires)
+}
+
+/** Whether the player's tech tier allows training this unit variant (see UNIT_REQUIREMENTS). */
+export function isUnitUnlocked(variant: SoldierVariant): boolean {
+  const requires = UNIT_REQUIREMENTS[variant]
+  return !requires || hasCompletedBuilding('player', requires)
+}
+
+/** Selects a single unit out of a multi-selection (clicking a wireframe in the info panel). */
+export function selectUnitById(id: string): void {
+  const selectable = selectables.get(id)
+  if (selectable?.alive && (selectable.kind === 'worker' || selectable.kind === 'soldier')) {
+    selectObject(selectable)
+  }
+}
+
+export type SelectedUnitInfo = {
+  id: string
+  kind: 'worker' | 'soldier'
+  variant?: SoldierVariant
+  name: string
+  hp: number
+  maxHp: number
+}
+
+/** Per-unit data for the StarCraft-style multi-selection wireframe grid. */
+export function getSelectedUnitsInfo(): SelectedUnitInfo[] {
+  return getSelectedUnits().map((unit) => ({
+    id: unit.id,
+    kind: unit.kind as 'worker' | 'soldier',
+    variant: unit.kind === 'soldier' ? (unit as Soldier).variant : undefined,
+    name: unit.name,
+    hp: unit.hp,
+    maxHp: unit.maxHp
+  }))
+}
+
+export type ProductionQueueInfo = {
+  count: number
+  progress: number
+  variant?: SoldierVariant
+}
+
+/** Production queue of the selected building, for the info panel (count + progress of the active order). */
+export function getSelectedProductionQueue(): ProductionQueueInfo | undefined {
+  const selected = getSelected()
+  if (!selected) return undefined
+
+  if (selected.kind === 'supplyHouse') {
+    const orders = workerProductionOrders.filter((order) => order.homesteadId === selected.id)
+    if (orders.length === 0) return undefined
+    return { count: orders.length, progress: clamp(orders[0].timer / orders[0].productionTime, 0, 1) }
+  }
+
+  if (selected.kind === 'barracks' || selected.kind === 'techLab') {
+    const orders = soldierProductionOrders.filter((order) => order.barracksId === selected.id)
+    if (orders.length === 0) return undefined
+    return { count: orders.length, progress: clamp(orders[0].timer / orders[0].productionTime, 0, 1), variant: orders[0].variant }
+  }
+
+  return undefined
+}
+
 function getGroupSelectionPrefix(): string {
   const workerCount = getSelectedWorkers().length
   const soldierCount = getSelectedSoldiers().length
@@ -631,6 +715,7 @@ export function getSelectedSummary(): SelectedSummary {
       team: getTeam(soldier),
       hp: soldier.hp,
       maxHp: soldier.maxHp,
+      variant: soldier.variant,
       detail: `${getGroupSelectionPrefix()}State: ${soldier.state}`
     }
   }
@@ -640,6 +725,7 @@ export function getSelectedSummary(): SelectedSummary {
     return {
       name: resource.name,
       kind: resource.kind,
+      resourceKind: resource.resource,
       detail: `${resource.amount} ${resource.resource} remaining`
     }
   }
@@ -1554,6 +1640,7 @@ function isInRect(unit: Worker | Soldier, min: { x: number; z: number }, max: { 
 function rtsTickSystem(dt: number): void {
   updateMatchTimer(dt)
   updateAttackAlert(dt)
+  if (gameState.statusTimer > 0) gameState.statusTimer = Math.max(0, gameState.statusTimer - dt)
   if (gameState.matchStatus !== MATCH_ACTIVE) return
 
   updateCoordinateLogger(dt)
@@ -2304,6 +2391,7 @@ function updateLabel(selectable: Selectable, text: string): void {
 
 function setStatus(message: string): void {
   gameState.status = message
+  gameState.statusTimer = STATUS_MESSAGE_DURATION
 }
 
 function updateFootprintMaterial(entity: Entity, canPlace: boolean): void {
@@ -2618,7 +2706,11 @@ if ((globalThis as unknown as { __RTS_TEST__?: boolean }).__RTS_TEST__) {
     startRtsMatch,
     queueSoldier,
     startUpgradeResearch,
-    setStatus
+    setStatus,
+    hasCompletedBuilding,
+    isBuildingUnlocked,
+    isUnitUnlocked,
+    startWorkerBuildingPlacement
   }
 }
 

@@ -18,6 +18,8 @@ export const gameState = {
   selectedKind: '' as SelectableKind | '',
   selectedUnitIds: [] as string[],
   status: 'Select a miner, then click a mineral field or gas geyser.',
+  // StarCraft-style transient prompt: the status line fades out after a few seconds.
+  statusTimer: 0,
   attackAlert: '',
   attackAlertTimer: 0,
   matchTime: 0,

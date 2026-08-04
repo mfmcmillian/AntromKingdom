@@ -10,9 +10,10 @@ import { buildings, getTeam, resources, soldiers, workers } from './world'
 // Must match the virtual resolution passed to ReactEcsRenderer.setUiRenderer.
 const VIRTUAL_WIDTH = 1920
 const VIRTUAL_HEIGHT = 1080
-// Screen-space rect of the panel (see uiTransform below): anchored top-right.
-const PANEL_TOP = 22
-const PANEL_RIGHT = 22
+// Screen-space rect of the panel (see uiTransform below): anchored bottom-left,
+// inside the StarCraft-style bottom console.
+const PANEL_BOTTOM = 12
+const PANEL_LEFT = 12
 
 const MAP_SIZE = 236
 const BORDER = 5
@@ -37,7 +38,7 @@ export function minimapPanel() {
     <UiEntity
       uiTransform={{
         positionType: 'absolute',
-        position: { top: PANEL_TOP, right: PANEL_RIGHT },
+        position: { bottom: PANEL_BOTTOM, left: PANEL_LEFT },
         width: MAP_SIZE + BORDER * 2,
         height: MAP_SIZE + BORDER * 2,
         padding: BORDER
@@ -72,8 +73,8 @@ function jumpCameraToClickedPoint(): void {
   const virtualX = coordinates.x * (VIRTUAL_WIDTH / canvas.width)
   const virtualYFromTop = (canvas.height - coordinates.y) * (VIRTUAL_HEIGHT / canvas.height)
 
-  const mapLeft = VIRTUAL_WIDTH - PANEL_RIGHT - BORDER - MAP_SIZE
-  const mapTop = PANEL_TOP + BORDER
+  const mapLeft = PANEL_LEFT + BORDER
+  const mapTop = VIRTUAL_HEIGHT - PANEL_BOTTOM - BORDER - MAP_SIZE
 
   const u = clamp((virtualX - mapLeft) / MAP_SIZE, 0, 1)
   const v = clamp((virtualYFromTop - mapTop) / MAP_SIZE, 0, 1)

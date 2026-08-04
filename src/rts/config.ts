@@ -211,7 +211,8 @@ export const BUILDING_DEFINITIONS: Record<BuildableKind, BuildingDefinition> = {
     placementY: 0,
     scale: Vector3.create(5.5, 5, 5.5),
     color: Color4.create(0.35, 0.75, 0.9, 1),
-    completeStatus: 'Advanced structure complete. Casters, flyers and titans unlocked.'
+    completeStatus: 'Advanced structure complete. Casters, flyers and titans unlocked.',
+    requires: 'barracks'
   },
   forge: {
     kind: 'forge',
@@ -223,7 +224,8 @@ export const BUILDING_DEFINITIONS: Record<BuildableKind, BuildingDefinition> = {
     placementY: 0,
     scale: Vector3.create(4.5, 4, 4.5),
     color: Color4.create(0.9, 0.55, 0.2, 1),
-    completeStatus: 'Upgrade structure complete. Research weapon and speed upgrades.'
+    completeStatus: 'Upgrade structure complete. Research weapon and speed upgrades.',
+    requires: 'barracks'
   },
   fireplace: {
     kind: 'fireplace',
