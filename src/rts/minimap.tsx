@@ -4,6 +4,7 @@ import ReactEcs, { UiEntity } from '@dcl/sdk/react-ecs'
 import { SCENE } from './config'
 import { FOG_GRID_SIZE, isCellExplored, isPositionExplored, isPositionVisibleToPlayer } from './fogOfWar'
 import { gameState } from './state'
+import { BASIN_PATCHES, CRATERS } from './terrain'
 import { getCameraFocus, isTopDownViewActive, setCameraFocus } from './topDownCamera'
 import { buildings, getTeam, resources, soldiers, workers } from './world'
 
@@ -22,8 +23,11 @@ const FOG_CELL_SIZE = MAP_SIZE / FOG_GRID_SIZE
 const MINIMAP_COLORS = {
   border: Color4.create(0.3, 0.55, 0.85, 1),
   frame: Color4.create(0.03, 0.035, 0.05, 0.95),
-  ground: Color4.create(0.13, 0.13, 0.17, 1),
-  fog: Color4.create(0.02, 0.02, 0.035, 0.94),
+  // Muted echo of the regolith surface so the minimap reads as the same world.
+  ground: Color4.create(0.3, 0.3, 0.33, 1),
+  groundDark: Color4.create(0.24, 0.24, 0.28, 1),
+  borderRock: Color4.create(0.38, 0.38, 0.42, 1),
+  fog: Color4.create(0.045, 0.045, 0.07, 0.96),
   playerUnit: Color4.create(0.3, 0.75, 1, 1),
   playerBuilding: Color4.create(0.2, 0.9, 0.4, 1),
   enemy: Color4.create(0.95, 0.2, 0.2, 1),
@@ -31,6 +35,9 @@ const MINIMAP_COLORS = {
   gas: Color4.create(0.35, 0.9, 0.45, 1),
   avatar: Color4.create(1, 1, 1, 1)
 }
+
+/** World meters -> minimap pixels. */
+const MAP_SCALE = MAP_SIZE / SCENE.size
 
 export function minimapPanel() {
   if (gameState.matchStatus !== 'active') return null
@@ -55,6 +62,7 @@ export function minimapPanel() {
         uiBackground={{ color: MINIMAP_COLORS.ground }}
         onMouseDown={jumpCameraToClickedPoint}
       >
+        {terrainLayer()}
         {resourceDots()}
         {buildingDots()}
         {unitDots()}
@@ -87,6 +95,45 @@ function jumpCameraToClickedPoint(): void {
 
   // Minimap top edge is the map's far side (high z).
   setCameraFocus(u * SCENE.size, (1 - v) * SCENE.size)
+}
+
+/**
+ * Static terrain features under the dots: rocky border ring, the darker center
+ * basin, and the landmark craters, so the minimap matches the actual map.
+ */
+function terrainLayer() {
+  const RIM = 6
+  const elements = [
+    // Border highland ring.
+    <UiEntity key="rim-n" uiTransform={{ positionType: 'absolute', position: { left: 0, top: 0 }, width: MAP_SIZE, height: RIM }} uiBackground={{ color: MINIMAP_COLORS.borderRock }} />,
+    <UiEntity key="rim-s" uiTransform={{ positionType: 'absolute', position: { left: 0, top: MAP_SIZE - RIM }, width: MAP_SIZE, height: RIM }} uiBackground={{ color: MINIMAP_COLORS.borderRock }} />,
+    <UiEntity key="rim-w" uiTransform={{ positionType: 'absolute', position: { left: 0, top: RIM }, width: RIM, height: MAP_SIZE - RIM * 2 }} uiBackground={{ color: MINIMAP_COLORS.borderRock }} />,
+    <UiEntity key="rim-e" uiTransform={{ positionType: 'absolute', position: { left: MAP_SIZE - RIM, top: RIM }, width: RIM, height: MAP_SIZE - RIM * 2 }} uiBackground={{ color: MINIMAP_COLORS.borderRock }} />
+  ]
+
+  for (let i = 0; i < BASIN_PATCHES.length; i++) {
+    elements.push(terrainRect(`basin-${i}`, BASIN_PATCHES[i].x, BASIN_PATCHES[i].z, BASIN_PATCHES[i].size, MINIMAP_COLORS.groundDark))
+  }
+  for (let i = 0; i < CRATERS.length; i++) {
+    elements.push(terrainRect(`crater-${i}`, CRATERS[i].x, CRATERS[i].z, CRATERS[i].radius * 2, MINIMAP_COLORS.groundDark))
+  }
+  return elements
+}
+
+function terrainRect(key: string, worldX: number, worldZ: number, worldSize: number, color: Color4) {
+  const size = worldSize * MAP_SCALE
+  return (
+    <UiEntity
+      key={key}
+      uiTransform={{
+        positionType: 'absolute',
+        position: { left: worldX * MAP_SCALE - size / 2, top: MAP_SIZE - worldZ * MAP_SCALE - size / 2 },
+        width: size,
+        height: size
+      }}
+      uiBackground={{ color }}
+    />
+  )
 }
 
 function resourceDots() {

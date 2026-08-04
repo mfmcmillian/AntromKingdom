@@ -63,6 +63,7 @@ import { initFogOfWar, resetFogOfWar } from './rts/fogOfWar'
 import { isPointerOverHud } from './rts/hud'
 import { SelectionMarkerTarget, clearSelectionMarkers, updateSelectionMarkers } from './rts/selectionMarkers'
 import { buildEnvironmentEnclosure } from './rts/environment'
+import { buildTerrain } from './rts/terrain'
 import { buildUnitModel, disposeUnit, isProceduralUnit, setUnitAnimation, updateUnitCargo } from './rts/unitModels'
 import { BUILDING_MODEL_HEIGHTS, buildBuildingModel, disposeBuildingModel, isProceduralBuilding, setBuildingModelDamage } from './rts/buildingModels'
 import { UNIT_REQUIREMENTS, getBuildingDisplayName, getRace, getSoldierDefinition, getWorkerDefinition, pickEnemyRace } from './rts/races'
@@ -744,93 +745,9 @@ export function getSelectedSummary(): SelectedSummary {
 }
 
 function createStaticScene(): void {
-  createGround()
+  buildTerrain()
   buildEnvironmentEnclosure()
   rallyMarker = createRallyMarker()
-}
-
-function createGround(): void {
-  const ground = engine.addEntity()
-
-  Transform.create(ground, {
-    position: Vector3.create(SCENE.center, 0.01, SCENE.center),
-    scale: Vector3.create(SCENE.size, 0.02, SCENE.size)
-  })
-  MeshRenderer.setBox(ground)
-  // Fully matte so the noon sun doesn't wash the whole surface out from the overhead camera.
-  Material.setPbrMaterial(ground, {
-    albedoColor: COLORS.ground,
-    metallic: 0,
-    roughness: 1,
-    specularIntensity: 0,
-    castShadows: false
-  })
-
-  scatterGroundDecorations()
-}
-
-/** Deterministic scatter of moon rocks, craters, and glowing crystals so the surface doesn't read as one flat color. */
-function scatterGroundDecorations(): void {
-  let seed = 1337
-  const random = () => {
-    seed = (seed * 16807) % 2147483647
-    return seed / 2147483647
-  }
-
-  for (let i = 0; i < 130; i++) {
-    const x = 3 + random() * (SCENE.size - 6)
-    const z = 3 + random() * (SCENE.size - 6)
-    const entity = engine.addEntity()
-    const roll = random()
-
-    if (roll < 0.35) {
-      // Moon rock. Kept low so it stays under the fog tiles of unexplored cells.
-      const size = 0.35 + random() * 0.8
-      Transform.create(entity, {
-        position: Vector3.create(x, 0.06, z),
-        rotation: Quaternion.fromEulerDegrees(random() * 14, random() * 360, random() * 14),
-        scale: Vector3.create(size, 0.12 + random() * 0.14, size * (0.65 + random() * 0.55))
-      })
-      MeshRenderer.setBox(entity)
-      Material.setPbrMaterial(entity, {
-        albedoColor: Color4.create(0.53, 0.54, 0.59, 1),
-        metallic: 0,
-        roughness: 1,
-        specularIntensity: 0,
-        castShadows: false
-      })
-    } else if (roll < 0.85) {
-      // Crater patch, only slightly darker than the ground so it doesn't read as a hole.
-      const size = 1.4 + random() * 3
-      Transform.create(entity, {
-        position: Vector3.create(x, 0.03, z),
-        scale: Vector3.create(size, 0.015, size)
-      })
-      MeshRenderer.setCylinder(entity)
-      Material.setPbrMaterial(entity, {
-        albedoColor: Color4.create(0.33, 0.33, 0.38, 1),
-        metallic: 0,
-        roughness: 1,
-        specularIntensity: 0,
-        castShadows: false
-      })
-    } else {
-      // Glowing crystal shard poking out of the regolith.
-      const height = 0.25 + random() * 0.45
-      Transform.create(entity, {
-        position: Vector3.create(x, height / 2, z),
-        rotation: Quaternion.fromEulerDegrees(random() * 18 - 9, random() * 360, random() * 18 - 9),
-        scale: Vector3.create(0.12 + random() * 0.1, height, 0.12 + random() * 0.1)
-      })
-      MeshRenderer.setBox(entity)
-      Material.setPbrMaterial(entity, {
-        albedoColor: Color4.create(0.12, 0.55, 0.62, 1),
-        emissiveColor: Color4.create(0.12, 0.65, 0.75, 1),
-        emissiveIntensity: 1,
-        castShadows: false
-      })
-    }
-  }
 }
 
 function createStartingBase(): void {

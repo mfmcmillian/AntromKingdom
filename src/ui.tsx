@@ -1,4 +1,5 @@
 import ReactEcs, { Button, Label, ReactEcsRenderer, UiEntity } from '@dcl/sdk/react-ecs'
+import { engine } from '@dcl/sdk/ecs'
 import { Color4 } from '@dcl/sdk/math'
 import {
   cancelBuildingPlacement,
@@ -31,7 +32,7 @@ import { RACES, RACE_IDS, getBuildingDisplayName, getRace, getSoldierDefinition,
 import { UPGRADE_INFO, UPGRADE_MAX_LEVEL, getNextUpgradeCost, getUpgradeLevel, isUpgradeInProgress } from './rts/upgrades'
 import { isTopDownViewActive, toggleTopDownView } from './rts/topDownCamera'
 import { CONSOLE_HEIGHT } from './rts/hud'
-import type { BuildableKind, RaceId, ResourceCost, SelectedSummary, SoldierVariant, UpgradeKind } from './rts/types'
+import type { BuildableKind, RaceId, ResourceCost, SelectedSummary, SoldierVariant, Team, UpgradeKind } from './rts/types'
 
 const UI = {
   console: Color4.create(0.03, 0.04, 0.06, 0.94),
@@ -49,24 +50,41 @@ const UI = {
   dim: Color4.create(0.65, 0.68, 0.75, 1)
 }
 
-// StarCraft-style command card icons (generated art, shared across races).
+// StarCraft-style command card icons (generated art). Buildings and units have
+// one image per race; the human set keeps the original unsuffixed filenames.
+const BUILDING_ICON_FILES: Record<BuildableKind, string> = {
+  temple: 'icon-building-temple',
+  supplyHouse: 'icon-building-supply',
+  barracks: 'icon-building-barracks',
+  techLab: 'icon-building-techlab',
+  forge: 'icon-building-forge',
+  fireplace: 'icon-building-fireplace'
+}
+
+const UNIT_ICON_FILES: Record<SoldierVariant | 'worker', string> = {
+  worker: 'icon-unit-worker',
+  melee: 'icon-unit-melee',
+  ranged: 'icon-unit-ranged',
+  caster: 'icon-unit-caster',
+  flyer: 'icon-unit-flyer',
+  titan: 'icon-unit-titan'
+}
+
+const RACE_ICON_SUFFIX: Record<RaceId, string> = { human: '', alien: '-alien', bio: '-bio' }
+
+function raceIdFor(team: Team | undefined): RaceId {
+  return team === 'enemy' ? gameState.enemyRace : gameState.playerRace
+}
+
+function buildingIcon(kind: BuildableKind, team?: Team): string {
+  return `images/icons/${BUILDING_ICON_FILES[kind]}${RACE_ICON_SUFFIX[raceIdFor(team)]}.png`
+}
+
+function unitIcon(unit: SoldierVariant | 'worker', team?: Team): string {
+  return `images/icons/${UNIT_ICON_FILES[unit]}${RACE_ICON_SUFFIX[raceIdFor(team)]}.png`
+}
+
 const ICON = {
-  building: {
-    temple: 'images/icons/icon-building-temple.png',
-    supplyHouse: 'images/icons/icon-building-supply.png',
-    barracks: 'images/icons/icon-building-barracks.png',
-    techLab: 'images/icons/icon-building-techlab.png',
-    forge: 'images/icons/icon-building-forge.png',
-    fireplace: 'images/icons/icon-building-fireplace.png'
-  } as Record<BuildableKind, string>,
-  unit: {
-    worker: 'images/icons/icon-unit-worker.png',
-    melee: 'images/icons/icon-unit-melee.png',
-    ranged: 'images/icons/icon-unit-ranged.png',
-    caster: 'images/icons/icon-unit-caster.png',
-    flyer: 'images/icons/icon-unit-flyer.png',
-    titan: 'images/icons/icon-unit-titan.png'
-  } as Record<string, string>,
   upgrade: {
     damage: 'images/icons/icon-upgrade-damage.png',
     speed: 'images/icons/icon-upgrade-speed.png'
@@ -107,9 +125,14 @@ type CommandSlot = {
 
 let showSettingsMenu = false
 let hoveredSlot: CommandSlot | undefined
+/** Clock driving the title screen ambience (shooting stars, twinkles). */
+let titleTime = 0
 
 export function setupUi() {
   ReactEcsRenderer.setUiRenderer(uiMenu, { virtualWidth: 1920, virtualHeight: 1080 })
+  engine.addSystem((dt: number) => {
+    if (gameState.matchStatus === 'notStarted') titleTime += dt
+  })
 }
 
 export const uiMenu = () => {
@@ -333,7 +356,7 @@ function wireframeGrid(units: ReturnType<typeof getSelectedUnitsInfo>) {
           >
             <UiEntity
               uiTransform={{ width: '100%', height: '100%' }}
-              uiBackground={{ textureMode: 'stretch', texture: { src: unit.kind === 'worker' ? ICON.unit.worker : ICON.unit[unit.variant ?? 'melee'] } }}
+              uiBackground={{ textureMode: 'stretch', texture: { src: unit.kind === 'worker' ? unitIcon('worker') : unitIcon(unit.variant ?? 'melee') } }}
             />
           </UiEntity>
         )
@@ -353,7 +376,7 @@ function productionQueuePanel(selected: SelectedSummary) {
   const queue = getSelectedProductionQueue()
   if (!queue) return null
 
-  const icon = selected.kind === 'supplyHouse' ? ICON.unit.worker : ICON.unit[queue.variant ?? 'melee']
+  const icon = selected.kind === 'supplyHouse' ? unitIcon('worker') : unitIcon(queue.variant ?? 'melee')
 
   return (
     <UiEntity uiTransform={{ flexDirection: 'column', width: 300, height: '100%', padding: { top: 30 } }}>
@@ -507,7 +530,7 @@ function getCommandSlots(selected: SelectedSummary): CommandSlot[] {
       const displayName = getBuildingDisplayName(kind, 'player')
       slots.push({
         id: `build-${kind}`,
-        icon: ICON.building[kind],
+        icon: buildingIcon(kind),
         name: `Build ${displayName}`,
         cost: definition.cost,
         description: getBuildingDescription(kind),
@@ -522,7 +545,7 @@ function getCommandSlots(selected: SelectedSummary): CommandSlot[] {
     const worker = getWorkerDefinition('player')
     slots.push({
       id: 'train-worker',
-      icon: ICON.unit.worker,
+      icon: unitIcon('worker'),
       name: `Train ${worker.name}`,
       cost: worker.cost,
       description: 'Gathers minerals and gas, builds and repairs structures.',
@@ -579,7 +602,7 @@ function trainSlot(variant: SoldierVariant, description: string): CommandSlot {
 
   return {
     id: `train-${variant}`,
-    icon: ICON.unit[variant],
+    icon: unitIcon(variant),
     name: `Train ${definition.name}`,
     cost: definition.cost,
     description: `${description} Supply ${definition.supply}.`,
@@ -650,10 +673,10 @@ function upgradeSlot(kind: UpgradeKind): CommandSlot {
 }
 
 function getPortraitIcon(selected: SelectedSummary): string | undefined {
-  if (selected.kind === 'worker') return ICON.unit.worker
-  if (selected.kind === 'soldier') return ICON.unit[selected.variant ?? 'melee']
+  if (selected.kind === 'worker') return unitIcon('worker', selected.team)
+  if (selected.kind === 'soldier') return unitIcon(selected.variant ?? 'melee', selected.team)
   if (selected.kind === 'resource') return selected.resourceKind === 'gas' ? ICON.resource.gas : ICON.resource.minerals
-  if (selected.kind in ICON.building) return ICON.building[selected.kind as BuildableKind]
+  if (selected.kind in BUILDING_ICON_FILES) return buildingIcon(selected.kind as BuildableKind, selected.team)
   return undefined
 }
 
@@ -688,7 +711,7 @@ function idleWorkerButton() {
       uiBackground={{ color: UI.slotFrame }}
       onMouseDown={selectIdleWorker}
     >
-      <UiEntity uiTransform={{ width: '100%', height: '100%' }} uiBackground={{ textureMode: 'stretch', texture: { src: ICON.unit.worker } }}>
+      <UiEntity uiTransform={{ width: '100%', height: '100%' }} uiBackground={{ textureMode: 'stretch', texture: { src: unitIcon('worker') } }}>
         <UiEntity
           uiTransform={{ positionType: 'absolute', position: { bottom: -4, right: -4 }, width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}
           uiBackground={{ color: UI.gold }}
@@ -833,35 +856,126 @@ function settingsOverlay() {
 function raceCard(raceId: RaceId) {
   const race = RACES[raceId]
   const isSelected = gameState.playerRace === raceId
+  const portrait = `images/icons/${UNIT_ICON_FILES.melee}${RACE_ICON_SUFFIX[raceId]}.png`
 
   return (
     <UiEntity
       key={`race-${raceId}`}
       uiTransform={{
-        width: 190,
-        height: 96,
-        margin: { left: 8, right: 8 },
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 8
+        width: 216,
+        height: 268,
+        margin: { left: 12, right: 12 },
+        padding: 3,
+        flexDirection: 'column'
       }}
-      uiBackground={{ color: isSelected ? Color4.create(race.color.r * 0.35, race.color.g * 0.35, race.color.b * 0.35, 0.95) : Color4.create(0.07, 0.08, 0.1, 0.9) }}
+      uiBackground={{ color: isSelected ? race.accent : Color4.create(0.2, 0.22, 0.27, 0.75) }}
       onMouseDown={() => {
         gameState.playerRace = raceId
       }}
     >
-      <UiEntity uiTransform={{ width: '100%', height: 3, margin: { bottom: 10 } }} uiBackground={{ color: isSelected ? race.accent : Color4.create(0.25, 0.26, 0.3, 0.8) }} />
-      <Label value={race.name} fontSize={17} color={isSelected ? Color4.White() : Color4.create(0.7, 0.7, 0.72, 1)} textAlign="middle-center" />
-      <Label
-        value={`${race.worker.name} + ${race.melee.name} + ${race.ranged.name}`}
-        fontSize={11}
-        color={isSelected ? race.accent : Color4.create(0.5, 0.5, 0.54, 0.9)}
-        textAlign="middle-center"
-        uiTransform={{ margin: { top: 6 } }}
-      />
+      <UiEntity
+        uiTransform={{ width: '100%', height: '100%', flexDirection: 'column', alignItems: 'center' }}
+        uiBackground={{ color: Color4.create(0.02, 0.025, 0.04, 0.95) }}
+      >
+        <UiEntity
+          uiTransform={{ width: 186, height: 186, margin: { top: 12 } }}
+          uiBackground={{
+            textureMode: 'stretch',
+            texture: { src: portrait },
+            // Unselected races sit dimmed until hovered/picked.
+            color: isSelected ? Color4.White() : Color4.create(0.45, 0.45, 0.5, 1)
+          }}
+        />
+        <Label
+          value={race.name.toUpperCase()}
+          fontSize={17}
+          color={isSelected ? Color4.White() : Color4.create(0.62, 0.62, 0.66, 1)}
+          textAlign="middle-center"
+          uiTransform={{ margin: { top: 10 } }}
+        />
+        <Label
+          value={`${race.worker.name} · ${race.melee.name} · ${race.ranged.name}`}
+          fontSize={11}
+          color={isSelected ? race.accent : Color4.create(0.45, 0.45, 0.5, 0.9)}
+          textAlign="middle-center"
+          uiTransform={{ margin: { top: 4 } }}
+        />
+      </UiEntity>
     </UiEntity>
   )
+}
+
+// Deterministic star field for the title screen sky (kept above the race picker band).
+const TITLE_STARS: { x: number; y: number; size: number; phase: number; speed: number }[] = []
+{
+  let starSeed = 99
+  const starRandom = () => {
+    starSeed = (starSeed * 16807) % 2147483647
+    return starSeed / 2147483647
+  }
+  for (let i = 0; i < 26; i++) {
+    TITLE_STARS.push({
+      x: starRandom() * 1920,
+      y: starRandom() * 520,
+      size: 2 + starRandom() * 3,
+      phase: starRandom() * Math.PI * 2,
+      speed: 0.8 + starRandom() * 1.6
+    })
+  }
+}
+
+// Shooting stars: staggered diagonal streaks, each a bright head plus a fading dot trail.
+const SHOOTING_STARS = [
+  { startX: 320, startY: 40, dx: 620, dy: 300, period: 7.3, duration: 1.1, delay: 0 },
+  { startX: 1500, startY: 30, dx: -540, dy: 260, period: 9.1, duration: 1.25, delay: 3.4 },
+  { startX: 900, startY: 10, dx: 480, dy: 340, period: 11.7, duration: 1.05, delay: 6.2 }
+]
+
+function titleSkyAmbience() {
+  const elements: ReactEcs.JSX.Element[] = []
+
+  for (let i = 0; i < TITLE_STARS.length; i++) {
+    const star = TITLE_STARS[i]
+    const alpha = 0.25 + 0.55 * (0.5 + 0.5 * Math.sin(titleTime * star.speed + star.phase))
+    elements.push(
+      <UiEntity
+        key={`star-${i}`}
+        uiTransform={{ positionType: 'absolute', position: { left: star.x, top: star.y }, width: star.size, height: star.size }}
+        uiBackground={{ color: Color4.create(0.9, 0.95, 1, alpha) }}
+      />
+    )
+  }
+
+  for (let i = 0; i < SHOOTING_STARS.length; i++) {
+    const meteor = SHOOTING_STARS[i]
+    const cycle = (titleTime + meteor.period - meteor.delay) % meteor.period
+    if (cycle > meteor.duration) continue
+    const progress = cycle / meteor.duration
+    // Bright at launch, burning out at the end of the streak.
+    const burn = progress < 0.15 ? progress / 0.15 : 1 - (progress - 0.15) / 0.85
+
+    for (let segment = 0; segment < 7; segment++) {
+      const segmentProgress = progress - segment * 0.035
+      if (segmentProgress < 0) continue
+      const size = segment === 0 ? 5 : 4 - segment * 0.45
+      const alpha = burn * (segment === 0 ? 1 : 0.65 - segment * 0.09)
+      if (alpha <= 0.02) continue
+      elements.push(
+        <UiEntity
+          key={`meteor-${i}-${segment}`}
+          uiTransform={{
+            positionType: 'absolute',
+            position: { left: meteor.startX + meteor.dx * segmentProgress, top: meteor.startY + meteor.dy * segmentProgress },
+            width: size,
+            height: size
+          }}
+          uiBackground={{ color: Color4.create(1, 1, segment === 0 ? 0.92 : 1, Math.min(1, alpha)) }}
+        />
+      )
+    }
+  }
+
+  return elements
 }
 
 function startScreenOverlay() {
@@ -871,77 +985,62 @@ function startScreenOverlay() {
         positionType: 'absolute',
         position: { top: 0, left: 0 },
         width: '100%',
-        height: '100%',
-        justifyContent: 'center',
-        alignItems: 'center'
+        height: '100%'
       }}
-      uiBackground={{ color: Color4.create(0.015, 0.012, 0.01, 0.96) }}
+      uiBackground={{ textureMode: 'stretch', texture: { src: 'images/ui/title-bg-decentracraft.png' } }}
     >
+      {titleSkyAmbience()}
+
+      {/* Darkens the artwork behind the race picker so text stays readable. */}
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { bottom: 0, left: 0 }, width: '100%', height: 470 }}
+        uiBackground={{ color: Color4.create(0, 0, 0, 0.52) }}
+      />
+
+      {/* Logo (transparent PNG) floating over the sky, with a slow breathing drift. */}
       <UiEntity
         uiTransform={{
           positionType: 'absolute',
-          position: { top: 0, left: 0 },
+          position: { top: -34 + Math.sin(titleTime * 0.6) * 7, left: 0 },
           width: '100%',
-          height: '100%'
-        }}
-        uiBackground={{ color: Color4.create(0.05, 0.035, 0.015, 0.24) }}
-      />
-      <UiEntity
-        uiTransform={{
-          width: '100%',
-          height: '100%',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          positionType: 'absolute'
+          height: 560,
+          justifyContent: 'center'
         }}
       >
-        <UiEntity uiTransform={{ flexDirection: 'column', alignItems: 'center', margin: { bottom: 58 } }}>
-          <UiEntity uiTransform={{ width: 140, height: 2, margin: { bottom: 24 } }} uiBackground={{ color: Color4.create(0.85, 0.65, 0.35, 0.45) }} />
-          <Label value="KINGDOM OF" fontSize={18} color={Color4.create(0.58, 0.55, 0.5, 0.85)} textAlign="middle-center" uiTransform={{ margin: { bottom: 4 } }} />
-          <Label value="ANTROM" fontSize={62} font="serif" color={Color4.create(0.95, 0.92, 0.85, 1)} textAlign="middle-center" />
-          <UiEntity uiTransform={{ width: 140, height: 2, margin: { top: 24 } }} uiBackground={{ color: Color4.create(0.85, 0.65, 0.35, 0.45) }} />
-        </UiEntity>
-        <Label
-          value="REAL-TIME STRATEGY"
-          fontSize={18}
-          color={Color4.create(0.85, 0.65, 0.35, 0.9)}
-          textAlign="middle-center"
-          uiTransform={{ margin: { bottom: 26 } }}
-        />
+        <UiEntity uiTransform={{ width: 840, height: 560 }} uiBackground={{ textureMode: 'stretch', texture: { src: 'images/ui/logo-decentracraft.png' } }} />
+      </UiEntity>
 
-        <Label value="CHOOSE YOUR RACE" fontSize={13} color={Color4.create(0.58, 0.55, 0.5, 0.85)} textAlign="middle-center" uiTransform={{ margin: { bottom: 12 } }} />
-        <UiEntity uiTransform={{ flexDirection: 'row', justifyContent: 'center', margin: { bottom: 10 } }}>
+      <UiEntity
+        uiTransform={{
+          positionType: 'absolute',
+          position: { bottom: 30, left: 0 },
+          width: '100%',
+          flexDirection: 'column',
+          alignItems: 'center'
+        }}
+      >
+        <Label value="CHOOSE YOUR RACE" fontSize={14} color={Color4.create(0.75, 0.78, 0.85, 0.9)} textAlign="middle-center" uiTransform={{ margin: { bottom: 14 } }} />
+        <UiEntity uiTransform={{ flexDirection: 'row', justifyContent: 'center', margin: { bottom: 12 } }}>
           {RACE_IDS.map((raceId) => raceCard(raceId))}
         </UiEntity>
         <Label
           value={RACES[gameState.playerRace].tagline}
-          fontSize={13}
-          color={Color4.create(0.75, 0.73, 0.7, 0.9)}
+          fontSize={14}
+          color={Color4.create(0.85, 0.87, 0.92, 0.95)}
           textAlign="middle-center"
-          uiTransform={{ margin: { bottom: 22 } }}
+          uiTransform={{ margin: { bottom: 18 } }}
         />
 
         <UiEntity
-          uiTransform={{
-            width: 260,
-            height: 58,
-            justifyContent: 'center',
-            alignItems: 'center'
-          }}
-          uiBackground={{ color: Color4.create(0.85, 0.65, 0.35, 1) }}
+          uiTransform={{ width: 300, height: 62, justifyContent: 'center', alignItems: 'center', padding: 3 }}
+          uiBackground={{ color: Color4.create(0.35, 0.65, 1, 1) }}
           onMouseDown={startRtsMatch}
         >
-          <Label value="PLAY" fontSize={18} color={Color4.create(0.08, 0.06, 0.04, 1)} textAlign="middle-center" />
+          <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.06, 0.14, 0.28, 1) }}>
+            <Label value="PLAY" fontSize={22} color={Color4.create(0.85, 0.93, 1, 1)} textAlign="middle-center" />
+          </UiEntity>
         </UiEntity>
-        <Label
-          value="Build. Defend. Conquer."
-          fontSize={13}
-          color={Color4.create(0.5, 0.48, 0.45, 0.78)}
-          textAlign="middle-center"
-          uiTransform={{ margin: { top: 34 } }}
-        />
-        <Label value="RTS Alpha" fontSize={10} color={Color4.create(0.5, 0.48, 0.45, 0.62)} textAlign="middle-center" uiTransform={{ margin: { top: 26 } }} />
+        <Label value="Build. Defend. Conquer." fontSize={12} color={Color4.create(0.6, 0.64, 0.72, 0.85)} textAlign="middle-center" uiTransform={{ margin: { top: 14 } }} />
       </UiEntity>
     </UiEntity>
   )

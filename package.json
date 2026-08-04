@@ -11,7 +11,13 @@
   },
   "devDependencies": {
     "@dcl/js-runtime": "7.23.1",
-    "@dcl/sdk": "latest"
+    "@dcl/sdk": "latest",
+    "@gltf-transform/cli": "^4.4.2",
+    "@gltf-transform/core": "^4.4.2",
+    "@gltf-transform/functions": "^4.4.2",
+    "jimp": "^0.22.12",
+    "meshoptimizer": "^1.2.0",
+    "pngjs": "^7.0.0"
   },
   "engines": {
     "node": ">=16.0.0",

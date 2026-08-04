@@ -17,7 +17,9 @@ const FOG_TILE_THICKNESS = 0.12
 const UNIT_VISION_RADIUS = 18
 const BUILDING_VISION_RADIUS = 24
 const UPDATE_INTERVAL = 0.25
-const FOG_COLOR = Color4.create(0.02, 0.02, 0.035, 1)
+// Dark blue-gray "night side" tone: clearly unexplored, but tuned to the light
+// regolith surface so the boundary doesn't look like a hole in the world.
+const FOG_COLOR = Color4.create(0.055, 0.055, 0.085, 1)
 
 type VisionSource = { x: number; z: number; radius: number }
 

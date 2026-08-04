@@ -8,7 +8,10 @@ import { SCENE } from './config'
 
 const WALL_HEIGHT = 90
 const WALL_INSET = 0.2
-const HORIZON_TEXTURE = 'assets/textures/space_horizon.png'
+// Walls show a lunar horizon (regolith foreground -> distant mountains -> stars)
+// whose bottom tone matches the ground texture, so the map reads as one moon
+// that keeps going past the playable edge instead of a floor boxed in by space.
+const HORIZON_TEXTURE = 'assets/textures/moon_horizon.png'
 const CEILING_TEXTURE = 'assets/textures/space_ceiling.png'
 
 export function buildEnvironmentEnclosure(): void {
@@ -53,14 +56,17 @@ export function buildEnvironmentEnclosure(): void {
 
   for (const panel of panels) {
     const entity = engine.addEntity()
+    const isWall = panel.src === HORIZON_TEXTURE
     Transform.create(entity, { position: panel.pos, rotation: panel.rot, scale: panel.scale })
     MeshRenderer.setPlane(entity)
     Material.setPbrMaterial(entity, {
       // Emissive-only so the panels read as bright sky regardless of scene lighting.
+      // Walls run brighter and slightly warm so their regolith band matches the
+      // tone of the sunlit ground texture instead of reading as a darker cliff.
       albedoColor: Color4.create(0, 0, 0, 1),
       emissiveTexture: Material.Texture.Common({ src: panel.src }),
-      emissiveColor: Color3.create(1, 1, 1),
-      emissiveIntensity: 0.9,
+      emissiveColor: isWall ? Color3.create(1, 0.985, 0.95) : Color3.create(1, 1, 1),
+      emissiveIntensity: isWall ? 1.3 : 0.9,
       metallic: 0,
       roughness: 1,
       castShadows: false
