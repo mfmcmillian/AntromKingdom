@@ -1,6 +1,7 @@
 import { Entity, Material, MeshRenderer, Transform, VisibilityComponent, engine } from '@dcl/sdk/ecs'
 import { Color4, Vector3 } from '@dcl/sdk/math'
 import { SCENE } from './config'
+import { isProceduralBuilding, setBuildingModelVisible } from './buildingModels'
 import { isProceduralResource, setResourceModelVisible } from './resourceModels'
 import { isProceduralUnit, setUnitVisible } from './unitModels'
 import { isTopDownViewActive } from './topDownCamera'
@@ -155,6 +156,7 @@ function setEntityVisible(entity: Entity, visible: boolean): void {
 function setSelectableVisible(selectable: { entity: Entity; labelEntity?: Entity; beaconEntity?: Entity }, visible: boolean): void {
   if (isProceduralUnit(selectable.entity)) setUnitVisible(selectable.entity, visible)
   else if (isProceduralResource(selectable.entity)) setResourceModelVisible(selectable.entity, visible)
+  else if (isProceduralBuilding(selectable.entity)) setBuildingModelVisible(selectable.entity, visible)
   else setEntityVisible(selectable.entity, visible)
   if (selectable.labelEntity) setEntityVisible(selectable.labelEntity, visible)
   if (selectable.beaconEntity) setEntityVisible(selectable.beaconEntity, visible)

@@ -63,6 +63,7 @@ import { initFogOfWar, resetFogOfWar } from './rts/fogOfWar'
 import { SelectionMarkerTarget, clearSelectionMarkers, updateSelectionMarkers } from './rts/selectionMarkers'
 import { buildEnvironmentEnclosure } from './rts/environment'
 import { buildUnitModel, disposeUnit, isProceduralUnit, setUnitAnimation, updateUnitCargo } from './rts/unitModels'
+import { BUILDING_MODEL_HEIGHTS, buildBuildingModel, disposeBuildingModel, isProceduralBuilding } from './rts/buildingModels'
 import { getBuildingDisplayName, getRace, getSoldierDefinition, getWorkerDefinition, pickEnemyRace } from './rts/races'
 import { buildResourceModel, disposeResourceModel, playResourceDepletion, playResourceGatherPulse } from './rts/resourceModels'
 import { showMoveMarker } from './rts/moveMarker'
@@ -134,7 +135,6 @@ const DEPLETED_GAS_HIDE_DELAY = 180
 const PLAYER_ATTACK_ALERT_DURATION = 4
 const SOLDIER_MOVE_FORMATION_RADIUS = 0.9
 const SOLDIER_ATTACK_SPACING = 0.7
-const SOLDIER_UNIT_ATTACK_SPACING = 1.2
 const ENEMY_DEFENSE_RADIUS = 20
 const TEMPLE_ATTACK_DISTANCE_PADDING = 3
 const MATCH_NOT_STARTED = 'notStarted'
@@ -882,13 +882,7 @@ function createBuilding(kind: Building['kind'], name: string, position: Vector3,
           ]
         }, true, team) as Building)
       : definition
-      ? (createSelectableModel(kind, name, {
-          position,
-          scale,
-          src: getBuildableModelSrc(kind),
-          colliderScale: kind === 'temple' ? MODEL_TRANSFORMS.hq.colliderScale : undefined,
-          rotationY
-        }, true, team) as Building)
+      ? (createProceduralBuildingSelectable(kind as BuildableKind, name, position, team, definition, rotationY) as Building)
       : (createSelectableBox(kind, name, {
           position,
           scale,
@@ -959,6 +953,34 @@ function getBuildingColor(kind: Building['kind'], definition?: BuildingDefinitio
   return COLORS.temple
 }
 
+/**
+ * Race-styled procedural building: parts hang off a root at ground level with
+ * scale (1,1,1), plus an invisible footprint-sized box for clicks. Construction
+ * growth and death handling scale/hide the root, which carries the parts.
+ */
+function createProceduralBuildingSelectable(kind: BuildableKind, name: string, position: Vector3, team: Team, definition: BuildingDefinition, rotationY: number): Selectable {
+  const id = createEntityId(kind)
+  const entity = engine.addEntity()
+  Transform.create(entity, {
+    position: Vector3.create(position.x, 0, position.z),
+    rotation: Quaternion.fromEulerDegrees(0, rotationY, 0)
+  })
+  buildBuildingModel(entity, getRace(team).id, kind)
+
+  const height = BUILDING_MODEL_HEIGHTS[kind]
+  const collider = engine.addEntity()
+  Transform.create(collider, {
+    parent: entity,
+    position: Vector3.create(0, height / 2, 0),
+    scale: Vector3.create(definition.scale.x, height, definition.scale.z)
+  })
+
+  const selectable: Selectable = { id, kind, name, entity, alive: true, team, colliderEntity: collider }
+  selectables.set(id, selectable)
+  registerSelectable(selectable)
+  return selectable
+}
+
 function createSelectableBox(kind: SelectableKind, name: string, box: BoxConfig, team: Team = 'player'): Selectable {
   const id = createEntityId(kind)
   const entity = createBoxEntity(box)
@@ -1000,18 +1022,15 @@ function createGhostBuilding(definition: BuildingDefinition, position: Vector3):
   })
   Transform.getMutable(footprint).parent = root
 
+  // Preview model: the player's race-styled building, parts parented to this entity.
   const model = engine.addEntity()
   Transform.create(model, {
     parent: root,
-    position: Vector3.create(0, definition.placementY, 0),
+    position: Vector3.create(0, 0, 0),
     rotation: Quaternion.fromEulerDegrees(0, 0, 0),
-    scale: cloneVector(definition.scale)
+    scale: Vector3.create(1, 1, 1)
   })
-  GltfContainer.create(model, {
-    src: getBuildableModelSrc(definition.kind),
-    visibleMeshesCollisionMask: ColliderLayer.CL_NONE,
-    invisibleMeshesCollisionMask: ColliderLayer.CL_NONE
-  })
+  buildBuildingModel(model, getRace('player').id, definition.kind)
 
   return {
     ghostEntity: root,
@@ -1020,20 +1039,15 @@ function createGhostBuilding(definition: BuildingDefinition, position: Vector3):
   }
 }
 
-function getBuildableModelSrc(kind: BuildableKind): string {
-  if (kind === 'temple') return ASSETS.hq
-  if (kind === 'fireplace') return ASSETS.fireplace
-  return kind === 'supplyHouse' ? ASSETS.supply : ASSETS.barracks
-}
-
 function registerSelectable(selectable: Selectable): void {
   const pointerTarget = selectable.colliderEntity ?? selectable.entity
 
   ensurePointerCollider(pointerTarget)
   registerPointerHandler(pointerTarget, selectable)
-  // Units click via an invisible collider box, which the client can't outline on hover.
+  // GLB units click via an invisible collider box, which the client can't outline on hover.
   // Registering the visible model too makes the character glow like other selectables.
-  if (selectable.colliderEntity) {
+  // Procedural roots have no mesh of their own, so registering them only triggers warnings.
+  if (selectable.colliderEntity && (GltfContainer.has(selectable.entity) || MeshRenderer.has(selectable.entity))) {
     registerPointerHandler(selectable.entity, selectable)
   }
 }
@@ -1313,7 +1327,6 @@ const workerSystemDeps = {
 const combatSystemDeps = {
   getCombatTargetById,
   getSoldierAttackPosition,
-  getUnitAttackPosition,
   setSoldierAnimation,
   damageCombatTarget,
   assignSoldierToAttack,
@@ -1476,10 +1489,13 @@ function getSelectionMarkerTargets(): SelectionMarkerTarget[] {
 
 function getSelectionMarkerTarget(selectable: Selectable): SelectionMarkerTarget {
   const transform = Transform.get(selectable.entity)
+  // Procedural building roots have unit scale, so size the ring from the footprint definition.
+  const definition = isBuildableKind(selectable.kind as Building['kind']) ? BUILDING_DEFINITIONS[selectable.kind as BuildableKind] : undefined
+  const footprint = definition ? Math.max(definition.scale.x, definition.scale.z) : Math.max(transform.scale.x, transform.scale.z)
 
   return {
     position: transform.position,
-    diameter: Math.max(transform.scale.x, transform.scale.z) + 0.55
+    diameter: footprint + 0.55
   }
 }
 
@@ -1694,7 +1710,9 @@ function getBuildingDamageVfxLevel(building: Building): number {
 
 function getBuildingDamageVfxPosition(building: Building): Vector3 {
   const transform = Transform.get(building.entity)
-  const height = Math.max(transform.scale.y * 0.45, 1.4)
+  const height = isBuildableKind(building.kind) && isProceduralBuilding(building.entity)
+    ? BUILDING_MODEL_HEIGHTS[building.kind] * 0.5
+    : Math.max(transform.scale.y * 0.45, 1.4)
 
   return Vector3.create(transform.position.x, transform.position.y + height, transform.position.z)
 }
@@ -1903,8 +1921,15 @@ function updateConstructionVisual(site: Building): void {
   const progress = site.isComplete ? 1 : Math.max(0.05, site.constructionProgress)
   const transform = Transform.getMutable(site.entity)
 
-  transform.position = Vector3.create(transform.position.x, definition.placementY * progress, transform.position.z)
-  transform.scale = Vector3.create(definition.scale.x, definition.scale.y * progress, definition.scale.z)
+  if (isProceduralBuilding(site.entity)) {
+    // Parts are children of a ground-level root, so squashing the root's Y grows the model out of the ground.
+    transform.position = Vector3.create(transform.position.x, 0, transform.position.z)
+    transform.scale = Vector3.create(1, progress, 1)
+  } else {
+    transform.position = Vector3.create(transform.position.x, definition.placementY * progress, transform.position.z)
+    transform.scale = Vector3.create(definition.scale.x, definition.scale.y * progress, definition.scale.z)
+  }
+
   if (MeshRenderer.has(site.entity)) {
     Material.setPbrMaterial(site.entity, {
       albedoColor: site.isComplete ? definition.color : COLORS.construction,
@@ -2341,15 +2366,6 @@ function getSoldierAttackPosition(target: Building, slot: number, attacker?: Sol
   return Vector3.create(position.x, 0.25, position.z)
 }
 
-function getUnitAttackPosition(target: Soldier | Worker, attacker: Soldier): Vector3 {
-  const targetPosition = Transform.get(target.entity).position
-  const slot = getAttackSlotForTarget(target.id, attacker.id)
-  const standoff = Math.max(SOLDIER_UNIT_ATTACK_SPACING, attacker.attackRange)
-  const position = getApproachSidePosition(targetPosition, Transform.get(attacker.entity).position, slot, standoff)
-
-  return Vector3.create(position.x, 0.25, position.z)
-}
-
 /**
  * Ring position on the attacker's side of the target, so units stop where they
  * approach from instead of marching past (or through) the target to a fixed slot.
@@ -2368,21 +2384,13 @@ function getApproachSidePosition(center: Vector3, attackerPosition: Vector3 | un
   return Vector3.create(center.x + Math.cos(angle) * ringRadius, center.y, center.z + Math.sin(angle) * ringRadius)
 }
 
-function getAttackSlotForTarget(targetId: string, attackerId: string): number {
-  const attackers = soldiers
-    .filter((soldier) => soldier.alive && soldier.targetId === targetId)
-    .sort((a, b) => a.id.localeCompare(b.id))
-  const slot = attackers.findIndex((soldier) => soldier.id === attackerId)
-
-  return slot >= 0 ? slot : attackers.length
-}
-
 function removeSelectable(selectable: Selectable): void {
   selectable.alive = false
   removeSelectableInteractivity(selectable)
-  // Procedural model parts follow the hidden root, so only the animation rigs need unregistering.
+  // Procedural model parts follow the hidden root, so only the registries need unregistering.
   disposeUnit(selectable.entity, false)
   disposeResourceModel(selectable.entity, false)
+  disposeBuildingModel(selectable.entity, false)
   removeBuildingBeacon(selectable)
   hideEntity(selectable.entity)
   if (selectable.labelEntity) hideEntity(selectable.labelEntity)
@@ -2402,6 +2410,7 @@ function destroySelectable(selectable: Selectable): void {
   removeSelectableInteractivity(selectable)
   disposeUnit(selectable.entity, true)
   disposeResourceModel(selectable.entity, true)
+  disposeBuildingModel(selectable.entity, true)
   removeBuildingBeacon(selectable)
   if (selectable.labelEntity) engine.removeEntity(selectable.labelEntity)
   engine.removeEntity(selectable.entity)

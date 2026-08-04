@@ -1,4 +1,5 @@
 import { Transform } from '@dcl/sdk/ecs'
+import { Quaternion } from '@dcl/sdk/math'
 import { CONFIG } from '../config'
 import { distanceToPoint, distanceToPosition, moveTowardPosition } from '../math'
 import type { Building, Soldier, Worker } from '../types'
@@ -15,7 +16,6 @@ let autoAcquireTimer = 0
 export type CombatSystemDeps = {
   getCombatTargetById(id: string): CombatTarget | undefined
   getSoldierAttackPosition(target: Building, slot: number, attacker: Soldier): { x: number; y: number; z: number }
-  getUnitAttackPosition(target: Soldier | Worker, attacker: Soldier): { x: number; y: number; z: number }
   setSoldierAnimation(soldier: Soldier, clipName: string, restart?: boolean): void
   damageCombatTarget(target: CombatTarget, amount: number, attacker: Soldier): void
   assignSoldierToAttack(soldier: Soldier, target: CombatTarget, slot?: number, announce?: boolean): void
@@ -53,24 +53,78 @@ export function updateSoldiers(dt: number, deps: CombatSystemDeps): void {
     }
 
     if (soldier.state === 'movingToAttack') {
-      const attackPosition = getAttackPosition(soldier, target, deps)
-      soldier.attackPosition = attackPosition
-      moveTowardPosition(soldier.entity, attackPosition, soldier.moveSpeed, dt)
-      deps.setSoldierAnimation(soldier, 'walk')
-      if (distanceToPosition(soldier.entity, attackPosition) <= 0.25) {
-        soldier.state = 'attacking'
-        soldier.attackTimer = 0
-        deps.setSoldierAnimation(soldier, 'attack', true)
-      }
+      updateMovingToAttack(soldier, target, dt, deps)
     } else if (soldier.state === 'attacking') {
-      soldier.attackTimer += dt
-      if (soldier.attackTimer >= CONFIG.soldierAttackRate) {
-        soldier.attackTimer = 0
-        deps.setSoldierAnimation(soldier, 'attack', true)
-        deps.damageCombatTarget(target, soldier.damage, soldier)
-      }
+      updateAttacking(soldier, target, dt, deps)
     }
   }
+}
+
+/**
+ * Unit targets are chased directly and fired on the moment they are in range -
+ * no precomputed standoff point, which previously made ranged units orbit their
+ * target as the point slid around them. Buildings keep a fixed approach-side spot.
+ */
+function updateMovingToAttack(soldier: Soldier, target: CombatTarget, dt: number, deps: CombatSystemDeps): void {
+  if (isUnitTarget(target)) {
+    const targetPosition = Transform.get(target.entity).position
+    if (distanceToPosition(soldier.entity, targetPosition) <= soldier.attackRange) {
+      startAttacking(soldier, deps)
+      faceTarget(soldier, targetPosition)
+    } else {
+      moveTowardPosition(soldier.entity, targetPosition, soldier.moveSpeed, dt)
+      deps.setSoldierAnimation(soldier, 'walk')
+    }
+    return
+  }
+
+  const attackPosition = soldier.attackPosition ?? deps.getSoldierAttackPosition(target, 0, soldier)
+  soldier.attackPosition = attackPosition
+  moveTowardPosition(soldier.entity, attackPosition, soldier.moveSpeed, dt)
+  deps.setSoldierAnimation(soldier, 'walk')
+  if (distanceToPosition(soldier.entity, attackPosition) <= 0.25) {
+    startAttacking(soldier, deps)
+    faceTarget(soldier, Transform.get(target.entity).position)
+  }
+}
+
+function updateAttacking(soldier: Soldier, target: CombatTarget, dt: number, deps: CombatSystemDeps): void {
+  if (isUnitTarget(target)) {
+    const targetPosition = Transform.get(target.entity).position
+    // Re-chase with a small hysteresis buffer so units don't stutter on the range edge.
+    if (distanceToPosition(soldier.entity, targetPosition) > soldier.attackRange + 0.6) {
+      soldier.state = 'movingToAttack'
+      deps.setSoldierAnimation(soldier, 'walk')
+      return
+    }
+    faceTarget(soldier, targetPosition)
+  }
+
+  soldier.attackTimer += dt
+  if (soldier.attackTimer >= CONFIG.soldierAttackRate) {
+    soldier.attackTimer = 0
+    deps.setSoldierAnimation(soldier, 'attack', true)
+    deps.damageCombatTarget(target, soldier.damage, soldier)
+  }
+}
+
+function startAttacking(soldier: Soldier, deps: CombatSystemDeps): void {
+  soldier.state = 'attacking'
+  soldier.attackTimer = 0
+  deps.setSoldierAnimation(soldier, 'attack', true)
+}
+
+function isUnitTarget(target: CombatTarget): target is Soldier | Worker {
+  return target.kind === 'soldier' || target.kind === 'worker'
+}
+
+function faceTarget(soldier: Soldier, targetPosition: { x: number; y: number; z: number }): void {
+  const transform = Transform.getMutable(soldier.entity)
+  const dx = targetPosition.x - transform.position.x
+  const dz = targetPosition.z - transform.position.z
+  if (dx * dx + dz * dz < 0.0001) return
+
+  transform.rotation = Quaternion.fromEulerDegrees(0, (Math.atan2(dx, dz) * 180) / Math.PI, 0)
 }
 
 function updateSoldierRallyMovement(soldier: Soldier, dt: number, deps: CombatSystemDeps): void {
@@ -89,14 +143,6 @@ function updateSoldierRallyMovement(soldier: Soldier, dt: number, deps: CombatSy
     deps.setSoldierAnimation(soldier, 'idle')
     deps.setStatus(`${soldier.name} reached destination.`)
   }
-}
-
-function getAttackPosition(soldier: Soldier, target: CombatTarget, deps: CombatSystemDeps): { x: number; y: number; z: number } {
-  if (target.kind === 'soldier' || target.kind === 'worker') {
-    return deps.getUnitAttackPosition(target, soldier)
-  }
-
-  return soldier.attackPosition ?? deps.getSoldierAttackPosition(target, 0, soldier)
 }
 
 /** Nearest hostile within acquisition range: enemy fighters first, then workers, then buildings. */
