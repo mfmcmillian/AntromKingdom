@@ -1,17 +1,19 @@
-import { Material, MeshRenderer, Transform, engine, type Entity } from '@dcl/sdk/ecs'
+import { MainCamera, Material, MeshRenderer, Transform, VirtualCamera, engine, type Entity } from '@dcl/sdk/ecs'
 import { Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
+import { SCENE } from './config'
 import { buildUnitModel, disposeUnit } from './unitModels'
 import type { RaceId } from './types'
 
-// 3D hero showcase for the match-setup screen: the selected race's actual
-// procedural hero model hangs in front of the camera on a slow turntable.
-// Screen-space UI always draws over the 3D world, so the screen "background"
-// is a big world-space backdrop plane behind the model (also camera-parented)
-// carrying the title artwork - it hides the raw map without hiding the hero.
+// 3D hero showcase for the match-setup screen. The stage floats in empty air
+// high above the map center: a fixed VirtualCamera looks at the hero model
+// spinning on a turntable in front of a backdrop plane carrying the title
+// artwork. Because the camera is scripted, mouse drag can't move the view -
+// the whole shot is locked until the showcase is dismissed.
 
-const SHOWCASE_DISTANCE = 3.4
-const SHOWCASE_HEIGHT = -1.15
-const SHOWCASE_SCALE = 0.42
+const CAMERA_HEIGHT = 45
+const MODEL_DISTANCE = 3.4
+const MODEL_DROP = 1.15
+const MODEL_SCALE = 0.42
 const SPIN_DEGREES_PER_SECOND = 28
 
 // Far enough behind the model to leave room, big enough to cover the viewport.
@@ -19,6 +21,7 @@ const BACKDROP_DISTANCE = 6.8
 const BACKDROP_WIDTH = 21
 const BACKDROP_HEIGHT = 12
 
+let virtualCam: Entity | undefined
 let showcaseRoot: Entity | undefined
 let modelRoot: Entity | undefined
 let backdrop: Entity | undefined
@@ -30,18 +33,25 @@ export function showHeroShowcase(race: RaceId): void {
   if (activeRace === race && showcaseRoot !== undefined) return
   hideHeroShowcase()
 
-  // Camera-parented so the model stays centered no matter where the player looks.
+  // Camera sits south of the stage looking north (+Z, identity rotation).
+  const camX = SCENE.center
+  const camZ = SCENE.center - BACKDROP_DISTANCE
+
+  virtualCam = engine.addEntity()
+  Transform.create(virtualCam, { position: Vector3.create(camX, CAMERA_HEIGHT, camZ) })
+  VirtualCamera.create(virtualCam, {
+    defaultTransition: { transitionMode: VirtualCamera.Transition.Time(0) }
+  })
+
   showcaseRoot = engine.addEntity()
   Transform.create(showcaseRoot, {
-    parent: engine.CameraEntity,
-    position: Vector3.create(0, SHOWCASE_HEIGHT, SHOWCASE_DISTANCE),
-    scale: Vector3.create(SHOWCASE_SCALE, SHOWCASE_SCALE, SHOWCASE_SCALE)
+    position: Vector3.create(camX, CAMERA_HEIGHT - MODEL_DROP, camZ + MODEL_DISTANCE),
+    scale: Vector3.create(MODEL_SCALE, MODEL_SCALE, MODEL_SCALE)
   })
 
   backdrop = engine.addEntity()
   Transform.create(backdrop, {
-    parent: engine.CameraEntity,
-    position: Vector3.create(0, 0, BACKDROP_DISTANCE),
+    position: Vector3.create(camX, CAMERA_HEIGHT, camZ + BACKDROP_DISTANCE),
     rotation: Quaternion.fromEulerDegrees(0, 180, 0),
     scale: Vector3.create(BACKDROP_WIDTH, BACKDROP_HEIGHT, 1)
   })
@@ -56,15 +66,22 @@ export function showHeroShowcase(race: RaceId): void {
   Transform.create(modelRoot, { parent: showcaseRoot, rotation: Quaternion.fromEulerDegrees(0, 180, 0) })
   buildUnitModel(modelRoot, race, 'hero', 'player')
   activeRace = race
+
+  MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: virtualCam })
 }
 
 export function hideHeroShowcase(): void {
+  if (virtualCam !== undefined) {
+    MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: undefined })
+    engine.removeEntity(virtualCam)
+  }
   if (modelRoot !== undefined) {
     disposeUnit(modelRoot, true)
     engine.removeEntity(modelRoot)
   }
   if (showcaseRoot !== undefined) engine.removeEntity(showcaseRoot)
   if (backdrop !== undefined) engine.removeEntity(backdrop)
+  virtualCam = undefined
   modelRoot = undefined
   showcaseRoot = undefined
   backdrop = undefined

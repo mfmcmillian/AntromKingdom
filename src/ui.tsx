@@ -1254,8 +1254,8 @@ function startScreenOverlay() {
 
 // ---------------------------------------------------------------------------
 // Match setup screen: computers and game mode on the left, hero stats on the
-// right, and the middle left transparent so the actual 3D hero model (spun on
-// a camera-parented turntable, see rts/heroShowcase.ts) shows through.
+// right, and the middle left transparent so the actual 3D hero model shows
+// through - staged on a locked VirtualCamera shot (see rts/heroShowcase.ts).
 // ---------------------------------------------------------------------------
 
 function matchSetupOverlay() {
