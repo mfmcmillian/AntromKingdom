@@ -2,7 +2,10 @@ import type { Entity } from '@dcl/sdk/ecs'
 import type { Color4, Vector3 } from '@dcl/sdk/math'
 
 export type ResourceKind = 'minerals' | 'gas'
-export type Team = 'player' | 'enemy'
+/** Computer opponent slots. Every enemy team is allied with the others against the player. */
+export type EnemyTeam = 'enemy1' | 'enemy2' | 'enemy3'
+export type Team = 'player' | EnemyTeam
+export type Difficulty = 'easy' | 'medium' | 'hard'
 export type RaceId = 'human' | 'alien' | 'bio'
 export type SelectableKind = 'temple' | 'worker' | 'resource' | 'supplyHouse' | 'barracks' | 'techLab' | 'forge' | 'fireplace' | 'soldier' | 'enemyBuilding'
 export type WorkerState =

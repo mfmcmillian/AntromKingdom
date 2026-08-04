@@ -124,15 +124,15 @@ function revealExploredCells(): void {
 
 function updateEnemyVisibility(): void {
   for (const worker of workers) {
-    if (getTeam(worker) !== 'enemy' || !worker.alive) continue
+    if (getTeam(worker) === 'player' || !worker.alive) continue
     setSelectableVisible(worker, isEntityVisibleToPlayer(worker.entity))
   }
   for (const soldier of soldiers) {
-    if (getTeam(soldier) !== 'enemy' || !soldier.alive) continue
+    if (getTeam(soldier) === 'player' || !soldier.alive) continue
     setSelectableVisible(soldier, isEntityVisibleToPlayer(soldier.entity))
   }
   for (const building of buildings) {
-    if (getTeam(building) !== 'enemy' || !building.alive) continue
+    if (getTeam(building) === 'player' || !building.alive) continue
     // Buildings stay discovered once their cell is explored, like classic RTS fog.
     const position = Transform.get(building.entity).position
     setSelectableVisible(building, isPositionExplored(position))

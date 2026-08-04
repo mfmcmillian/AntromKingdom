@@ -3,8 +3,8 @@ import { Quaternion, type Vector3 } from '@dcl/sdk/math'
 import { CONFIG, RESOURCE_LABELS } from '../config'
 import { addResource, getResourceAmount, spendResources } from '../economy'
 import { distanceToPosition, moveTowardPosition } from '../math'
-import { gameState } from '../state'
-import type { Building, ResourceNode, Soldier, Worker } from '../types'
+import { gameState, getGatherMultiplier } from '../state'
+import type { Building, ResourceNode, Soldier, Team, Worker } from '../types'
 import { getTeam, resources, workers } from '../world'
 
 type WorkerCombatTarget = Building | Soldier | Worker
@@ -12,7 +12,7 @@ type WorkerCombatTarget = Building | Soldier | Worker
 export type WorkerSystemDeps = {
   getBuildingById(id: string): Building | undefined
   getWorkerGatherPosition(worker: Worker, resource: ResourceNode): Vector3
-  getNearestTemple(position: Vector3, team: 'player' | 'enemy'): Building | undefined
+  getNearestTemple(position: Vector3, team: Team): Building | undefined
   getTempleDropoffPosition(temple: Building, worker: Worker): Vector3
   getBuilderWorkPosition(site: Building, workerPosition: Vector3): Vector3
   getRepairWorkPosition(site: Building, workerPosition: Vector3): Vector3
@@ -137,8 +137,8 @@ function updateWorkerGathering(worker: Worker, dt: number, deps: WorkerSystemDep
     moveTowardPosition(worker.entity, dropoffPosition, CONFIG.workerMoveSpeed, dt)
     if (distanceToPosition(worker.entity, dropoffPosition) < 0.35) {
       const deliveredResource = worker.carryingResource ?? 'minerals'
-      const deliveredAmount = worker.carrying
-      addResource(getTeam(worker), deliveredResource, worker.carrying)
+      const deliveredAmount = Math.round(worker.carrying * getGatherMultiplier(getTeam(worker)))
+      addResource(getTeam(worker), deliveredResource, deliveredAmount)
       gameState.matchStats[getTeam(worker)].resourcesGathered += deliveredAmount
       worker.carrying = 0
       worker.carryingResource = undefined

@@ -21,7 +21,9 @@ const bolts: Bolt[] = []
 
 const TEAM_BOLT_COLORS: Record<Team, Color4> = {
   player: Color4.create(0.3, 0.9, 1, 1),
-  enemy: Color4.create(1, 0.35, 0.2, 1)
+  enemy1: Color4.create(1, 0.35, 0.2, 1),
+  enemy2: Color4.create(1, 0.62, 0.15, 1),
+  enemy3: Color4.create(0.85, 0.3, 0.95, 1)
 }
 
 export function fireProjectile(from: Vector3, to: Vector3, team: Team): void {

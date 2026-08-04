@@ -97,7 +97,7 @@ export const RACES: Record<RaceId, RaceDefinition> = {
 export const RACE_IDS: RaceId[] = ['human', 'alien', 'bio']
 
 export function getRace(team: Team): RaceDefinition {
-  return RACES[team === 'enemy' ? gameState.enemyRace : gameState.playerRace]
+  return RACES[team === 'player' ? gameState.playerRace : gameState.enemyRaces[team]]
 }
 
 export function getWorkerDefinition(team: Team): RaceUnitStats {
@@ -125,10 +125,9 @@ export function getBuildingDisplayName(kind: BuildableKind, team: Team): string 
   return getRace(team).buildingNames[kind]
 }
 
-/** Random race for the AI that differs from the player's pick. */
-export function pickEnemyRace(playerRace: RaceId): RaceId {
-  const options = RACE_IDS.filter((race) => race !== playerRace)
-  return options[Math.floor(Math.random() * options.length)]
+/** Roll a random race for a computer set to 'random'; any race is fair game. */
+export function pickRandomRace(): RaceId {
+  return RACE_IDS[Math.floor(Math.random() * RACE_IDS.length)]
 }
 
 export function formatRaceCost(cost: ResourceCost): string {

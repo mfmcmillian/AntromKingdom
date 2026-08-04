@@ -1,5 +1,5 @@
 import { Color4, Vector3 } from '@dcl/sdk/math'
-import type { BuildableKind, BuildingDefinition, ResourceDefinition, ResourceKind, UnitDefinition } from './types'
+import type { BuildableKind, BuildingDefinition, Difficulty, EnemyTeam, ResourceDefinition, ResourceKind, UnitDefinition } from './types'
 
 export const CONFIG = {
   mineralsStart: 50,
@@ -22,11 +22,6 @@ export const CONFIG = {
   repairHpPerSecond: 12,
   repairMineralCostPerSecond: 2,
   enemyBuildingHp: 300,
-  enemyAiDecisionRate: 1.5,
-  enemyAiAttackInterval: 90,
-  enemyAiDefenderCount: 4,
-  enemyAiTargetWorkers: 14,
-  enemyAiTargetGuards: 18,
   // Pointer click distance, measured from the (parked) avatar - must exceed the
   // map diagonal (~226m) so the far enemy base stays clickable from the free camera.
   commandRange: 300,
@@ -117,6 +112,89 @@ function plotPosition(column: number, row: number, y: number): Vector3 {
     y,
     GRID.origin + row * GRID.plotSize + GRID.plotSize / 2
   )
+}
+
+// -----------------------------------------------------------------------------
+// Computer opponents: difficulty presets and starting seats.
+// -----------------------------------------------------------------------------
+
+export type DifficultySettings = {
+  label: string
+  /** Seconds between AI macro decisions (build/train/research). */
+  decisionRate: number
+  /** Seconds between attack waves. */
+  attackInterval: number
+  /** Head start on the first attack wave timer (higher = earlier first attack). */
+  initialAttackTimer: number
+  /** Soldiers held back to defend the base. */
+  defenderCount: number
+  targetWorkers: number
+  targetGuards: number
+  maxAdvancedUnits: number
+  maxHomesteads: number
+  maxTemples: number
+  /** Whether the AI researches forge upgrades at all. */
+  research: boolean
+  /** Income multiplier on delivered resources (classic hard-AI cheat). */
+  gatherMultiplier: number
+}
+
+export const AI_DIFFICULTY: Record<Difficulty, DifficultySettings> = {
+  easy: {
+    label: 'Easy',
+    decisionRate: 3,
+    attackInterval: 150,
+    initialAttackTimer: 0,
+    defenderCount: 2,
+    targetWorkers: 9,
+    targetGuards: 8,
+    maxAdvancedUnits: 2,
+    maxHomesteads: 4,
+    maxTemples: 1,
+    research: false,
+    gatherMultiplier: 1
+  },
+  medium: {
+    label: 'Medium',
+    decisionRate: 1.5,
+    attackInterval: 90,
+    initialAttackTimer: 25,
+    defenderCount: 4,
+    targetWorkers: 14,
+    targetGuards: 18,
+    maxAdvancedUnits: 8,
+    maxHomesteads: 7,
+    maxTemples: 3,
+    research: true,
+    gatherMultiplier: 1
+  },
+  hard: {
+    label: 'Hard',
+    decisionRate: 1,
+    attackInterval: 70,
+    initialAttackTimer: 30,
+    defenderCount: 5,
+    targetWorkers: 18,
+    targetGuards: 24,
+    maxAdvancedUnits: 12,
+    maxHomesteads: 8,
+    maxTemples: 3,
+    research: true,
+    gatherMultiplier: 1.25
+  }
+}
+
+export const DIFFICULTY_IDS: Difficulty[] = ['easy', 'medium', 'hard']
+
+/**
+ * Starting temple per computer slot. Slot 1 is the mirrored NE main; slots 2
+ * and 3 seat at the gas expansions (NE-side, then SW-side - a third computer
+ * starts uncomfortably close to the player on purpose).
+ */
+export const ENEMY_SEATS: Record<EnemyTeam, { temple: Vector3; rotationY: number }> = {
+  enemy1: { temple: Vector3.create(142.89, 5, 136.75), rotationY: 180 },
+  enemy2: { temple: Vector3.create(137, 5, 114), rotationY: 200 },
+  enemy3: { temple: Vector3.create(23, 5, 46), rotationY: 160 }
 }
 
 export const POSITIONS = {

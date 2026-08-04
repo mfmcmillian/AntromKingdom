@@ -30,16 +30,18 @@ const RESEARCH_TIMES = [15, 22, 30]
 
 const levels: Record<Team, Record<UpgradeKind, number>> = {
   player: { damage: 0, speed: 0 },
-  enemy: { damage: 0, speed: 0 }
+  enemy1: { damage: 0, speed: 0 },
+  enemy2: { damage: 0, speed: 0 },
+  enemy3: { damage: 0, speed: 0 }
 }
 
 export const upgradeResearchQueue: UpgradeResearch[] = []
 
 export function resetUpgrades(): void {
-  levels.player.damage = 0
-  levels.player.speed = 0
-  levels.enemy.damage = 0
-  levels.enemy.speed = 0
+  for (const team of Object.keys(levels) as Team[]) {
+    levels[team].damage = 0
+    levels[team].speed = 0
+  }
   upgradeResearchQueue.length = 0
 }
 

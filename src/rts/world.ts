@@ -1,4 +1,4 @@
-import type { BuildableKind, Building, ResourceNode, Selectable, Soldier, Team, UnitProductionOrder, Worker, WorkerProductionOrder } from './types'
+import type { BuildableKind, Building, EnemyTeam, ResourceNode, Selectable, Soldier, Team, UnitProductionOrder, Worker, WorkerProductionOrder } from './types'
 
 export const selectables = new Map<string, Selectable>()
 export const workers: Worker[] = []
@@ -27,6 +27,15 @@ export function resetWorld(): void {
 
 export function getTeam(selectable: Selectable): Team {
   return selectable.team ?? 'player'
+}
+
+export function isEnemyTeam(team: Team): team is EnemyTeam {
+  return team !== 'player'
+}
+
+/** Computer opponents are allied: only player-vs-computer pairs fight. */
+export function areHostile(a: Team, b: Team): boolean {
+  return (a === 'player') !== (b === 'player')
 }
 
 export function getTeamWorkerCount(team: Team): number {

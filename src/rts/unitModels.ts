@@ -54,9 +54,12 @@ const BIO_FLESH = Color4.create(0.48, 0.18, 0.16, 1)
 const BIO_CARAPACE = Color4.create(0.22, 0.1, 0.13, 1)
 const BIO_BONE = Color4.create(0.75, 0.68, 0.55, 1)
 
+// Player is cyan; each computer gets its own hostile hue so mixed armies read.
 const TEAM_GLOW: Record<Team, Color4> = {
   player: Color4.create(0.2, 0.85, 0.95, 1),
-  enemy: Color4.create(1, 0.3, 0.2, 1)
+  enemy1: Color4.create(1, 0.3, 0.2, 1),
+  enemy2: Color4.create(1, 0.6, 0.12, 1),
+  enemy3: Color4.create(0.82, 0.3, 0.95, 1)
 }
 
 const STILL: MotionProfile = { amplitude: 0.03, speed: 2, tilt: 0, spin: 0, lunge: 0 }

@@ -4,6 +4,7 @@ import ReactEcs, { UiEntity } from '@dcl/sdk/react-ecs'
 import { SCENE } from './config'
 import { FOG_GRID_SIZE, isCellExplored, isPositionExplored, isPositionVisibleToPlayer } from './fogOfWar'
 import { gameState } from './state'
+import type { EnemyTeam } from './types'
 import { BASIN_PATCHES, CRATERS } from './terrain'
 import { getCameraFocus, isTopDownViewActive, setCameraFocus } from './topDownCamera'
 import { buildings, getTeam, resources, soldiers, workers } from './world'
@@ -30,7 +31,12 @@ const MINIMAP_COLORS = {
   fog: Color4.create(0.045, 0.045, 0.07, 0.96),
   playerUnit: Color4.create(0.3, 0.75, 1, 1),
   playerBuilding: Color4.create(0.2, 0.9, 0.4, 1),
-  enemy: Color4.create(0.95, 0.2, 0.2, 1),
+  // One hostile hue per computer slot, matching the in-world team glow.
+  enemy: {
+    enemy1: Color4.create(0.95, 0.2, 0.2, 1),
+    enemy2: Color4.create(1, 0.6, 0.12, 1),
+    enemy3: Color4.create(0.82, 0.3, 0.95, 1)
+  } as Record<EnemyTeam, Color4>,
   minerals: Color4.create(0.45, 0.7, 1, 1),
   gas: Color4.create(0.35, 0.9, 0.45, 1),
   avatar: Color4.create(1, 1, 1, 1)
@@ -152,9 +158,9 @@ function buildingDots() {
   for (const building of buildings) {
     if (!building.alive) continue
     const position = Transform.get(building.entity).position
-    const isEnemy = getTeam(building) === 'enemy'
-    if (isEnemy && !isPositionExplored(position)) continue
-    dots.push(dot(`bld-${building.id}`, position, 11, isEnemy ? MINIMAP_COLORS.enemy : MINIMAP_COLORS.playerBuilding))
+    const team = getTeam(building)
+    if (team !== 'player' && !isPositionExplored(position)) continue
+    dots.push(dot(`bld-${building.id}`, position, 11, team === 'player' ? MINIMAP_COLORS.playerBuilding : MINIMAP_COLORS.enemy[team]))
   }
   return dots
 }
@@ -164,16 +170,16 @@ function unitDots() {
   for (const worker of workers) {
     if (!worker.alive) continue
     const position = Transform.get(worker.entity).position
-    const isEnemy = getTeam(worker) === 'enemy'
-    if (isEnemy && !isPositionVisibleToPlayer(position)) continue
-    dots.push(dot(`wrk-${worker.id}`, position, 6, isEnemy ? MINIMAP_COLORS.enemy : MINIMAP_COLORS.playerUnit))
+    const team = getTeam(worker)
+    if (team !== 'player' && !isPositionVisibleToPlayer(position)) continue
+    dots.push(dot(`wrk-${worker.id}`, position, 6, team === 'player' ? MINIMAP_COLORS.playerUnit : MINIMAP_COLORS.enemy[team]))
   }
   for (const soldier of soldiers) {
     if (!soldier.alive) continue
     const position = Transform.get(soldier.entity).position
-    const isEnemy = getTeam(soldier) === 'enemy'
-    if (isEnemy && !isPositionVisibleToPlayer(position)) continue
-    dots.push(dot(`sld-${soldier.id}`, position, 7, isEnemy ? MINIMAP_COLORS.enemy : MINIMAP_COLORS.playerUnit))
+    const team = getTeam(soldier)
+    if (team !== 'player' && !isPositionVisibleToPlayer(position)) continue
+    dots.push(dot(`sld-${soldier.id}`, position, 7, team === 'player' ? MINIMAP_COLORS.playerUnit : MINIMAP_COLORS.enemy[team]))
   }
   return dots
 }

@@ -32,7 +32,8 @@ import { RACES, RACE_IDS, getBuildingDisplayName, getRace, getSoldierDefinition,
 import { UPGRADE_INFO, UPGRADE_MAX_LEVEL, getNextUpgradeCost, getUpgradeLevel, isUpgradeInProgress } from './rts/upgrades'
 import { isTopDownViewActive, toggleTopDownView } from './rts/topDownCamera'
 import { CONSOLE_HEIGHT } from './rts/hud'
-import type { BuildableKind, RaceId, ResourceCost, SelectedSummary, SoldierVariant, Team, UpgradeKind } from './rts/types'
+import { DIFFICULTY_IDS, AI_DIFFICULTY } from './rts/config'
+import type { BuildableKind, Difficulty, RaceId, ResourceCost, SelectedSummary, SoldierVariant, Team, UpgradeKind } from './rts/types'
 
 const UI = {
   console: Color4.create(0.03, 0.04, 0.06, 0.94),
@@ -73,7 +74,8 @@ const UNIT_ICON_FILES: Record<SoldierVariant | 'worker', string> = {
 const RACE_ICON_SUFFIX: Record<RaceId, string> = { human: '', alien: '-alien', bio: '-bio' }
 
 function raceIdFor(team: Team | undefined): RaceId {
-  return team === 'enemy' ? gameState.enemyRace : gameState.playerRace
+  if (!team || team === 'player') return gameState.playerRace
+  return gameState.enemyRaces[team]
 }
 
 function buildingIcon(kind: BuildableKind, team?: Team): string {
@@ -162,7 +164,8 @@ export const uiMenu = () => {
 // ---------------------------------------------------------------------------
 
 function resourceBar() {
-  const supplyCapped = gameState.supplyUsed >= gameState.supplyCap
+  const playerEconomy = gameState.economies.player
+  const supplyCapped = playerEconomy.supplyUsed >= playerEconomy.supplyCap
 
   return (
     <UiEntity
@@ -179,9 +182,9 @@ function resourceBar() {
       uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.78) }}
     >
       <Label value={formatMatchTime(gameState.matchTime)} fontSize={15} color={UI.dim} textAlign="middle-right" textWrap="nowrap" uiTransform={{ width: 66, height: '100%', margin: { right: 18 } }} />
-      {resourceCounter(ICON.resource.minerals, gameState.minerals.toString(), UI.text)}
-      {resourceCounter(ICON.resource.gas, gameState.gas.toString(), UI.text)}
-      {resourceCounter(ICON.resource.supply, `${gameState.supplyUsed}/${gameState.supplyCap}`, supplyCapped ? UI.red : UI.text)}
+      {resourceCounter(ICON.resource.minerals, playerEconomy.minerals.toString(), UI.text)}
+      {resourceCounter(ICON.resource.gas, playerEconomy.gas.toString(), UI.text)}
+      {resourceCounter(ICON.resource.supply, `${playerEconomy.supplyUsed}/${playerEconomy.supplyCap}`, supplyCapped ? UI.red : UI.text)}
     </UiEntity>
   )
 }
@@ -273,7 +276,7 @@ function infoPanel(selected: SelectedSummary) {
   const multi = units.length > 1
   const race = getRace(selected.team ?? 'player')
   const portrait = getPortraitIcon(selected)
-  const isEnemy = selected.team === 'enemy'
+  const isEnemy = selected.team !== undefined && selected.team !== 'player'
   const hpRatio = selected.hp !== undefined && selected.maxHp ? Math.max(0, Math.min(1, selected.hp / selected.maxHp)) : undefined
 
   return (
@@ -372,7 +375,7 @@ function wireframeGrid(units: ReturnType<typeof getSelectedUnitsInfo>) {
 
 /** SC-style production readout: queued unit icon, progress bar of the active order, queue count. */
 function productionQueuePanel(selected: SelectedSummary) {
-  if (selected.team === 'enemy') return null
+  if (selected.team !== undefined && selected.team !== 'player') return null
   const queue = getSelectedProductionQueue()
   if (!queue) return null
 
@@ -508,7 +511,7 @@ function tooltipCost(icon: string, amount: number) {
 
 function getCommandSlots(selected: SelectedSummary): CommandSlot[] {
   const slots: CommandSlot[] = []
-  const isPlayerSelection = selected.team !== 'enemy'
+  const isPlayerSelection = selected.team === undefined || selected.team === 'player'
 
   if (gameState.placementMode === 'placing') {
     slots.push({
@@ -905,6 +908,106 @@ function raceCard(raceId: RaceId) {
   )
 }
 
+// -----------------------------------------------------------------------------
+// Opponents panel: 1-3 computers, each with a race and difficulty picker.
+// -----------------------------------------------------------------------------
+
+const OPPONENT_RACE_OPTIONS: (RaceId | 'random')[] = ['random', 'human', 'alien', 'bio']
+const OPPONENT_SLOT_COLORS = [Color4.create(0.95, 0.3, 0.25, 1), Color4.create(1, 0.62, 0.15, 1), Color4.create(0.82, 0.35, 0.95, 1)]
+
+function opponentRaceLabel(race: RaceId | 'random'): string {
+  return race === 'random' ? 'RANDOM' : RACES[race].name
+}
+
+function cycleOpponentRace(index: number): void {
+  const setup = gameState.opponents[index]
+  const next = (OPPONENT_RACE_OPTIONS.indexOf(setup.race) + 1) % OPPONENT_RACE_OPTIONS.length
+  setup.race = OPPONENT_RACE_OPTIONS[next]
+}
+
+function cycleOpponentDifficulty(index: number): void {
+  const setup = gameState.opponents[index]
+  const next = (DIFFICULTY_IDS.indexOf(setup.difficulty) + 1) % DIFFICULTY_IDS.length
+  setup.difficulty = DIFFICULTY_IDS[next]
+}
+
+/** A click-to-cycle setting chip: shows the current value, advances on click. */
+function opponentChip(key: string, value: string, width: number, onClick: () => void) {
+  return (
+    <UiEntity
+      key={key}
+      uiTransform={{ width, height: 34, margin: { right: 6 }, padding: 2, justifyContent: 'center', alignItems: 'center' }}
+      uiBackground={{ color: Color4.create(0.25, 0.32, 0.45, 0.9) }}
+      onMouseDown={onClick}
+    >
+      <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.05, 0.07, 0.11, 0.96) }}>
+        <Label value={value} fontSize={12} color={UI.text} textAlign="middle-center" />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+function opponentRow(index: number) {
+  const setup = gameState.opponents[index]
+  const slotColor = OPPONENT_SLOT_COLORS[index]
+
+  return (
+    <UiEntity key={`opponent-${index}`} uiTransform={{ width: '100%', height: 40, flexDirection: 'row', alignItems: 'center', margin: { bottom: 6 } }}>
+      <UiEntity uiTransform={{ width: 10, height: 10, margin: { right: 8 } }} uiBackground={{ color: slotColor }} />
+      <Label value={`CPU ${index + 1}`} fontSize={13} color={UI.dim} textAlign="middle-left" uiTransform={{ width: 58 }} />
+      {opponentChip(`opp-race-${index}`, opponentRaceLabel(setup.race), 120, () => cycleOpponentRace(index))}
+      {opponentChip(`opp-diff-${index}`, AI_DIFFICULTY[setup.difficulty].label.toUpperCase(), 92, () => cycleOpponentDifficulty(index))}
+      {gameState.opponents.length > 1 ? (
+        <UiEntity
+          uiTransform={{ width: 34, height: 34, justifyContent: 'center', alignItems: 'center' }}
+          uiBackground={{ color: Color4.create(0.45, 0.12, 0.12, 0.9) }}
+          onMouseDown={() => {
+            gameState.opponents.splice(index, 1)
+          }}
+        >
+          <Label value="X" fontSize={13} color={UI.text} textAlign="middle-center" />
+        </UiEntity>
+      ) : null}
+    </UiEntity>
+  )
+}
+
+function opponentsPanel() {
+  return (
+    <UiEntity
+      uiTransform={{
+        positionType: 'absolute',
+        position: { right: 46, bottom: 96 },
+        width: 356,
+        flexDirection: 'column',
+        padding: { top: 14, bottom: 14, left: 16, right: 16 }
+      }}
+      uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.82) }}
+    >
+      <Label value="OPPONENTS" fontSize={14} color={Color4.create(0.75, 0.78, 0.85, 0.9)} textAlign="middle-left" uiTransform={{ margin: { bottom: 10 } }} />
+      {gameState.opponents.map((_, index) => opponentRow(index))}
+      {gameState.opponents.length < 3 ? (
+        <UiEntity
+          uiTransform={{ width: 180, height: 34, margin: { top: 4 }, justifyContent: 'center', alignItems: 'center' }}
+          uiBackground={{ color: Color4.create(0.12, 0.3, 0.16, 0.95) }}
+          onMouseDown={() => {
+            gameState.opponents.push({ race: 'random', difficulty: 'medium' })
+          }}
+        >
+          <Label value="+ ADD COMPUTER" fontSize={12} color={UI.text} textAlign="middle-center" />
+        </UiEntity>
+      ) : null}
+      <Label
+        value="Click race / difficulty to change. All computers fight you."
+        fontSize={10}
+        color={Color4.create(0.55, 0.58, 0.66, 0.85)}
+        textAlign="middle-left"
+        uiTransform={{ margin: { top: 8 } }}
+      />
+    </UiEntity>
+  )
+}
+
 // Deterministic star field for the title screen sky (kept above the race picker band).
 const TITLE_STARS: { x: number; y: number; size: number; phase: number; speed: number }[] = []
 {
@@ -1042,6 +1145,8 @@ function startScreenOverlay() {
         </UiEntity>
         <Label value="Build. Defend. Conquer." fontSize={12} color={Color4.create(0.6, 0.64, 0.72, 0.85)} textAlign="middle-center" uiTransform={{ margin: { top: 14 } }} />
       </UiEntity>
+
+      {opponentsPanel()}
     </UiEntity>
   )
 }
@@ -1064,7 +1169,8 @@ function endGameOverlay() {
       <UiEntity
         uiTransform={{
           width: 980,
-          height: 560,
+          // Grows with one stats row per computer opponent.
+          height: 490 + gameState.activeEnemyTeams.length * 72,
           flexDirection: 'column',
           alignItems: 'center',
           padding: { top: 32, bottom: 28, left: 34, right: 34 }
@@ -1081,7 +1187,11 @@ function endGameOverlay() {
           {statsHeader('RESOURCES')}
         </UiEntity>
         {statsRow(`PLAYER (${RACES[gameState.playerRace].name})`, gameState.matchStats.player.unitsProduced, gameState.matchStats.player.unitsKilled, gameState.matchStats.player.resourcesGathered, UI.accent)}
-        {statsRow(`AI (${RACES[gameState.enemyRace].name})`, gameState.matchStats.enemy.unitsProduced, gameState.matchStats.enemy.unitsKilled, gameState.matchStats.enemy.resourcesGathered, UI.red)}
+        {gameState.activeEnemyTeams.map((team, index) => {
+          const stats = gameState.matchStats[team]
+          const label = `CPU ${index + 1} (${RACES[gameState.enemyRaces[team]].name} · ${AI_DIFFICULTY[gameState.enemyDifficulties[team]].label.toUpperCase()})`
+          return statsRow(label, stats.unitsProduced, stats.unitsKilled, stats.resourcesGathered, OPPONENT_SLOT_COLORS[index])
+        })}
 
         <Button
           value="REPLAY"
@@ -1103,7 +1213,7 @@ function statsHeader(label: string) {
 function statsRow(team: string, unitsProduced: number, unitsKilled: number, resourcesGathered: number, color: Color4) {
   return (
     <UiEntity uiTransform={{ width: '100%', height: 64, flexDirection: 'row', margin: { top: 8 } }} uiBackground={{ color: UI.cardSoft }}>
-      <Label value={team} fontSize={21} color={color} textAlign="middle-center" uiTransform={{ width: 225, height: '100%' }} />
+      <Label value={team} fontSize={team.length > 20 ? 15 : 21} color={color} textAlign="middle-center" uiTransform={{ width: 225, height: '100%' }} />
       <Label value={unitsProduced.toString()} fontSize={20} color={UI.text} textAlign="middle-center" uiTransform={{ width: 225, height: '100%' }} />
       <Label value={unitsKilled.toString()} fontSize={20} color={UI.text} textAlign="middle-center" uiTransform={{ width: 225, height: '100%' }} />
       <Label value={resourcesGathered.toString()} fontSize={20} color={UI.text} textAlign="middle-center" uiTransform={{ width: 225, height: '100%' }} />

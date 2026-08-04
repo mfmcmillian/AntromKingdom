@@ -3,7 +3,7 @@ import { Quaternion } from '@dcl/sdk/math'
 import { distanceToPoint, distanceToPosition, moveTowardPosition } from '../math'
 import { getSpeedMultiplier } from '../upgrades'
 import type { Building, Soldier, Worker } from '../types'
-import { buildings, getTeam, soldiers, workers } from '../world'
+import { areHostile, buildings, getTeam, soldiers, workers } from '../world'
 
 type CombatTarget = Building | Soldier | Worker
 
@@ -156,9 +156,9 @@ function findNearestEnemyInRange(soldier: Soldier): CombatTarget | undefined {
   const position = Transform.get(soldier.entity).position
 
   return (
-    nearestInRange(position, soldiers, (candidate) => candidate.alive && getTeam(candidate) !== team) ??
-    nearestInRange(position, workers, (candidate) => candidate.alive && getTeam(candidate) !== team) ??
-    nearestInRange(position, buildings, (candidate) => candidate.alive && getTeam(candidate) !== team)
+    nearestInRange(position, soldiers, (candidate) => candidate.alive && areHostile(getTeam(candidate), team)) ??
+    nearestInRange(position, workers, (candidate) => candidate.alive && areHostile(getTeam(candidate), team)) ??
+    nearestInRange(position, buildings, (candidate) => candidate.alive && areHostile(getTeam(candidate), team))
   )
 }
 
