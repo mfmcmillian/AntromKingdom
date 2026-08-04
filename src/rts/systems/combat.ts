@@ -11,6 +11,8 @@ type CombatTarget = Building | Soldier | Worker
 /** Idle combat units engage anything hostile that wanders inside this radius. */
 const AUTO_ACQUIRE_RANGE = 12
 const AUTO_ACQUIRE_INTERVAL = 0.5
+/** Defensive units abandon an auto-acquired chase once this far from their guard point. */
+const DEFENSIVE_LEASH_RANGE = 15
 
 let autoAcquireTimer = 0
 
@@ -36,9 +38,16 @@ export function updateSoldiers(dt: number, deps: CombatSystemDeps): void {
       continue
     }
 
+    if (soldier.state === 'attackMoving') {
+      updateAttackMove(soldier, dt, scanForTargets, deps)
+      continue
+    }
+
     if (scanForTargets && soldier.state === 'idle') {
-      const target = findNearestEnemyInRange(soldier)
-      if (target) deps.assignSoldierToAttack(soldier, target, 0, false)
+      // Hold-stance units only fire at what is already in weapon range; others scan wider and chase.
+      const acquireRange = soldier.stance === 'hold' ? soldier.attackRange : AUTO_ACQUIRE_RANGE
+      const target = findNearestEnemyInRange(soldier, acquireRange)
+      if (target) autoEngage(soldier, target, deps)
     }
 
     if (!soldier.targetId) continue
@@ -46,10 +55,7 @@ export function updateSoldiers(dt: number, deps: CombatSystemDeps): void {
     const target = deps.getCombatTargetById(soldier.targetId)
 
     if (!target?.alive) {
-      soldier.state = 'idle'
-      soldier.targetId = undefined
-      soldier.attackPosition = undefined
-      deps.setSoldierAnimation(soldier, 'idle')
+      finishEngagement(soldier, deps)
       continue
     }
 
@@ -61,14 +67,94 @@ export function updateSoldiers(dt: number, deps: CombatSystemDeps): void {
   }
 }
 
+/** Assign a target found by the auto-scan, preserving the attack-move destination and marking it leashable. */
+function autoEngage(soldier: Soldier, target: CombatTarget, deps: CombatSystemDeps): void {
+  const destination = soldier.attackMovePoint
+  if (!soldier.guardPoint) soldier.guardPoint = clonePosition(Transform.get(soldier.entity).position)
+  deps.assignSoldierToAttack(soldier, target, 0, false)
+  soldier.attackMovePoint = destination
+  soldier.autoEngaged = true
+}
+
+/** Target destroyed: resume the attack-move march if one is pending, otherwise stand guard here. */
+function finishEngagement(soldier: Soldier, deps: CombatSystemDeps): void {
+  soldier.targetId = undefined
+  soldier.attackPosition = undefined
+  if (soldier.attackMovePoint) {
+    soldier.state = 'attackMoving'
+    deps.setSoldierAnimation(soldier, 'walk')
+    return
+  }
+  soldier.state = 'idle'
+  soldier.guardPoint = clonePosition(Transform.get(soldier.entity).position)
+  deps.setSoldierAnimation(soldier, 'idle')
+}
+
+/** March toward the ordered point, engaging any hostile spotted along the way. */
+function updateAttackMove(soldier: Soldier, dt: number, scanForTargets: boolean, deps: CombatSystemDeps): void {
+  if (!soldier.attackMovePoint) {
+    soldier.state = 'idle'
+    deps.setSoldierAnimation(soldier, 'idle')
+    return
+  }
+
+  if (scanForTargets) {
+    const target = findNearestEnemyInRange(soldier, AUTO_ACQUIRE_RANGE)
+    if (target) {
+      autoEngage(soldier, target, deps)
+      return
+    }
+  }
+
+  moveTowardPosition(soldier.entity, soldier.attackMovePoint, getUpgradedMoveSpeed(soldier), dt)
+  deps.setSoldierAnimation(soldier, 'walk')
+  if (distanceToPosition(soldier.entity, soldier.attackMovePoint) <= 0.35) {
+    soldier.state = 'idle'
+    soldier.guardPoint = clonePosition(soldier.attackMovePoint)
+    soldier.attackMovePoint = undefined
+    deps.setSoldierAnimation(soldier, 'idle')
+  }
+}
+
+function clonePosition(position: { x: number; y: number; z: number }): { x: number; y: number; z: number } {
+  return { x: position.x, y: position.y, z: position.z }
+}
+
 /**
  * Unit targets are chased directly and fired on the moment they are in range -
  * no precomputed standoff point, which previously made ranged units orbit their
  * target as the point slid around them. Buildings keep a fixed approach-side spot.
  */
 function updateMovingToAttack(soldier: Soldier, target: CombatTarget, dt: number, deps: CombatSystemDeps): void {
+  // Hold-stance units never leave their spot: fire if in range, otherwise drop the target.
+  if (soldier.stance === 'hold') {
+    if (distanceToPosition(soldier.entity, Transform.get(target.entity).position) <= soldier.attackRange) {
+      startAttacking(soldier, deps)
+      faceTarget(soldier, Transform.get(target.entity).position)
+    } else {
+      soldier.targetId = undefined
+      soldier.attackPosition = undefined
+      soldier.state = 'idle'
+      deps.setSoldierAnimation(soldier, 'idle')
+    }
+    return
+  }
+
   if (isUnitTarget(target)) {
     const targetPosition = Transform.get(target.entity).position
+
+    // Defensive units break off auto-acquired chases that stray too far from their post.
+    if (soldier.autoEngaged && soldier.stance === 'defensive' && soldier.guardPoint && !soldier.attackMovePoint) {
+      if (distanceToPosition(soldier.entity, soldier.guardPoint) > DEFENSIVE_LEASH_RANGE) {
+        soldier.targetId = undefined
+        soldier.attackPosition = undefined
+        soldier.state = 'movingToRally'
+        soldier.rallyPoint = clonePosition(soldier.guardPoint)
+        deps.setSoldierAnimation(soldier, 'walk')
+        return
+      }
+    }
+
     if (distanceToPosition(soldier.entity, targetPosition) <= soldier.attackRange) {
       startAttacking(soldier, deps)
       faceTarget(soldier, targetPosition)
@@ -94,6 +180,13 @@ function updateAttacking(soldier: Soldier, target: CombatTarget, dt: number, dep
     const targetPosition = Transform.get(target.entity).position
     // Re-chase with a small hysteresis buffer so units don't stutter on the range edge.
     if (distanceToPosition(soldier.entity, targetPosition) > soldier.attackRange + 0.6) {
+      if (soldier.stance === 'hold') {
+        soldier.targetId = undefined
+        soldier.attackPosition = undefined
+        soldier.state = 'idle'
+        deps.setSoldierAnimation(soldier, 'idle')
+        return
+      }
       soldier.state = 'movingToAttack'
       deps.setSoldierAnimation(soldier, 'walk')
       return
@@ -144,6 +237,7 @@ function updateSoldierRallyMovement(soldier: Soldier, dt: number, deps: CombatSy
   moveTowardPosition(soldier.entity, soldier.rallyPoint, getUpgradedMoveSpeed(soldier), dt)
   if (distanceToPosition(soldier.entity, soldier.rallyPoint) <= 0.35) {
     soldier.state = 'idle'
+    soldier.guardPoint = clonePosition(soldier.rallyPoint)
     soldier.rallyPoint = undefined
     soldier.attackPosition = undefined
     deps.setSoldierAnimation(soldier, 'idle')
@@ -152,20 +246,20 @@ function updateSoldierRallyMovement(soldier: Soldier, dt: number, deps: CombatSy
 }
 
 /** Nearest hostile within acquisition range: enemy fighters first, then workers, then buildings. */
-function findNearestEnemyInRange(soldier: Soldier): CombatTarget | undefined {
+function findNearestEnemyInRange(soldier: Soldier, range: number): CombatTarget | undefined {
   const team = getTeam(soldier)
   const position = Transform.get(soldier.entity).position
 
   return (
-    nearestInRange(position, soldiers, (candidate) => candidate.alive && areHostile(getTeam(candidate), team)) ??
-    nearestInRange(position, workers, (candidate) => candidate.alive && areHostile(getTeam(candidate), team)) ??
-    nearestInRange(position, buildings, (candidate) => candidate.alive && areHostile(getTeam(candidate), team))
+    nearestInRange(position, soldiers, range, (candidate) => candidate.alive && areHostile(getTeam(candidate), team)) ??
+    nearestInRange(position, workers, range, (candidate) => candidate.alive && areHostile(getTeam(candidate), team)) ??
+    nearestInRange(position, buildings, range, (candidate) => candidate.alive && areHostile(getTeam(candidate), team))
   )
 }
 
-function nearestInRange<T extends CombatTarget>(position: { x: number; y: number; z: number }, candidates: T[], isValid: (candidate: T) => boolean): T | undefined {
+function nearestInRange<T extends CombatTarget>(position: { x: number; y: number; z: number }, candidates: T[], range: number, isValid: (candidate: T) => boolean): T | undefined {
   let best: T | undefined
-  let bestDistance = AUTO_ACQUIRE_RANGE
+  let bestDistance = range
 
   for (const candidate of candidates) {
     if (!isValid(candidate)) continue

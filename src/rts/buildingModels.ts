@@ -19,7 +19,8 @@ export const BUILDING_MODEL_HEIGHTS: Record<BuildableKind, number> = {
   barracks: 7,
   techLab: 8,
   forge: 6,
-  fireplace: 3
+  fireplace: 3,
+  turret: 5
 }
 
 const HUMAN_HULL = Color4.create(0.62, 0.66, 0.72, 1)
@@ -330,6 +331,23 @@ function buildHumanBuilding(kind: BuildableKind, addPart: PartAdder): void {
     return
   }
 
+  if (kind === 'turret') {
+    // Sentry Cannon: armored pedestal with a slowly sweeping twin-barrel head.
+    addPart(Vector3.create(0, 0.25, 0), Vector3.create(2.8, 0.5, 2.8), HUMAN_DARK)
+    addPart(Vector3.create(0, 1.5, 0), Vector3.create(1.1, 2.2, 1.1), HUMAN_HULL, { cylinder: true })
+    addPart(Vector3.create(0, 2.8, 0), Vector3.create(1.7, 0.9, 1.7), HUMAN_DARK)
+    // Rotating gun head: block with two barrels and a red targeting light.
+    addPart(Vector3.create(0, 3.5, 0), Vector3.create(1.4, 0.8, 1.9), HUMAN_HULL, { motion: { mode: 'spin', speed: 25 } })
+    addPart(Vector3.create(0, 3.6, 0), Vector3.create(0.18, 0.18, 2.9), HUMAN_DARK, { motion: { mode: 'spin', speed: 25 } })
+    addPart(Vector3.create(0, 4.1, 0), Vector3.create(0.32, 0.32, 0.32), Color4.create(1, 0.3, 0.25, 1), {
+      sphere: true,
+      emissive: Color4.create(1, 0.25, 0.2, 1),
+      emissiveIntensity: 3,
+      motion: { mode: 'pulse', speed: 5, amplitude: 0.25 }
+    })
+    return
+  }
+
   // Beacon (fireplace slot): tripod mast with a bright signal light.
   addPart(Vector3.create(0, 0.15, 0), Vector3.create(1.8, 0.3, 1.8), HUMAN_DARK, { cylinder: true })
   addPart(Vector3.create(0, 1.3, 0), Vector3.create(0.22, 2.2, 0.22), HUMAN_HULL, { cylinder: true })
@@ -449,6 +467,19 @@ function buildAlienBuilding(kind: BuildableKind, addPart: PartAdder): void {
       emissiveIntensity: 2.8,
       motion: { mode: 'pulse', speed: 3.2, amplitude: 0.22 }
     })
+    return
+  }
+
+  if (kind === 'turret') {
+    // Arc Spire: a charged needle whose halo whips around a wrathful crystal.
+    addPart(Vector3.create(0, 0.3, 0), Vector3.create(3, 0.6, 3), ALIEN_DARK, { cylinder: true })
+    addPart(Vector3.create(0, 1.9, 0), Vector3.create(1, 2.8, 1), ALIEN_GOLD, { cone: true, metallic: 0.7, roughness: 0.3 })
+    addPart(Vector3.create(0, 2.7, 0), Vector3.create(2.4, 0.14, 0.4), ALIEN_CRYSTAL, {
+      emissive: ALIEN_CRYSTAL,
+      emissiveIntensity: 2,
+      motion: { mode: 'spin', speed: 140 }
+    })
+    crystalDiamond(0, 4.1, 0, 0.9)
     return
   }
 
@@ -584,6 +615,26 @@ function buildBioBuilding(kind: BuildableKind, addPart: PartAdder): void {
       motion: { mode: 'pulse', speed: 2.8, amplitude: 0.12 }
     })
     sac(1.9, 1.2, 1.4, 0.9)
+    return
+  }
+
+  if (kind === 'turret') {
+    // Thorn Mound: a muscular mound that spits acid from a swollen crown sac.
+    addPart(Vector3.create(0, 1, 0), Vector3.create(3, 2.4, 3), BIO_FLESH, { sphere: true, roughness: 0.85 })
+    addPart(Vector3.create(0, 2.4, 0), Vector3.create(1.4, 1.6, 1.4), BIO_CARAPACE, { cylinder: true })
+    // Crown of thorns aimed outward.
+    spike(0.9, 2.9, 0.7, 2.6, 24, -26)
+    spike(-0.9, 2.9, -0.6, 2.6, -22, 24)
+    spike(-0.7, 2.9, 0.9, 2.4, 24, 20)
+    spike(0.7, 2.9, -0.9, 2.4, -24, -18)
+    // The launcher sac, glowing and throbbing.
+    addPart(Vector3.create(0, 3.6, 0), Vector3.create(1.2, 1.2, 1.2), BIO_ACID, {
+      sphere: true,
+      emissive: BIO_ACID,
+      emissiveIntensity: 2.4,
+      roughness: 0.6,
+      motion: { mode: 'pulse', speed: 3.4, amplitude: 0.16 }
+    })
     return
   }
 

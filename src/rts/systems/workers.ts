@@ -4,8 +4,12 @@ import { CONFIG, RESOURCE_LABELS } from '../config'
 import { addResource, getResourceAmount, spendResources } from '../economy'
 import { distanceToPosition, moveTowardPosition } from '../math'
 import { gameState, getGatherMultiplier } from '../state'
-import type { Building, ResourceNode, Soldier, Team, Worker } from '../types'
+import { getRace } from '../races'
+import type { Building, ResourceKind, ResourceNode, Soldier, Team, Worker } from '../types'
 import { getTeam, resources, workers } from '../world'
+
+/** How far a worker will walk to a replacement deposit when its node runs dry. */
+const RESOURCE_REASSIGN_RANGE = 45
 
 type WorkerCombatTarget = Building | Soldier | Worker
 
@@ -118,6 +122,7 @@ function updateWorkerGathering(worker: Worker, dt: number, deps: WorkerSystemDep
 
       if (resource.amount <= 0) {
         deps.depleteResourceNode(resource)
+        if (getTeam(worker) === 'player') deps.setStatus(`${resource.name} depleted! Workers will move to nearby deposits.`)
       } else {
         deps.updateLabel(resource, `${resource.name}\n${resource.amount}`)
       }
@@ -142,17 +147,59 @@ function updateWorkerGathering(worker: Worker, dt: number, deps: WorkerSystemDep
       gameState.matchStats[getTeam(worker)].resourcesGathered += deliveredAmount
       worker.carrying = 0
       worker.carryingResource = undefined
-      worker.state = resource?.alive ? 'movingToResource' : 'idle'
-      deps.setWorkerAnimation(worker, worker.state === 'idle' ? 'idle' : 'walk')
+      if (resource?.alive) {
+        worker.state = 'movingToResource'
+        deps.setWorkerAnimation(worker, 'walk')
+      } else if (!resumeGathering(worker, deps)) {
+        worker.state = 'idle'
+        worker.targetResourceId = undefined
+        deps.setWorkerAnimation(worker, 'idle')
+      }
       if (getTeam(worker) === 'player') deps.setStatus(`${worker.name} delivered ${RESOURCE_LABELS[deliveredResource]}. Total: ${getResourceAmount(getTeam(worker), deliveredResource)}.`)
     }
   } else if (!resource && ['movingToResource', 'gathering', 'returning'].includes(worker.state)) {
-    worker.state = 'idle'
     worker.targetResourceId = undefined
     worker.carrying = 0
     worker.carryingResource = undefined
-    deps.setWorkerAnimation(worker, 'idle')
+    if (!resumeGathering(worker, deps)) {
+      worker.state = 'idle'
+      deps.setWorkerAnimation(worker, 'idle')
+    }
   }
+}
+
+/**
+ * Send the worker back to its remembered deposit, or the nearest live deposit
+ * of the same kind if that one is gone. Returns false when nothing is in range.
+ */
+export function resumeGathering(worker: Worker, deps: WorkerSystemDeps): boolean {
+  const remembered = worker.lastResourceId ? resources.find((node) => node.id === worker.lastResourceId && node.alive && node.amount > 0) : undefined
+  const target = remembered ?? findNearestResourceOfKind(worker, worker.lastResourceKind)
+  if (!target) return false
+
+  worker.state = 'movingToResource'
+  worker.targetResourceId = target.id
+  worker.lastResourceId = target.id
+  worker.lastResourceKind = target.resource
+  worker.timer = 0
+  deps.setWorkerAnimation(worker, 'walk')
+  return true
+}
+
+function findNearestResourceOfKind(worker: Worker, kind: ResourceKind | undefined): ResourceNode | undefined {
+  if (!kind) return undefined
+
+  let best: ResourceNode | undefined
+  let bestDistance = RESOURCE_REASSIGN_RANGE
+  for (const node of resources) {
+    if (!node.alive || node.amount <= 0 || node.resource !== kind) continue
+    const distance = distanceToPosition(worker.entity, Transform.get(node.entity).position)
+    if (distance < bestDistance) {
+      best = node
+      bestDistance = distance
+    }
+  }
+  return best
 }
 
 function updateWorkerBuildMovement(worker: Worker, dt: number, deps: WorkerSystemDeps): void {
@@ -206,11 +253,13 @@ function updateWorkerRepairMovement(worker: Worker, dt: number, deps: WorkerSyst
   if (worker.timer < 1) return
   worker.timer -= 1
 
-  const repairAmount = Math.min(CONFIG.repairHpPerSecond, site.maxHp - site.hp)
-  const repairCost = Math.max(1, Math.ceil((repairAmount / CONFIG.repairHpPerSecond) * CONFIG.repairMineralCostPerSecond))
+  // VANGUARD signature perk: veteran crews repair much faster for the same cost per second.
+  const repairRate = CONFIG.repairHpPerSecond * (getRace(getTeam(worker)).id === 'human' ? 1.75 : 1)
+  const repairAmount = Math.min(repairRate, site.maxHp - site.hp)
+  const repairCost = Math.max(1, Math.ceil((repairAmount / repairRate) * CONFIG.repairMineralCostPerSecond))
   if (!spendResources(getTeam(worker), { minerals: repairCost })) {
     stopRepairing(worker, deps)
-    if (getTeam(worker) === 'player') deps.setStatus(`Need minerals to keep repairing ${site.name}.`)
+    if (getTeam(worker) === 'player') deps.setStatus(`Need crystal to keep repairing ${site.name}.`)
     return
   }
 
@@ -223,9 +272,11 @@ function updateWorkerRepairMovement(worker: Worker, dt: number, deps: WorkerSyst
 }
 
 function stopRepairing(worker: Worker, deps: WorkerSystemDeps): void {
-  worker.state = 'idle'
   worker.repairTargetId = undefined
   worker.timer = 0
+  // Back to work: repairs done (or unaffordable), so return to the last deposit.
+  if (resumeGathering(worker, deps)) return
+  worker.state = 'idle'
   deps.setWorkerAnimation(worker, 'idle')
 }
 

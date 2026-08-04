@@ -120,6 +120,12 @@ function runEnemyBuildOrder(ai: EnemyAi, deps: EnemyAiDeps): void {
     }
   }
 
+  // Base defense: ring the main with turrets once fighter production is up.
+  if (barracks.length > 0 && workerCount >= 7 && getTeamBuildings(team, 'turret').length < ai.settings.maxTurrets) {
+    tryStartEnemyConstruction(ai, 'turret', deps)
+    return
+  }
+
   if (workerCount >= 8 && guardCount >= ai.settings.defenderCount && temples.length < ai.settings.maxTemples) {
     tryStartEnemyConstruction(ai, 'temple', deps)
     return

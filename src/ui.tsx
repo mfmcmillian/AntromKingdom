@@ -2,25 +2,33 @@ import ReactEcs, { Button, Label, ReactEcsRenderer, UiEntity } from '@dcl/sdk/re
 import { engine } from '@dcl/sdk/ecs'
 import { Color4 } from '@dcl/sdk/math'
 import {
+  assignControlGroup,
   cancelBuildingPlacement,
   cancelSelectedConstruction,
   canCancelSelectedConstruction,
+  CONTROL_GROUP_SLOTS,
+  cycleSelectedStance,
   endRtsMatch,
   gameState,
+  getControlGroupCount,
   getIdleWorkerCount,
   getSelectedProductionQueue,
+  getSelectedStance,
   getSelectedSummary,
   getSelectedUnitsInfo,
   isBuildingUnlocked,
   isUnitUnlocked,
   queueWorker,
   queueSoldier,
+  recallControlGroup,
   resetRtsGame,
   selectAllLikeSelected,
   selectIdleWorker,
   selectUnitById,
   setBarracksSpawnPoint,
   setWorkerSpawnPoint,
+  STANCE_LABELS,
+  startAttackMove,
   startRtsMatch,
   startUpgradeResearch,
   startWorkerBuildingPlacement
@@ -60,7 +68,8 @@ const BUILDING_ICON_FILES: Record<BuildableKind, string> = {
   barracks: 'icon-building-barracks',
   techLab: 'icon-building-techlab',
   forge: 'icon-building-forge',
-  fireplace: 'icon-building-fireplace'
+  fireplace: 'icon-building-fireplace',
+  turret: 'icon-building-turret'
 }
 
 const UNIT_ICON_FILES: Record<SoldierVariant | 'worker', string> = {
@@ -100,7 +109,9 @@ const ICON = {
   action: {
     rally: 'images/icons/icon-action-rally.png',
     cancel: 'images/icons/icon-action-cancel.png',
-    selectAll: 'images/icons/icon-action-selectall.png'
+    selectAll: 'images/icons/icon-action-selectall.png',
+    attackMove: 'images/icons/icon-action-attackmove.png',
+    stance: 'images/icons/icon-action-stance.png'
   }
 }
 
@@ -148,6 +159,7 @@ export const uiMenu = () => {
       {gameState.matchStatus === 'active' ? statusPrompt() : null}
       {gameState.matchStatus === 'active' ? bottomConsole(selected) : null}
       {gameState.matchStatus === 'active' ? idleWorkerButton() : null}
+      {gameState.matchStatus === 'active' ? controlGroupsBar() : null}
 
       {minimapPanel()}
       {dragSelectionRect()}
@@ -529,7 +541,7 @@ function getCommandSlots(selected: SelectedSummary): CommandSlot[] {
   if (!isPlayerSelection) return slots
 
   if (selected.kind === 'worker') {
-    const buildOrder: BuildableKind[] = ['temple', 'supplyHouse', 'barracks', 'techLab', 'forge', 'fireplace']
+    const buildOrder: BuildableKind[] = ['temple', 'supplyHouse', 'barracks', 'techLab', 'forge', 'turret', 'fireplace']
     for (const kind of buildOrder) {
       const definition = BUILDING_DEFINITIONS[kind]
       const displayName = getBuildingDisplayName(kind, 'player')
@@ -553,7 +565,7 @@ function getCommandSlots(selected: SelectedSummary): CommandSlot[] {
       icon: unitIcon('worker'),
       name: `Train ${worker.name}`,
       cost: worker.cost,
-      description: 'Gathers minerals and gas, builds and repairs structures.',
+      description: 'Gathers crystal and plasma, builds and repairs structures.',
       onClick: queueWorker
     })
     slots.push({
@@ -584,6 +596,21 @@ function getCommandSlots(selected: SelectedSummary): CommandSlot[] {
   }
 
   if (selected.kind === 'soldier') {
+    slots.push({
+      id: 'attack-move',
+      icon: ICON.action.attackMove,
+      name: 'Attack-Move',
+      description: 'March to a point, engaging every hostile on the way. Click ground after pressing.',
+      onClick: startAttackMove
+    })
+    const stance = getSelectedStance() ?? 'defensive'
+    slots.push({
+      id: 'stance',
+      icon: ICON.action.stance,
+      name: `Stance: ${STANCE_LABELS[stance]}`,
+      description: 'Cycle stance. Defensive: short chase, returns to post. Aggressive: chases forever. Hold: never moves.',
+      onClick: cycleSelectedStance
+    })
     slots.push(selectAllSlot('all fighters'))
   }
 
@@ -692,7 +719,47 @@ function getBuildingDescription(kind: BuildableKind): string {
   if (kind === 'barracks') return `Tier 1 production: ${race.melee.name}s and ${race.ranged.name}s.`
   if (kind === 'techLab') return `Tier 2 production: ${race.caster.name}s, ${race.flyer.name}s and ${race.titan.name}s.`
   if (kind === 'forge') return 'Researches Weapons and Propulsion upgrades. Unlocks the titan.'
+  if (kind === 'turret') return 'Automated defense tower. Fires on hostile units in range.'
   return 'A camp utility building.'
+}
+
+// ---------------------------------------------------------------------------
+// Control groups: numbered slots above the command card. Click to recall the
+// saved units, press SET to store the current selection.
+// ---------------------------------------------------------------------------
+
+function controlGroupsBar() {
+  return (
+    <UiEntity
+      uiTransform={{
+        positionType: 'absolute',
+        position: { bottom: CONSOLE_HEIGHT + 8, right: CARD_RIGHT },
+        flexDirection: 'row'
+      }}
+    >
+      {CONTROL_GROUP_SLOTS.map((slot) => {
+        const count = getControlGroupCount(slot)
+        return (
+          <UiEntity key={`cgroup-${slot}`} uiTransform={{ flexDirection: 'column', width: 44, margin: { left: 5 } }}>
+            <UiEntity
+              uiTransform={{ width: 44, height: 32, justifyContent: 'center', alignItems: 'center' }}
+              uiBackground={{ color: count > 0 ? UI.card : UI.panelStrong }}
+              onMouseDown={() => recallControlGroup(slot)}
+            >
+              <Label value={count > 0 ? `${slot} · ${count}` : `${slot}`} fontSize={12} color={count > 0 ? UI.text : UI.dim} textAlign="middle-center" />
+            </UiEntity>
+            <UiEntity
+              uiTransform={{ width: 44, height: 15, margin: { top: 2 }, justifyContent: 'center', alignItems: 'center' }}
+              uiBackground={{ color: UI.cardSoft }}
+              onMouseDown={() => assignControlGroup(slot)}
+            >
+              <Label value="SET" fontSize={8} color={UI.dim} textAlign="middle-center" />
+            </UiEntity>
+          </UiEntity>
+        )
+      })}
+    </UiEntity>
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -1214,8 +1281,8 @@ function endGameOverlay() {
       <UiEntity
         uiTransform={{
           width: 980,
-          // Grows with one stats row per computer opponent.
-          height: 490 + gameState.activeEnemyTeams.length * 72,
+          // Grows with one stats row per computer opponent, plus the income graph.
+          height: 690 + gameState.activeEnemyTeams.length * 72,
           flexDirection: 'column',
           alignItems: 'center',
           padding: { top: 32, bottom: 28, left: 34, right: 34 }
@@ -1239,6 +1306,8 @@ function endGameOverlay() {
           return statsRow(label, stats.unitsProduced, stats.unitsKilled, stats.resourcesGathered, ally ? ALLY_UI_COLOR : OPPONENT_SLOT_COLORS[index])
         })}
 
+        {incomeGraph()}
+
         <Button
           value="REPLAY"
           variant="primary"
@@ -1247,6 +1316,64 @@ function endGameOverlay() {
           uiBackground={{ color: UI.accent }}
           onMouseDown={resetRtsGame}
         />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// End-screen income graph: each faction's cumulative harvest plotted over time
+// from the per-team samples recorded during the match.
+// ---------------------------------------------------------------------------
+
+const GRAPH_WIDTH = 880
+const GRAPH_HEIGHT = 140
+/** Cap plotted points per team so long matches don't flood the UI with entities. */
+const GRAPH_MAX_POINTS = 40
+
+function incomeGraph() {
+  const teams: { team: Team; color: Color4 }[] = [
+    { team: 'player', color: UI.accent },
+    ...gameState.activeEnemyTeams.map((team, index) => ({
+      team: team as Team,
+      color: isPlayerAlly(team) ? ALLY_UI_COLOR : OPPONENT_SLOT_COLORS[index]
+    }))
+  ]
+
+  const maxSamples = Math.max(...teams.map(({ team }) => gameState.incomeHistory[team].length))
+  const maxValue = Math.max(1, ...teams.map(({ team }) => gameState.incomeHistory[team][gameState.incomeHistory[team].length - 1] ?? 0))
+  const stride = Math.max(1, Math.ceil(maxSamples / GRAPH_MAX_POINTS))
+
+  return (
+    <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', alignItems: 'center', margin: { top: 18 } }}>
+      <Label value="RESOURCES GATHERED OVER TIME" fontSize={14} color={UI.dim} textAlign="middle-center" uiTransform={{ width: '100%', height: 18 }} />
+      <UiEntity uiTransform={{ width: GRAPH_WIDTH, height: GRAPH_HEIGHT, margin: { top: 6 } }} uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.95) }}>
+        {maxSamples < 2 ? (
+          <Label value="Match too short to graph." fontSize={14} color={UI.dim} textAlign="middle-center" uiTransform={{ width: '100%', height: '100%' }} />
+        ) : (
+          teams.map(({ team, color }) => {
+            const samples = gameState.incomeHistory[team]
+            const dots = []
+            for (let i = 0; i < samples.length; i += stride) {
+              // Always keep the final sample so every line ends at its true total.
+              const index = i + stride >= samples.length ? samples.length - 1 : i
+              const x = 3 + (index / Math.max(1, maxSamples - 1)) * (GRAPH_WIDTH - 11)
+              const y = 3 + (1 - samples[index] / maxValue) * (GRAPH_HEIGHT - 11)
+              dots.push(
+                <UiEntity
+                  key={`income-${team}-${index}`}
+                  uiTransform={{ positionType: 'absolute', position: { left: x, top: y }, width: 5, height: 5 }}
+                  uiBackground={{ color }}
+                />
+              )
+            }
+            return (
+              <UiEntity key={`income-line-${team}`} uiTransform={{ positionType: 'absolute', position: { left: 0, top: 0 }, width: '100%', height: '100%' }}>
+                {dots}
+              </UiEntity>
+            )
+          })
+        )}
       </UiEntity>
     </UiEntity>
   )
@@ -1283,6 +1410,7 @@ function getCommandTitle(kind: string): string {
   if (kind === 'barracks') return 'TIER 1 PRODUCTION'
   if (kind === 'techLab') return 'TIER 2 PRODUCTION'
   if (kind === 'forge') return 'RESEARCH'
+  if (kind === 'turret') return 'DEFENSE'
   if (kind === 'fireplace') return 'UTILITY'
   if (kind === 'soldier') return 'FIGHTER'
   if (kind === 'enemyBuilding') return 'ENEMY'

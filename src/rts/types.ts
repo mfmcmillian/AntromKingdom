@@ -9,7 +9,7 @@ export type Difficulty = 'easy' | 'medium' | 'hard'
 /** team: computers can join the player's side; ffa: every faction fights everyone. */
 export type GameMode = 'team' | 'ffa'
 export type RaceId = 'human' | 'alien' | 'bio'
-export type SelectableKind = 'temple' | 'worker' | 'resource' | 'supplyHouse' | 'barracks' | 'techLab' | 'forge' | 'fireplace' | 'soldier' | 'enemyBuilding'
+export type SelectableKind = 'temple' | 'worker' | 'resource' | 'supplyHouse' | 'barracks' | 'techLab' | 'forge' | 'fireplace' | 'turret' | 'soldier' | 'enemyBuilding'
 export type WorkerState =
   | 'idle'
   | 'movingToResource'
@@ -23,9 +23,11 @@ export type WorkerState =
   | 'movingToAttack'
   | 'attacking'
   | 'dead'
-export type SoldierState = 'idle' | 'movingToAttack' | 'attacking' | 'movingToRally' | 'dead'
+export type SoldierState = 'idle' | 'movingToAttack' | 'attacking' | 'movingToRally' | 'attackMoving' | 'dead'
+/** aggressive: chase forever; defensive: chase a short leash then return; hold: never move, only fire in range. */
+export type SoldierStance = 'aggressive' | 'defensive' | 'hold'
 export type SoldierVariant = 'melee' | 'ranged' | 'caster' | 'flyer' | 'titan'
-export type BuildableKind = 'temple' | 'supplyHouse' | 'barracks' | 'techLab' | 'forge' | 'fireplace'
+export type BuildableKind = 'temple' | 'supplyHouse' | 'barracks' | 'techLab' | 'forge' | 'fireplace' | 'turret'
 export type UpgradeKind = 'damage' | 'speed'
 export type ConstructionState = 'none' | 'placing' | 'movingBuilder' | 'building' | 'paused' | 'complete'
 
@@ -73,6 +75,9 @@ export type Worker = Selectable & {
   maxHp: number
   state: WorkerState
   targetResourceId?: string
+  /** Last gathering assignment, so the worker can resume after repairs, builds, or node depletion. */
+  lastResourceId?: string
+  lastResourceKind?: ResourceKind
   buildSiteId?: string
   repairTargetId?: string
   attackTargetId?: string
@@ -95,9 +100,16 @@ export type Soldier = Selectable & {
   /** Radius of area damage around the primary target; 0 = single-target. */
   splashRadius: number
   state: SoldierState
+  stance: SoldierStance
   targetId?: string
   attackPosition?: Vector3
   rallyPoint?: Vector3
+  /** Attack-move destination; the unit resumes marching here after clearing hostiles. */
+  attackMovePoint?: Vector3
+  /** Where a defensive unit returns to after a leash-limited chase. */
+  guardPoint?: Vector3
+  /** True when the current target was auto-acquired rather than player/AI ordered. */
+  autoEngaged?: boolean
   attackTimer: number
   activeAnimation: string
 }

@@ -22,6 +22,8 @@ export function isPointerOverHud(): boolean {
   if (yFromTop >= VIRTUAL_HEIGHT - CONSOLE_HEIGHT) return true
   // Minimap frame and idle-worker button rising above the console (bottom-right).
   if (x >= VIRTUAL_WIDTH - 300 && yFromTop >= VIRTUAL_HEIGHT - 370) return true
+  // Control group slots above the command card.
+  if (x >= VIRTUAL_WIDTH - 560 && x <= VIRTUAL_WIDTH - 260 && yFromTop >= VIRTUAL_HEIGHT - CONSOLE_HEIGHT - 60) return true
   // Top-right resource bar.
   if (yFromTop <= 64 && x >= VIRTUAL_WIDTH - 560) return true
   // Top-left menu button.

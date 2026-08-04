@@ -29,7 +29,8 @@ import {
   RESOURCE_DEFINITIONS,
   RESOURCE_FIELDS,
   ResourceField,
-  SCENE
+  SCENE,
+  TURRET_STATS
 } from './rts/config'
 import {
   addSupplyUsed,
@@ -71,7 +72,8 @@ import { RACES, UNIT_REQUIREMENTS, getBuildingDisplayName, getRace, getSoldierDe
 import { buildResourceModel, disposeResourceModel, playResourceDepletion, playResourceGatherPulse } from './rts/resourceModels'
 import { showMoveMarker } from './rts/moveMarker'
 import { fireProjectile } from './rts/projectiles'
-import { spawnBlastRing, spawnImpactFlash } from './rts/impactVfx'
+import { spawnBlastRing, spawnDeathBurst, spawnImpactFlash } from './rts/impactVfx'
+import { playAcknowledge, playExplosion, playLaser, playUnderAttackAlert, startAmbientMusic, stopAmbientMusic } from './rts/sound'
 import {
   getDamageMultiplier,
   getNextUpgradeCost,
@@ -115,6 +117,7 @@ import type {
   SelectableKind,
   SelectedSummary,
   Soldier,
+  SoldierStance,
   SoldierVariant,
   Team,
   Worker
@@ -292,6 +295,162 @@ function updateRallyPlacementInput(dt: number): void {
     setStatus(`Barracks spawn set to ${formatPosition(rallyPoint)}.`)
   }
   cancelRallyPlacement()
+}
+
+// ---------------------------------------------------------------------------
+// Attack-move: click the button (or slot), then click the ground. Fighters
+// march to the point and engage every hostile they spot along the way.
+// ---------------------------------------------------------------------------
+
+let attackMovePending = false
+let attackMoveCooldown = 0
+
+export function startAttackMove(): void {
+  if (!isMatchActive()) return
+
+  const attackers = getCommandableSoldiers().filter((soldier) => soldier.alive && getTeam(soldier) === 'player')
+  if (attackers.length === 0) {
+    setStatus('Select fighters first, then order the attack-move.')
+    return
+  }
+
+  attackMovePending = true
+  attackMoveCooldown = BUILDING_PLACEMENT_CLICK_COOLDOWN
+  setStatus('Attack-move: click the ground. Fighters engage everything on the way.')
+}
+
+function cancelAttackMove(): void {
+  attackMovePending = false
+  attackMoveCooldown = 0
+}
+
+function updateAttackMoveInput(dt: number): void {
+  if (!attackMovePending) return
+
+  attackMoveCooldown = Math.max(0, attackMoveCooldown - dt)
+  if (attackMoveCooldown > 0) return
+  if (!inputSystem.isTriggered(InputAction.IA_POINTER, PointerEventType.PET_DOWN)) return
+  if (isPointerOverHud()) return
+
+  const ground = getPointerGroundPosition()
+  if (!ground) {
+    setStatus('Attack-move needs a ground click.')
+    return
+  }
+
+  cancelAttackMove()
+  const attackers = getCommandableSoldiers().filter((soldier) => soldier.alive && getTeam(soldier) === 'player')
+  if (attackers.length === 0) return
+
+  const destination = Vector3.create(ground.x, 0.25, ground.z)
+  for (let i = 0; i < attackers.length; i++) {
+    const soldier = attackers[i]
+    const slotPosition = getFormationPosition(destination, i, SOLDIER_MOVE_FORMATION_RADIUS)
+    soldier.state = 'attackMoving'
+    soldier.targetId = undefined
+    soldier.attackPosition = undefined
+    soldier.rallyPoint = undefined
+    soldier.autoEngaged = false
+    soldier.attackMovePoint = Vector3.create(slotPosition.x, 0.25, slotPosition.z)
+    setSoldierAnimation(soldier, 'walk')
+  }
+
+  showMoveMarker(ground)
+  playAcknowledge()
+  setStatus(`${attackers.length} fighter${attackers.length === 1 ? '' : 's'} attack-moving.`)
+}
+
+// ---------------------------------------------------------------------------
+// Stances: cycle defensive -> aggressive -> hold for the selected fighters.
+// ---------------------------------------------------------------------------
+
+const STANCE_ORDER: SoldierStance[] = ['defensive', 'aggressive', 'hold']
+export const STANCE_LABELS: Record<SoldierStance, string> = {
+  defensive: 'Defensive',
+  aggressive: 'Aggressive',
+  hold: 'Hold Position'
+}
+
+export function cycleSelectedStance(): void {
+  if (!isMatchActive()) return
+
+  const selectedSoldiers = getSelectedSoldiers().filter((soldier) => soldier.alive && getTeam(soldier) === 'player')
+  if (selectedSoldiers.length === 0) {
+    setStatus('Select fighters first.')
+    return
+  }
+
+  const next = STANCE_ORDER[(STANCE_ORDER.indexOf(selectedSoldiers[0].stance) + 1) % STANCE_ORDER.length]
+  for (const soldier of selectedSoldiers) {
+    soldier.stance = next
+    soldier.guardPoint = cloneVector(Transform.get(soldier.entity).position)
+    // Hold means hold: stop any chase or march in its tracks.
+    if (next === 'hold' && (soldier.state === 'movingToAttack' || soldier.state === 'attackMoving' || soldier.state === 'movingToRally')) {
+      soldier.state = 'idle'
+      soldier.targetId = undefined
+      soldier.attackPosition = undefined
+      soldier.attackMovePoint = undefined
+      soldier.rallyPoint = undefined
+      setSoldierAnimation(soldier, 'idle')
+    }
+  }
+  setStatus(`Stance set to ${STANCE_LABELS[next]} (${selectedSoldiers.length} fighter${selectedSoldiers.length === 1 ? '' : 's'}).`)
+}
+
+/** Stance of the first selected fighter, for the command card label. */
+export function getSelectedStance(): SoldierStance | undefined {
+  return getSelectedSoldiers().find((soldier) => soldier.alive)?.stance
+}
+
+// ---------------------------------------------------------------------------
+// Control groups: save the current selection to a numbered slot, recall later.
+// ---------------------------------------------------------------------------
+
+export const CONTROL_GROUP_SLOTS = [1, 2, 3, 4, 5]
+const controlGroups = new Map<number, string[]>()
+
+export function assignControlGroup(slot: number): void {
+  if (!isMatchActive()) return
+
+  const units: (Worker | Soldier)[] = [...getSelectedSoldiers(), ...getSelectedWorkers()].filter((unit) => unit.alive && getTeam(unit) === 'player')
+  if (units.length === 0) {
+    setStatus('Select units first, then press SET on a group slot.')
+    return
+  }
+
+  controlGroups.set(slot, units.map((unit) => unit.id))
+  setStatus(`Group ${slot} saved: ${units.length} unit${units.length === 1 ? '' : 's'}.`)
+}
+
+export function recallControlGroup(slot: number): void {
+  if (!isMatchActive()) return
+
+  const units = getControlGroupUnits(slot)
+  if (units.length === 0) {
+    setStatus(`Group ${slot} is empty. Select units and press SET to fill it.`)
+    return
+  }
+
+  // Fighting selections should command soldiers, so put them first when mixed.
+  units.sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'soldier' ? -1 : 1))
+  setUnitSelection(units)
+  setStatus(`Group ${slot}: ${units.length} unit${units.length === 1 ? '' : 's'} selected.`)
+}
+
+export function getControlGroupCount(slot: number): number {
+  return getControlGroupUnits(slot).length
+}
+
+function getControlGroupUnits(slot: number): (Worker | Soldier)[] {
+  const ids = controlGroups.get(slot)
+  if (!ids) return []
+
+  const units: (Worker | Soldier)[] = []
+  for (const id of ids) {
+    const unit = soldiers.find((soldier) => soldier.id === id && soldier.alive) ?? workers.find((worker) => worker.id === id && worker.alive)
+    if (unit) units.push(unit)
+  }
+  return units
 }
 
 export function startWorkerBuildingPlacement(kind: BuildableKind): void {
@@ -572,7 +731,11 @@ export function resetRtsGame(): void {
   gameState.savedGasLocations = []
   templeRallyPoints.clear()
   barracksRallyPoints.clear()
+  controlGroups.clear()
+  turretFireTimers.clear()
+  incomeSampleTimer = 0
   cancelRallyPlacement()
+  cancelAttackMove()
   cancelPlacement()
 
   for (const worker of workers) destroySelectable(worker)
@@ -590,6 +753,7 @@ export function resetRtsGame(): void {
 
   createStartingBase()
   enableTopDownView()
+  startAmbientMusic()
 }
 
 /**
@@ -793,9 +957,13 @@ function createStartingBase(): void {
   spawnResourceFields()
 
   for (const position of POSITIONS.workers) {
-    workers.push(createWorker(position, 'player'))
+    const worker = createWorker(position, 'player')
+    workers.push(worker)
     gameState.economies.player.supplyUsed += 1
     gameState.matchStats.player.unitsProduced += 1
+    // Auto-split: starting workers head straight for the crystal line.
+    const startingDeposit = getNearestResourceOfKind(position, 'minerals')
+    if (startingDeposit) assignWorkerToResource(worker, startingDeposit, false)
   }
 
   for (const team of gameState.activeEnemyTeams) {
@@ -806,9 +974,13 @@ function createStartingBase(): void {
     const towardCenter = seat.temple.x < SCENE.center ? 5 : -5
     for (let i = 0; i < POSITIONS.workers.length; i++) {
       const offset = getFormationPosition(Vector3.create(seat.temple.x, 0.25, seat.temple.z + towardCenter), i, 1)
-      workers.push(createWorker(offset, team))
+      const worker = createWorker(offset, team)
+      workers.push(worker)
       gameState.economies[team].supplyUsed += 1
       gameState.matchStats[team].unitsProduced += 1
+      // Computers auto-split too, so every faction's economy starts hot.
+      const startingDeposit = getNearestResourceOfKind(offset, 'minerals')
+      if (startingDeposit) assignWorkerToResource(worker, startingDeposit, false)
     }
   }
 }
@@ -819,10 +991,29 @@ function teamNamePrefix(team: Team): string {
   return isPlayerAlly(team) ? 'Ally ' : 'Enemy '
 }
 
+/**
+ * Per-match resource layout variant: the six main-base entries stay put so every
+ * faction's start is fair, but expansions and the contested center drift a few
+ * meters and vary in richness, so scouting routes differ between matches.
+ */
+function getResourceFieldsForMatch(): ResourceField[] {
+  return RESOURCE_FIELDS.map((field, index) => {
+    if (index < 6) return field
+
+    const jitter = () => (Math.random() - 0.5) * 10
+    const countShift = field.count > 1 ? (Math.random() < 0.3 ? -1 : Math.random() > 0.7 ? 1 : 0) : 0
+    return {
+      ...field,
+      center: Vector3.create(clamp(field.center.x + jitter(), 10, SCENE.size - 10), field.center.y, clamp(field.center.z + jitter(), 10, SCENE.size - 10)),
+      count: Math.max(1, field.count + countShift)
+    }
+  })
+}
+
 function spawnResourceFields(): void {
   const counters: Record<ResourceKind, number> = { minerals: 0, gas: 0 }
 
-  RESOURCE_FIELDS.forEach((field, fieldIndex) => {
+  getResourceFieldsForMatch().forEach((field, fieldIndex) => {
     const definition = RESOURCE_DEFINITIONS[field.kind]
     for (const position of generateFieldPositions(field, fieldIndex)) {
       counters[field.kind] += 1
@@ -894,6 +1085,7 @@ function createSoldier(position: Vector3, team: Team = 'player', variant: Soldie
   soldier.attackRate = definition.attackRate ?? CONFIG.soldierAttackRate
   soldier.splashRadius = definition.splashRadius ?? 0
   soldier.state = 'idle'
+  soldier.stance = 'defensive'
   soldier.attackTimer = 0
   soldier.activeAnimation = 'idle'
   return soldier
@@ -1021,7 +1213,8 @@ const BEACON_HEIGHTS: Record<BuildableKind, number> = {
   barracks: 7.5,
   techLab: 8.5,
   forge: 6.5,
-  fireplace: 3.5
+  fireplace: 3.5,
+  turret: 5.5
 }
 
 function ensureBuildingBeacon(building: Building): void {
@@ -1199,8 +1392,8 @@ function handleSelectableClick(id: string): void {
     return
   }
 
-  // The pending spawn-point click is handled globally; don't also run selection commands.
-  if (rallyPlacementKind !== 'none') return
+  // Pending spawn-point / attack-move clicks are handled globally; don't also run selection commands.
+  if (rallyPlacementKind !== 'none' || attackMovePending) return
 
   const selectedWorkers = getSelectedWorkers()
 
@@ -1258,6 +1451,8 @@ function assignWorkerToResource(worker: Worker, resource: ResourceNode, announce
 
   worker.state = 'movingToResource'
   worker.targetResourceId = resource.id
+  worker.lastResourceId = resource.id
+  worker.lastResourceKind = resource.resource
   worker.buildSiteId = undefined
   worker.repairTargetId = undefined
   worker.attackTargetId = undefined
@@ -1278,6 +1473,7 @@ function assignWorkersToResource(assignedWorkers: Worker[], resource: ResourceNo
   }
 
   clearSelection()
+  playAcknowledge()
   setStatus(`${assignedWorkers.length} worker${assignedWorkers.length === 1 ? '' : 's'} gathering ${resource.name}.`)
 }
 
@@ -1298,6 +1494,8 @@ function sendSoldierToRally(soldier: Soldier, rallyPoint: Vector3): void {
   soldier.state = 'movingToRally'
   soldier.targetId = undefined
   soldier.attackPosition = undefined
+  soldier.attackMovePoint = undefined
+  soldier.autoEngaged = false
   soldier.rallyPoint = cloneVector(rallyPoint)
   soldier.attackTimer = 0
   setSoldierAnimation(soldier, 'walk')
@@ -1311,6 +1509,9 @@ function assignSoldierToAttack(soldier: Soldier, target: Building | Soldier | Wo
   soldier.targetId = target.id
   soldier.attackPosition = target.kind === 'soldier' || target.kind === 'worker' ? undefined : getSoldierAttackPosition(target, slot, soldier)
   soldier.rallyPoint = undefined
+  // Ordered attacks chase without a leash; the combat system re-marks auto-acquired ones.
+  soldier.attackMovePoint = undefined
+  soldier.autoEngaged = false
   soldier.attackTimer = 0
   setSoldierAnimation(soldier, 'walk')
   if (announce && getTeam(soldier) === 'player') setStatus(`${soldier.name} attacking ${target.name}.`)
@@ -1371,6 +1572,7 @@ function assignCommandableSoldiersToAttack(target: Building | Soldier | Worker):
   }
 
   // Selection persists so the player can keep issuing commands to the same group.
+  playAcknowledge()
   setStatus(`${assignedSoldiers.length} fighter${assignedSoldiers.length === 1 ? '' : 's'} attacking ${target.name}.`)
 }
 
@@ -1501,6 +1703,7 @@ const dragSelectDeps = {
   isBlocked: () =>
     placementState.state === 'placing' ||
     rallyPlacementKind !== 'none' ||
+    attackMovePending ||
     gameState.matchStatus !== MATCH_ACTIVE,
   onBoxSelect: selectPlayerUnitsInRect,
   isPressOnSelectable: isPointerPressOnSelectable,
@@ -1545,6 +1748,7 @@ function moveSelectedUnitsTo(point: { x: number; z: number }): void {
   }
 
   showMoveMarker(point)
+  playAcknowledge()
   setStatus(`${unitCount} unit${unitCount === 1 ? '' : 's'} moving.`)
 }
 
@@ -1562,6 +1766,22 @@ function updateWorkerAutoGather(dt: number): void {
     const resource = getNearestGatherableResource(Transform.get(worker.entity).position)
     if (resource) assignWorkerToResource(worker, resource, false)
   }
+}
+
+function getNearestResourceOfKind(position: Vector3, kind: ResourceKind): ResourceNode | undefined {
+  let nearest: ResourceNode | undefined
+  let nearestDistance = Infinity
+
+  for (const resource of resources) {
+    if (!resource.alive || resource.amount <= 0 || resource.resource !== kind) continue
+
+    const distance = distanceToPoint(Transform.get(resource.entity).position, position)
+    if (distance < nearestDistance) {
+      nearest = resource
+      nearestDistance = distance
+    }
+  }
+  return nearest
 }
 
 function getNearestGatherableResource(position: Vector3): ResourceNode | undefined {
@@ -1617,6 +1837,7 @@ function rtsTickSystem(dt: number): void {
   updateGhostPreview()
   updatePlacementConfirmInput(dt)
   updateRallyPlacementInput(dt)
+  updateAttackMoveInput(dt)
   updateCancelInput()
   updateDragSelect(dragSelectDeps)
   updateWorkerAutoGather(dt)
@@ -1630,6 +1851,9 @@ function rtsTickSystem(dt: number): void {
   updateWorkerCargoVisuals()
   updateSoldiersSystem(dt, combatSystemDeps)
   updateConstructionSites(dt)
+  updateTurrets(dt)
+  updateBioRegeneration(dt)
+  updateIncomeSampling(dt)
   updateBuildingDamageVfxSystem()
   updateDepletedResources(dt)
   updateMatchEndState()
@@ -1722,6 +1946,7 @@ function endMatch(result: 'win' | 'loss'): void {
   gameState.matchResult = result
   gameState.attackAlert = ''
   gameState.attackAlertTimer = 0
+  stopAmbientMusic()
   disableTopDownView()
   cancelPlacement()
   clearSelection()
@@ -1804,30 +2029,132 @@ function updateRallyMarker(): void {
   Transform.getMutable(rallyMarker.root).position = Vector3.create(position.x, 0, position.z)
 }
 
+/** AETHYR signature perk: seeded structures assemble themselves at this fraction of worker speed. */
+const ALIEN_SELF_BUILD_RATE = 0.5
+
+/** MYRIAD signature perk: living units knit themselves back together out of combat or in it. */
+const BIO_REGEN_PER_SECOND = 1
+let bioRegenTimer = 0
+
+// ---------------------------------------------------------------------------
+// Defense towers: completed turrets automatically fire on hostile units in range.
+// ---------------------------------------------------------------------------
+
+const turretFireTimers = new Map<string, number>()
+
+function updateTurrets(dt: number): void {
+  for (const turret of buildings) {
+    if (!turret.alive || !turret.isComplete || turret.kind !== 'turret') continue
+
+    const team = getTeam(turret)
+    const origin = Transform.get(turret.entity).position
+    const target = findTurretTarget(origin, team)
+    const timer = (turretFireTimers.get(turret.id) ?? 0) + dt
+
+    if (!target || timer < TURRET_STATS.attackRate) {
+      turretFireTimers.set(turret.id, Math.min(timer, TURRET_STATS.attackRate))
+      continue
+    }
+
+    turretFireTimers.set(turret.id, 0)
+    const targetPosition = cloneVector(Transform.get(target.entity).position)
+    fireProjectile(Vector3.create(origin.x, origin.y + TURRET_STATS.muzzleHeight, origin.z), targetPosition, team)
+    spawnImpactFlash(targetPosition, getRace(team).accent)
+    playLaser(origin)
+    if (target.hp <= TURRET_STATS.damage) gameState.matchStats[team].unitsKilled += 1
+    if (target.kind === 'soldier') damageSoldier(target, TURRET_STATS.damage)
+    else damageWorker(target, TURRET_STATS.damage)
+  }
+}
+
+/** Nearest hostile fighter in range, then workers - turrets don't shoot buildings. */
+function findTurretTarget(origin: Vector3, team: Team): Soldier | Worker | undefined {
+  let best: Soldier | Worker | undefined
+  let bestDistance = TURRET_STATS.range
+
+  for (const soldier of soldiers) {
+    if (!soldier.alive || !areHostile(getTeam(soldier), team)) continue
+    const distance = distanceToPoint(Transform.get(soldier.entity).position, origin)
+    if (distance < bestDistance) {
+      best = soldier
+      bestDistance = distance
+    }
+  }
+  if (best) return best
+
+  for (const worker of workers) {
+    if (!worker.alive || !areHostile(getTeam(worker), team)) continue
+    const distance = distanceToPoint(Transform.get(worker.entity).position, origin)
+    if (distance < bestDistance) {
+      best = worker
+      bestDistance = distance
+    }
+  }
+  return best
+}
+
+/** End-screen graph data: sample each faction's cumulative harvest on a fixed cadence. */
+const INCOME_SAMPLE_INTERVAL = 10
+let incomeSampleTimer = 0
+
+function updateIncomeSampling(dt: number): void {
+  incomeSampleTimer += dt
+  if (incomeSampleTimer < INCOME_SAMPLE_INTERVAL) return
+  incomeSampleTimer -= INCOME_SAMPLE_INTERVAL
+
+  gameState.incomeHistory.player.push(gameState.matchStats.player.resourcesGathered)
+  for (const team of gameState.activeEnemyTeams) {
+    gameState.incomeHistory[team].push(gameState.matchStats[team].resourcesGathered)
+  }
+}
+
+function updateBioRegeneration(dt: number): void {
+  bioRegenTimer += dt
+  if (bioRegenTimer < 1) return
+  bioRegenTimer -= 1
+
+  for (const worker of workers) {
+    if (!worker.alive || worker.hp >= worker.maxHp || getRace(getTeam(worker)).id !== 'bio') continue
+    worker.hp = Math.min(worker.maxHp, worker.hp + BIO_REGEN_PER_SECOND)
+  }
+  for (const soldier of soldiers) {
+    if (!soldier.alive || soldier.hp >= soldier.maxHp || getRace(getTeam(soldier)).id !== 'bio') continue
+    soldier.hp = Math.min(soldier.maxHp, soldier.hp + BIO_REGEN_PER_SECOND)
+  }
+}
+
 function updateConstructionSites(dt: number): void {
   for (const site of buildings) {
-    if (site.isComplete || !site.builderWorkerId) continue
+    if (site.isComplete) continue
+    if (site.constructionState !== 'movingBuilder' && site.constructionState !== 'building' && site.constructionState !== 'paused') continue
 
-    const builder = getWorkerById(site.builderWorkerId)
+    const builder = site.builderWorkerId ? getWorkerById(site.builderWorkerId) : undefined
+    const builderAssigned = !!builder?.alive && builder.buildSiteId === site.id
+    const builderOnSite = builderAssigned && builder !== undefined && distanceToPosition(builder.entity, getBuilderWorkPosition(site, Transform.get(builder.entity).position)) <= 0.8
 
-    if (!builder?.alive || builder.buildSiteId !== site.id) {
-      pauseConstruction(site)
+    if (builderOnSite && builder) {
+      site.constructionState = 'building'
+      builder.state = 'constructing'
+      site.constructionProgress = Math.min(1, site.constructionProgress + dt / site.buildTime)
+      updateConstructionVisual(site)
+      if (site.constructionProgress >= 1) completeConstruction(site, builder)
       continue
     }
 
-    if (distanceToPosition(builder.entity, getBuilderWorkPosition(site, Transform.get(builder.entity).position)) > 0.8) {
-      pauseConstruction(site, builder)
+    // AETHYR structures keep assembling themselves once seeded, builder or not.
+    if (isBuildableKind(site.kind) && getRace(getTeam(site)).id === 'alien') {
+      if (builderAssigned && builder) {
+        builder.state = 'movingToBuild'
+        setWorkerAnimation(builder, 'walk')
+      }
+      site.constructionState = 'building'
+      site.constructionProgress = Math.min(1, site.constructionProgress + (dt * ALIEN_SELF_BUILD_RATE) / site.buildTime)
+      updateConstructionVisual(site)
+      if (site.constructionProgress >= 1) completeConstruction(site, builderAssigned ? builder : undefined)
       continue
     }
 
-    site.constructionState = 'building'
-    builder.state = 'constructing'
-    site.constructionProgress = Math.min(1, site.constructionProgress + dt / site.buildTime)
-    updateConstructionVisual(site)
-
-    if (site.constructionProgress >= 1) {
-      completeConstruction(site, builder)
-    }
+    pauseConstruction(site, builderAssigned ? builder : undefined)
   }
 }
 
@@ -1908,7 +2235,7 @@ function pauseConstruction(site: Building, builder?: Worker): void {
   }
 }
 
-function completeConstruction(site: Building, builder: Worker): void {
+function completeConstruction(site: Building, builder?: Worker): void {
   const definition = BUILDING_DEFINITIONS[site.kind as BuildableKind]
   const displayName = `${teamNamePrefix(getTeam(site))}${getBuildingDisplayName(site.kind as BuildableKind, getTeam(site))}`
 
@@ -1916,10 +2243,15 @@ function completeConstruction(site: Building, builder: Worker): void {
   site.constructionProgress = 1
   site.isComplete = true
   site.name = displayName
-  builder.state = 'idle'
-  builder.buildSiteId = undefined
-  builder.repairTargetId = undefined
-  setWorkerAnimation(builder, 'idle')
+  if (builder?.alive) {
+    builder.state = 'idle'
+    builder.buildSiteId = undefined
+    builder.repairTargetId = undefined
+    setWorkerAnimation(builder, 'idle')
+    // Builders head straight back to their last deposit instead of standing around.
+    const previousDeposit = resources.find((node) => node.id === builder.lastResourceId && node.alive && node.amount > 0)
+    if (previousDeposit) assignWorkerToResource(builder, previousDeposit, false)
+  }
   updateConstructionVisual(site)
   updateLabel(site, displayName)
   ensureBuildingBeacon(site)
@@ -1947,6 +2279,7 @@ function damageCombatTarget(target: Building | Soldier | Worker, amount: number,
       // Visible tracer plus a flash where the shot lands.
       fireProjectile(Transform.get(attacker.entity).position, targetPosition, attackerTeam)
       spawnImpactFlash(targetPosition, accent)
+      playLaser(Transform.get(attacker.entity).position)
     }
     if (attacker.splashRadius > 0) {
       // Caster blasts and titan stomps ripple outward.
@@ -2003,6 +2336,8 @@ function damageBuilding(building: Building, amount: number, attacker?: Soldier |
   }
 
   if (building.kind === 'enemyBuilding') playAnimation(building.entity, 'die')
+  spawnDeathBurst(cloneVector(Transform.get(building.entity).position), getRace(getTeam(building)).accent, 3)
+  playExplosion(Transform.get(building.entity).position)
   removeSelectable(building)
   removeBuilding(building)
   clearAttackersTargeting(building.id)
@@ -2016,6 +2351,7 @@ function isPlayerTempleUnderAttack(building: Building, attacker?: Soldier | Work
 }
 
 function showPlayerAttackAlert(): void {
+  playUnderAttackAlert()
   gameState.attackAlert = 'Your HQ is under attack!'
   gameState.attackAlertTimer = PLAYER_ATTACK_ALERT_DURATION
   setStatus(gameState.attackAlert)
@@ -2032,6 +2368,9 @@ function damageSoldier(soldier: Soldier, amount: number, attacker?: Soldier | Wo
   }
 
   creditUnitKill(attacker, soldier)
+  const deathScale = soldier.variant === 'titan' ? 2.2 : soldier.variant === 'flyer' || soldier.variant === 'caster' ? 1.2 : 1
+  spawnDeathBurst(cloneVector(Transform.get(soldier.entity).position), getRace(getTeam(soldier)).accent, deathScale)
+  playExplosion(Transform.get(soldier.entity).position)
   soldier.state = 'dead'
   soldier.targetId = undefined
   soldier.attackPosition = undefined
@@ -2060,6 +2399,8 @@ function damageWorker(worker: Worker, amount: number, attacker?: Soldier | Worke
   if (worker.hp > 0) return
 
   creditUnitKill(attacker, worker)
+  spawnDeathBurst(cloneVector(Transform.get(worker.entity).position), getRace(getTeam(worker)).accent, 0.8)
+  playExplosion(Transform.get(worker.entity).position)
 
   worker.state = 'dead'
   worker.targetResourceId = undefined
@@ -2157,7 +2498,7 @@ function updateConstructionVisual(site: Building): void {
 }
 
 function isBuildableKind(kind: Building['kind']): kind is BuildableKind {
-  return kind === 'temple' || kind === 'supplyHouse' || kind === 'barracks' || kind === 'techLab' || kind === 'forge' || kind === 'fireplace'
+  return kind === 'temple' || kind === 'supplyHouse' || kind === 'barracks' || kind === 'techLab' || kind === 'forge' || kind === 'fireplace' || kind === 'turret'
 }
 
 function isCancellableConstruction(selectable: Selectable | undefined): selectable is Building & { kind: BuildableKind } {
@@ -2285,6 +2626,7 @@ function getBuildingDetail(building: Building): string {
     const speedLevel = getUpgradeLevel(getTeam(building), 'speed')
     return `Complete: researches upgrades. Weapons Lv${damageLevel}, Propulsion Lv${speedLevel}.`
   }
+  if (building.kind === 'turret') return `Automated defense: fires on hostile units within ${TURRET_STATS.range}m.`
   if (building.kind === 'fireplace') return 'Complete: camp utility building.'
   if (building.kind === 'enemyBuilding') return 'Enemy structure'
 
@@ -2309,8 +2651,8 @@ function getHoverText(selectable: Selectable): string {
 function formatCost(cost: ResourceCost): string {
   const parts = []
 
-  if (cost.minerals) parts.push(`${cost.minerals} minerals`)
-  if (cost.gas) parts.push(`${cost.gas} gas`)
+  if (cost.minerals) parts.push(`${cost.minerals} crystal`)
+  if (cost.gas) parts.push(`${cost.gas} plasma`)
   return parts.length > 0 ? parts.join(', ') : '0 resources'
 }
 

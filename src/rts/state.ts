@@ -65,7 +65,7 @@ export const gameState = {
   selectedId: '',
   selectedKind: '' as SelectableKind | '',
   selectedUnitIds: [] as string[],
-  status: 'Select a miner, then click a mineral field or gas geyser.',
+  status: 'Select a worker, then click a crystal vein or plasma vent.',
   // StarCraft-style transient prompt: the status line fades out after a few seconds.
   statusTimer: 0,
   attackAlert: '',
@@ -79,6 +79,13 @@ export const gameState = {
     enemy2: createStats(),
     enemy3: createStats()
   } as Record<Team, TeamStats>,
+  // Cumulative resources gathered, sampled every few seconds for the end-screen graph.
+  incomeHistory: {
+    player: [] as number[],
+    enemy1: [] as number[],
+    enemy2: [] as number[],
+    enemy3: [] as number[]
+  } as Record<Team, number[]>,
   placementMode: 'none' as PlacementState['state'],
   placementBuildingKind: '' as BuildableKind | '',
   currentPlayerLocation: '',
@@ -115,5 +122,6 @@ export function resetTeamEconomies(): void {
 export function resetTeamStats(): void {
   for (const team of ['player', ...ENEMY_TEAMS] as Team[]) {
     gameState.matchStats[team] = createStats()
+    gameState.incomeHistory[team] = []
   }
 }

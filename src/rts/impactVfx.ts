@@ -37,6 +37,24 @@ export function spawnImpactFlash(position: Vector3, color: Color4): void {
   VisibilityComponent.createOrReplace(effect.entity, { visible: true })
 }
 
+/** Unit death: a bright expanding burst plus a ground shockwave, scaled to the victim. */
+export function spawnDeathBurst(position: Vector3, color: Color4, size = 1): void {
+  const burst = obtainEffect('flash')
+  burst.age = 0
+  burst.duration = 0.45
+  burst.startScale = 0.5 * size
+  burst.endScale = 2.2 * size
+  burst.color = color
+  burst.active = true
+
+  Transform.getMutable(burst.entity).position = Vector3.create(position.x, position.y + 0.8, position.z)
+  MeshRenderer.setSphere(burst.entity)
+  applyEffectMaterial(burst, 1)
+  VisibilityComponent.createOrReplace(burst.entity, { visible: true })
+
+  spawnBlastRing(position, color, 1.1 * size)
+}
+
 /** Flat expanding shockwave disc at ground level. */
 export function spawnBlastRing(position: Vector3, color: Color4, radius: number): void {
   const effect = obtainEffect('ring')

@@ -31,65 +31,68 @@ export type RaceDefinition = {
 export const RACES: Record<RaceId, RaceDefinition> = {
   human: {
     id: 'human',
-    name: 'HUMANS',
-    tagline: 'Versatile colonists. Balanced units and steady production.',
+    name: 'VANGUARD',
+    tagline: 'Exiled colonists. Balanced units; crews repair structures fast.',
     color: Color4.create(0.35, 0.55, 0.85, 1),
     accent: Color4.create(0.45, 0.7, 1, 1),
-    worker: { name: 'Miner', hp: 35, cost: { minerals: 50 }, productionTime: 2, supply: 1 },
-    melee: { name: 'Vanguard', hp: 100, damage: 11, moveSpeed: 3, attackRange: MELEE_RANGE, cost: { minerals: 100 }, productionTime: 2, supply: 1 },
-    ranged: { name: 'Gunner', hp: 70, damage: 9, moveSpeed: 2.9, attackRange: 6, cost: { minerals: 80, gas: 25 }, productionTime: 2.2, supply: 1 },
+    worker: { name: 'Rigger', hp: 35, cost: { minerals: 50 }, productionTime: 2, supply: 1 },
+    melee: { name: 'Breacher', hp: 100, damage: 11, moveSpeed: 3, attackRange: MELEE_RANGE, cost: { minerals: 100 }, productionTime: 2, supply: 1 },
+    ranged: { name: 'Longshot', hp: 70, damage: 9, moveSpeed: 2.9, attackRange: 6, cost: { minerals: 80, gas: 25 }, productionTime: 2.2, supply: 1 },
     caster: { name: 'Stormcaller', hp: 60, damage: 14, moveSpeed: 2.7, attackRange: 7, attackRate: 1.7, splashRadius: 2.8, cost: { minerals: 100, gas: 100 }, productionTime: 3.5, supply: 2 },
-    flyer: { name: 'Raptor Gunship', hp: 90, damage: 12, moveSpeed: 4.2, attackRange: 6.5, attackRate: 0.9, cost: { minerals: 120, gas: 80 }, productionTime: 3.5, supply: 2 },
-    titan: { name: 'Colossus', hp: 380, damage: 40, moveSpeed: 2.2, attackRange: 2.8, attackRate: 1.7, splashRadius: 2.2, cost: { minerals: 300, gas: 200 }, productionTime: 8, supply: 4 },
+    flyer: { name: 'Kestrel Gunship', hp: 90, damage: 12, moveSpeed: 4.2, attackRange: 6.5, attackRate: 0.9, cost: { minerals: 120, gas: 80 }, productionTime: 3.5, supply: 2 },
+    titan: { name: 'Juggernaut', hp: 380, damage: 40, moveSpeed: 2.2, attackRange: 2.8, attackRate: 1.7, splashRadius: 2.2, cost: { minerals: 300, gas: 200 }, productionTime: 8, supply: 4 },
     buildingNames: {
       temple: 'Command Post',
       supplyHouse: 'Habitat',
       barracks: 'Armory',
       techLab: 'Starforge',
-      forge: 'Engineering Bay',
-      fireplace: 'Beacon'
+      forge: 'Foundry',
+      fireplace: 'Beacon',
+      turret: 'Sentry Cannon'
     }
   },
   alien: {
     id: 'alien',
-    name: 'ALIENS',
-    tagline: 'Ancient tech. Costly, slow to build, devastating in battle.',
+    name: 'AETHYR',
+    tagline: 'Ancient tech. Devastating units; structures assemble themselves.',
     color: Color4.create(0.75, 0.6, 0.25, 1),
     accent: Color4.create(0.85, 0.65, 1, 1),
-    worker: { name: 'Probe', hp: 30, cost: { minerals: 50 }, productionTime: 2.5, supply: 1 },
-    melee: { name: 'Stalker', hp: 125, damage: 16, moveSpeed: 2.8, attackRange: MELEE_RANGE, cost: { minerals: 125, gas: 50 }, productionTime: 3, supply: 1 },
-    ranged: { name: 'Disruptor', hp: 85, damage: 13, moveSpeed: 2.7, attackRange: 7, cost: { minerals: 100, gas: 75 }, productionTime: 3.2, supply: 1 },
-    caster: { name: 'Oracle', hp: 70, damage: 18, moveSpeed: 2.6, attackRange: 8, attackRate: 1.9, splashRadius: 3.2, cost: { minerals: 125, gas: 125 }, productionTime: 4, supply: 2 },
-    flyer: { name: 'Tempest', hp: 110, damage: 15, moveSpeed: 3.9, attackRange: 7, attackRate: 1.1, cost: { minerals: 150, gas: 100 }, productionTime: 4, supply: 2 },
+    worker: { name: 'Seeker', hp: 30, cost: { minerals: 50 }, productionTime: 2.5, supply: 1 },
+    melee: { name: 'Sentinel', hp: 125, damage: 16, moveSpeed: 2.8, attackRange: MELEE_RANGE, cost: { minerals: 125, gas: 50 }, productionTime: 3, supply: 1 },
+    ranged: { name: 'Lancer', hp: 85, damage: 13, moveSpeed: 2.7, attackRange: 7, cost: { minerals: 100, gas: 75 }, productionTime: 3.2, supply: 1 },
+    caster: { name: 'Riftweaver', hp: 70, damage: 18, moveSpeed: 2.6, attackRange: 8, attackRate: 1.9, splashRadius: 3.2, cost: { minerals: 125, gas: 125 }, productionTime: 4, supply: 2 },
+    flyer: { name: 'Zephyr', hp: 110, damage: 15, moveSpeed: 3.9, attackRange: 7, attackRate: 1.1, cost: { minerals: 150, gas: 100 }, productionTime: 4, supply: 2 },
     titan: { name: 'Avatar', hp: 450, damage: 50, moveSpeed: 2, attackRange: 3, attackRate: 1.9, splashRadius: 2.4, cost: { minerals: 350, gas: 250 }, productionTime: 9, supply: 4 },
     buildingNames: {
-      temple: 'Nexus',
-      supplyHouse: 'Pylon',
-      barracks: 'Warp Gate',
+      temple: 'Monolith',
+      supplyHouse: 'Conduit',
+      barracks: 'Rift Gate',
       techLab: 'Sanctum',
       forge: 'Ascension Spire',
-      fireplace: 'Obelisk'
+      fireplace: 'Obelisk',
+      turret: 'Arc Spire'
     }
   },
   bio: {
     id: 'bio',
-    name: 'BIO SWARM',
-    tagline: 'Living horde. Cheap, fast, fragile - drown them in bodies.',
+    name: 'MYRIAD',
+    tagline: 'Living horde. Cheap and fast; wounded units regenerate.',
     color: Color4.create(0.65, 0.25, 0.3, 1),
     accent: Color4.create(1, 0.45, 0.3, 1),
-    worker: { name: 'Drone', hp: 40, cost: { minerals: 50 }, productionTime: 1.5, supply: 1 },
-    melee: { name: 'Ravager', hp: 55, damage: 7, moveSpeed: 3.6, attackRange: MELEE_RANGE, cost: { minerals: 60, gas: 10 }, productionTime: 1.2, supply: 1 },
+    worker: { name: 'Grub', hp: 40, cost: { minerals: 50 }, productionTime: 1.5, supply: 1 },
+    melee: { name: 'Mauler', hp: 55, damage: 7, moveSpeed: 3.6, attackRange: MELEE_RANGE, cost: { minerals: 60, gas: 10 }, productionTime: 1.2, supply: 1 },
     ranged: { name: 'Spitter', hp: 45, damage: 6, moveSpeed: 3.2, attackRange: 5.5, cost: { minerals: 50, gas: 25 }, productionTime: 1.4, supply: 1 },
     caster: { name: 'Plague Weaver', hp: 50, damage: 10, moveSpeed: 3, attackRange: 6, attackRate: 1.5, splashRadius: 2.6, cost: { minerals: 80, gas: 60 }, productionTime: 2.5, supply: 2 },
     flyer: { name: 'Shrieker', hp: 70, damage: 9, moveSpeed: 4.5, attackRange: 5.5, attackRate: 0.8, cost: { minerals: 90, gas: 50 }, productionTime: 2.2, supply: 2 },
     titan: { name: 'Behemoth', hp: 320, damage: 30, moveSpeed: 2.6, attackRange: 2.6, attackRate: 1.5, splashRadius: 2, cost: { minerals: 250, gas: 150 }, productionTime: 6, supply: 4 },
     buildingNames: {
-      temple: 'Hive',
+      temple: 'Brood Heart',
       supplyHouse: 'Growth Pod',
       barracks: 'Spawning Pit',
       techLab: 'Grand Nest',
-      forge: 'Evolution Chamber',
-      fireplace: 'Spore Mound'
+      forge: 'Mutation Den',
+      fireplace: 'Spore Mound',
+      turret: 'Thorn Mound'
     }
   }
 }
@@ -132,7 +135,7 @@ export function pickRandomRace(): RaceId {
 
 export function formatRaceCost(cost: ResourceCost): string {
   const parts: string[] = []
-  if (cost.minerals) parts.push(`${cost.minerals} minerals`)
-  if (cost.gas) parts.push(`${cost.gas} gas`)
+  if (cost.minerals) parts.push(`${cost.minerals} crystal`)
+  if (cost.gas) parts.push(`${cost.gas} plasma`)
   return parts.join(' / ')
 }

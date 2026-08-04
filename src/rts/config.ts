@@ -54,27 +54,27 @@ export const MODEL_TRANSFORMS = {
   }
 }
 
-// StarCraft-style two-resource economy: mineral crystal fields and gas geysers.
+// Two-resource economy (internal keys stay minerals/gas; display names are original lore).
 export const RESOURCE_LABELS: Record<ResourceKind, string> = {
-  minerals: 'minerals',
-  gas: 'gas'
+  minerals: 'crystal',
+  gas: 'plasma'
 }
 
 export const RESOURCE_DEFINITIONS: Record<ResourceKind, ResourceDefinition> = {
   minerals: {
-    name: 'Mineral Field',
+    name: 'Crystal Vein',
     amount: 500,
     placementY: 0,
     colliderScale: Vector3.create(1.8, 1.5, 1.8),
     audioClipUrl: ASSETS.rockSound,
-    hoverText: 'Mine minerals'
+    hoverText: 'Harvest crystal'
   },
   gas: {
-    name: 'Gas Geyser',
+    name: 'Plasma Vent',
     amount: 1000,
     placementY: 0,
     colliderScale: Vector3.create(2.4, 1.8, 2.4),
-    hoverText: 'Harvest gas'
+    hoverText: 'Siphon plasma'
   }
 }
 
@@ -133,6 +133,8 @@ export type DifficultySettings = {
   maxAdvancedUnits: number
   maxHomesteads: number
   maxTemples: number
+  /** Defense towers the AI protects its base with. */
+  maxTurrets: number
   /** Whether the AI researches forge upgrades at all. */
   research: boolean
   /** Income multiplier on delivered resources (classic hard-AI cheat). */
@@ -151,6 +153,7 @@ export const AI_DIFFICULTY: Record<Difficulty, DifficultySettings> = {
     maxAdvancedUnits: 2,
     maxHomesteads: 4,
     maxTemples: 1,
+    maxTurrets: 1,
     research: false,
     gatherMultiplier: 1
   },
@@ -165,6 +168,7 @@ export const AI_DIFFICULTY: Record<Difficulty, DifficultySettings> = {
     maxAdvancedUnits: 8,
     maxHomesteads: 7,
     maxTemples: 3,
+    maxTurrets: 2,
     research: true,
     gatherMultiplier: 1
   },
@@ -179,6 +183,7 @@ export const AI_DIFFICULTY: Record<Difficulty, DifficultySettings> = {
     maxAdvancedUnits: 12,
     maxHomesteads: 8,
     maxTemples: 3,
+    maxTurrets: 3,
     research: true,
     gatherMultiplier: 1.25
   }
@@ -317,5 +322,27 @@ export const BUILDING_DEFINITIONS: Record<BuildableKind, BuildingDefinition> = {
     scale: Vector3.create(1, 1, 1),
     color: COLORS.fireplace,
     completeStatus: 'Fireplace complete.'
+  },
+  turret: {
+    kind: 'turret',
+    name: 'Turret',
+    cost: { minerals: 100, gas: 25 },
+    hp: 220,
+    buildTime: 6,
+    supplyAdds: 0,
+    placementY: 0,
+    scale: Vector3.create(2.6, 4.5, 2.6),
+    color: Color4.create(0.85, 0.35, 0.3, 1),
+    completeStatus: 'Defense tower online. It fires on hostiles automatically.',
+    requires: 'barracks'
   }
+}
+
+/** Automated defense tower combat stats (shared by all factions). */
+export const TURRET_STATS = {
+  range: 10,
+  damage: 9,
+  attackRate: 1,
+  /** Height the bolt fires from, matching the tower head. */
+  muzzleHeight: 3.6
 }
