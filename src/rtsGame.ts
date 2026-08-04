@@ -190,6 +190,19 @@ export function endRtsMatch(): void {
   endMatch('loss')
 }
 
+/**
+ * Back to the title screen from the end-game screen: rebuild a fresh world
+ * (so the setup screen sits over a clean map) but leave the match unstarted.
+ */
+export function returnToMainMenu(): void {
+  resetRtsGame()
+  gameState.matchStatus = MATCH_NOT_STARTED
+  gameState.matchResult = 'none'
+  gameState.status = ''
+  stopAmbientMusic()
+  disableTopDownView()
+}
+
 export function queueWorker(): void {
   if (!isMatchActive()) return
 

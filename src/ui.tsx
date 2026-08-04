@@ -22,6 +22,7 @@ import {
   queueSoldier,
   recallControlGroup,
   resetRtsGame,
+  returnToMainMenu,
   selectAllLikeSelected,
   selectIdleWorker,
   selectUnitById,
@@ -1308,14 +1309,24 @@ function endGameOverlay() {
 
         {incomeGraph()}
 
-        <Button
-          value="REPLAY"
-          variant="primary"
-          fontSize={24}
-          uiTransform={{ width: 220, height: 58, margin: { top: 34 } }}
-          uiBackground={{ color: UI.accent }}
-          onMouseDown={resetRtsGame}
-        />
+        <UiEntity uiTransform={{ width: '100%', height: 58, flexDirection: 'row', justifyContent: 'center', margin: { top: 34 } }}>
+          <Button
+            value="PLAY AGAIN"
+            variant="primary"
+            fontSize={24}
+            uiTransform={{ width: 240, height: 58, margin: { right: 12 } }}
+            uiBackground={{ color: UI.accent }}
+            onMouseDown={resetRtsGame}
+          />
+          <Button
+            value="MAIN MENU"
+            variant="secondary"
+            fontSize={24}
+            uiTransform={{ width: 240, height: 58, margin: { left: 12 } }}
+            uiBackground={{ color: Color4.create(0.25, 0.32, 0.45, 0.95) }}
+            onMouseDown={returnToMainMenu}
+          />
+        </UiEntity>
       </UiEntity>
     </UiEntity>
   )
