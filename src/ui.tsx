@@ -1277,13 +1277,14 @@ function matchSetupOverlay() {
       <UiEntity
         uiTransform={{ positionType: 'absolute', position: { top: 44, left: 0 }, width: '100%', flexDirection: 'column', alignItems: 'center' }}
       >
-        <Label value="MATCH SETUP" fontSize={44} color={UI.gold} textAlign="middle-center" uiTransform={{ width: '100%' }} />
+        {/* Explicit heights: auto-sized labels collapse and overlap in this UI runtime. */}
+        <Label value="MATCH SETUP" fontSize={44} color={UI.gold} textAlign="middle-center" uiTransform={{ width: '100%', height: 54 }} />
         <Label
           value={`Playing as ${race.name}  ·  ${race.hero.name}`}
           fontSize={16}
           color={Color4.create(0.75, 0.78, 0.85, 0.9)}
           textAlign="middle-center"
-          uiTransform={{ width: '100%', margin: { top: 8 } }}
+          uiTransform={{ width: '100%', height: 22, margin: { top: 8 } }}
         />
       </UiEntity>
 
@@ -1374,6 +1375,7 @@ function heroStatRow(label: string, value: string) {
 function heroStatsPanel() {
   const race = RACES[gameState.playerRace]
   const hero = race.hero
+  const portrait = `images/icons/icon-unit-hero${RACE_ICON_SUFFIX[gameState.playerRace]}.png`
 
   return (
     <UiEntity
@@ -1381,23 +1383,27 @@ function heroStatsPanel() {
         positionType: 'absolute',
         position: { top: 200, right: 70 },
         width: 540,
-        height: 600,
+        height: 640,
         flexDirection: 'column',
         alignItems: 'center',
         padding: { top: 26, bottom: 26, left: 40, right: 40 }
       }}
       uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.9) }}
     >
-      <Label value="YOUR HERO" fontSize={22} color={UI.text} textAlign="middle-center" />
+      <Label value="YOUR HERO" fontSize={22} color={UI.text} textAlign="middle-center" uiTransform={{ width: '100%', height: 26 }} />
 
-      <Label value={hero.name.toUpperCase()} fontSize={30} color={race.accent} textAlign="middle-center" uiTransform={{ margin: { top: 20 } }} />
+      <UiEntity uiTransform={{ width: 170, height: 170, margin: { top: 14 }, padding: 3 }} uiBackground={{ color: race.accent }}>
+        <UiEntity uiTransform={{ width: '100%', height: '100%' }} uiBackground={{ textureMode: 'stretch', texture: { src: portrait } }} />
+      </UiEntity>
+
+      <Label value={hero.name.toUpperCase()} fontSize={30} color={race.accent} textAlign="middle-center" uiTransform={{ width: '100%', height: 36, margin: { top: 14 } }} />
       <Label
         value={race.heroTrait}
         fontSize={14}
         color={Color4.create(0.85, 0.87, 0.92, 0.95)}
         textAlign="middle-center"
         textWrap="wrap"
-        uiTransform={{ width: 440, margin: { top: 12, bottom: 24 } }}
+        uiTransform={{ width: 440, height: 40, margin: { top: 10, bottom: 14 } }}
       />
 
       <UiEntity uiTransform={{ width: 420, flexDirection: 'column' }}>
