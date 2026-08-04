@@ -148,6 +148,27 @@ let titleTime = 0
 // Pre-match menu flow: title screen (race pick) -> match setup (opponents + hero).
 let titleStage: 'title' | 'setup' = 'title'
 
+// Screen-transition fade: snaps to black on every screen change, holds a beat
+// while the next screen stages itself (camera moves, showcase builds), then
+// fades out - hiding the split-second flash of the raw world between screens.
+const FADE_SECONDS = 0.8
+let screenFade = 0
+
+function triggerScreenFade(): void {
+  screenFade = 1
+}
+
+function screenFadeOverlay() {
+  // Hold fully black for the first ~30% of the fade, then ease out.
+  const alpha = Math.min(1, screenFade / 0.7)
+  return (
+    <UiEntity
+      uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%' }}
+      uiBackground={{ color: Color4.create(0, 0, 0, alpha) }}
+    />
+  )
+}
+
 /** Avatar movement is frozen on menu screens so the player can't wander under the UI. */
 let menuMovementLocked = false
 
@@ -167,6 +188,7 @@ export function setupUi() {
   ReactEcsRenderer.setUiRenderer(uiMenu, { virtualWidth: 1920, virtualHeight: 1080 })
   engine.addSystem((dt: number) => {
     if (gameState.matchStatus === 'notStarted') titleTime += dt
+    screenFade = Math.max(0, screenFade - dt / FADE_SECONDS)
     updateMenuMovementLock()
   })
 }
@@ -190,6 +212,7 @@ export const uiMenu = () => {
       {gameState.matchStatus === 'ended' ? endGameOverlay() : null}
       {!showSettingsMenu ? menuButton() : null}
       {showSettingsMenu ? settingsOverlay() : null}
+      {screenFade > 0 ? screenFadeOverlay() : null}
     </UiEntity>
   )
 }
@@ -1240,11 +1263,12 @@ function startScreenOverlay() {
           <UiEntity
             uiTransform={{ width: 300, height: 62, justifyContent: 'center', alignItems: 'center', padding: 3 }}
             uiBackground={{ color: Color4.create(0.35, 0.65, 1, 1) }}
-            onMouseDown={() => {
-              titleStage = 'setup'
-            }}
-          >
-            <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.06, 0.14, 0.28, 1) }}>
+          onMouseDown={() => {
+            triggerScreenFade()
+            titleStage = 'setup'
+          }}
+        >
+          <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.06, 0.14, 0.28, 1) }}>
               <Label value="CONTINUE" fontSize={22} color={Color4.create(0.85, 0.93, 1, 1)} textAlign="middle-center" />
             </UiEntity>
           </UiEntity>
@@ -1339,6 +1363,7 @@ function matchSetupOverlay() {
           uiTransform={{ width: 220, height: 60, margin: { right: 16 }, padding: 3, justifyContent: 'center', alignItems: 'center' }}
           uiBackground={{ color: Color4.create(0.3, 0.36, 0.48, 1) }}
           onMouseDown={() => {
+            triggerScreenFade()
             hideHeroShowcase()
             titleStage = 'title'
           }}
@@ -1351,6 +1376,7 @@ function matchSetupOverlay() {
           uiTransform={{ width: 320, height: 60, margin: { left: 16 }, padding: 3, justifyContent: 'center', alignItems: 'center' }}
           uiBackground={{ color: Color4.create(0.35, 0.65, 1, 1) }}
           onMouseDown={() => {
+            triggerScreenFade()
             hideHeroShowcase()
             titleStage = 'title'
             startRtsMatch()
@@ -1485,7 +1511,10 @@ function endGameOverlay() {
             fontSize={24}
             uiTransform={{ width: 240, height: 58, margin: { right: 12 } }}
             uiBackground={{ color: UI.accent }}
-            onMouseDown={resetRtsGame}
+            onMouseDown={() => {
+              triggerScreenFade()
+              resetRtsGame()
+            }}
           />
           <Button
             value="MAIN MENU"
@@ -1494,6 +1523,7 @@ function endGameOverlay() {
             uiTransform={{ width: 240, height: 58, margin: { left: 12 } }}
             uiBackground={{ color: Color4.create(0.25, 0.32, 0.45, 0.95) }}
             onMouseDown={() => {
+              triggerScreenFade()
               titleStage = 'title'
               returnToMainMenu()
             }}
