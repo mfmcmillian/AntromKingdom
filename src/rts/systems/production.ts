@@ -69,7 +69,7 @@ export function updateSoldierProduction(dt: number, deps: ProductionDeps): void 
     if (!barracks?.alive || !barracks.isComplete) {
       soldierProductionOrders.splice(i, 1)
       decrementSoldierQueue(order.team)
-      if (order.team === 'player') deps.setStatus(`${getSoldierDefinition('player', order.variant).name} production cancelled: ${getBuildingDisplayName('barracks', 'player')} unavailable.`)
+      if (order.team === 'player') deps.setStatus(`${getSoldierDefinition('player', order.variant).name} production cancelled: production building unavailable.`)
       continue
     }
 
@@ -94,8 +94,7 @@ export function updateSoldierProduction(dt: number, deps: ProductionDeps): void 
     soldierProductionOrders.splice(i, 1)
     if (order.team === 'player') {
       const soldierName = getSoldierDefinition('player', order.variant).name
-      const barracksName = getBuildingDisplayName('barracks', 'player')
-      deps.setStatus(rallyPoint ? `${soldierName} ready and moving to the ${barracksName} spawn point.` : `${soldierName} ready outside the ${barracksName}.`)
+      deps.setStatus(rallyPoint ? `${soldierName} ready and moving to the spawn point.` : `${soldierName} ready outside the ${barracks.name}.`)
     }
   }
 }

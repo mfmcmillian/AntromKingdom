@@ -201,6 +201,30 @@ export const BUILDING_DEFINITIONS: Record<BuildableKind, BuildingDefinition> = {
     color: COLORS.barracks,
     completeStatus: 'Barracks complete. Soldier production comes next.'
   },
+  techLab: {
+    kind: 'techLab',
+    name: 'Tech Lab',
+    cost: { minerals: 200, gas: 100 },
+    hp: 220,
+    buildTime: 9,
+    supplyAdds: 0,
+    placementY: 0,
+    scale: Vector3.create(5.5, 5, 5.5),
+    color: Color4.create(0.35, 0.75, 0.9, 1),
+    completeStatus: 'Advanced structure complete. Casters, flyers and titans unlocked.'
+  },
+  forge: {
+    kind: 'forge',
+    name: 'Forge',
+    cost: { minerals: 150, gas: 50 },
+    hp: 200,
+    buildTime: 7,
+    supplyAdds: 0,
+    placementY: 0,
+    scale: Vector3.create(4.5, 4, 4.5),
+    color: Color4.create(0.9, 0.55, 0.2, 1),
+    completeStatus: 'Upgrade structure complete. Research weapon and speed upgrades.'
+  },
   fireplace: {
     kind: 'fireplace',
     name: 'Fireplace',

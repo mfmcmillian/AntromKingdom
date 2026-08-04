@@ -68,6 +68,17 @@ import { getBuildingDisplayName, getRace, getSoldierDefinition, getWorkerDefinit
 import { buildResourceModel, disposeResourceModel, playResourceDepletion, playResourceGatherPulse } from './rts/resourceModels'
 import { showMoveMarker } from './rts/moveMarker'
 import { fireProjectile } from './rts/projectiles'
+import { spawnBlastRing, spawnImpactFlash } from './rts/impactVfx'
+import {
+  getDamageMultiplier,
+  getNextUpgradeCost,
+  getUpgradeLevel,
+  isUpgradeInProgress,
+  resetUpgrades,
+  startUpgradeResearchOrder,
+  updateUpgradeResearch,
+  UPGRADE_INFO
+} from './rts/upgrades'
 import { disableTopDownView, enableTopDownView, getCameraFocus, isTopDownViewActive } from './rts/topDownCamera'
 import { createBuildingDamageVfx, removeBuildingDamageVfx, updateBuildingDamageVfx } from './rts/vfx'
 import {
@@ -217,18 +228,19 @@ export function setBarracksSpawnPoint(): void {
 
   const selected = getSelected()
 
-  if (selected?.kind !== 'barracks') {
-    setStatus('Select a Barracks first, then set the fighter spawn point.')
+  // Both fighter-producing buildings share the rally map, so the same command works for each.
+  if (selected?.kind !== 'barracks' && selected?.kind !== 'techLab') {
+    setStatus('Select a fighter-producing building first, then set the spawn point.')
     return
   }
 
-  const barracks = selected as Building
-  if (!barracks.isComplete) {
-    setStatus('Finish the Barracks before setting its spawn point.')
+  const trainer = selected as Building
+  if (!trainer.isComplete) {
+    setStatus(`Finish the ${trainer.name} before setting its spawn point.`)
     return
   }
 
-  startRallyPlacement('barracks', barracks.id)
+  startRallyPlacement('barracks', trainer.id)
   setStatus('Click the ground where new fighters should gather.')
 }
 
@@ -315,17 +327,19 @@ export function cancelBuildingPlacement(): void {
 export function queueSoldier(variant: SoldierVariant = 'melee'): void {
   if (!isMatchActive()) return
 
+  // Melee/ranged train at the barracks; caster/flyer/titan need the advanced structure.
+  const trainerKind: BuildableKind = variant === 'melee' || variant === 'ranged' ? 'barracks' : 'techLab'
   const selected = getSelected()
-  const barracks = selected?.kind === 'barracks' ? (selected as Building) : undefined
+  const trainer = selected?.kind === trainerKind ? (selected as Building) : undefined
   const soldierDef = getSoldierDefinition('player', variant)
-  const barracksName = getBuildingDisplayName('barracks', 'player')
+  const trainerName = getBuildingDisplayName(trainerKind, 'player')
 
-  if (!barracks?.alive || !barracks.isComplete) {
-    setStatus(`Select a completed ${barracksName} to create ${soldierDef.name}s.`)
+  if (!trainer?.alive || !trainer.isComplete) {
+    setStatus(`Select a completed ${trainerName} to create ${soldierDef.name}s.`)
     return
   }
 
-  if (getSupplyUsed('player') + gameState.workerQueue + gameState.soldierQueue >= getSupplyCap('player')) {
+  if (getSupplyUsed('player') + gameState.workerQueue + gameState.soldierQueue + soldierDef.supply > getSupplyCap('player')) {
     setStatus(`Need more supply before creating ${soldierDef.name}s.`)
     return
   }
@@ -335,9 +349,43 @@ export function queueSoldier(variant: SoldierVariant = 'melee'): void {
     return
   }
 
-  soldierProductionOrders.push({ barracksId: barracks.id, timer: 0, productionTime: soldierDef.productionTime, team: 'player', variant })
+  soldierProductionOrders.push({ barracksId: trainer.id, timer: 0, productionTime: soldierDef.productionTime, team: 'player', variant })
   gameState.soldierQueue += 1
-  setStatus(`${soldierDef.name} queued at the ${barracksName}.`)
+  setStatus(`${soldierDef.name} queued at the ${trainerName}.`)
+}
+
+/** Starts researching the next level of a team-wide upgrade at the selected forge. */
+export function startUpgradeResearch(kind: 'damage' | 'speed'): void {
+  if (!isMatchActive()) return
+
+  const selected = getSelected()
+  const forge = selected?.kind === 'forge' ? (selected as Building) : undefined
+  const forgeName = getBuildingDisplayName('forge', 'player')
+  const info = UPGRADE_INFO[kind]
+
+  if (!forge?.alive || !forge.isComplete || getTeam(forge) !== 'player') {
+    setStatus(`Select a completed ${forgeName} to research upgrades.`)
+    return
+  }
+
+  if (isUpgradeInProgress('player', kind)) {
+    setStatus(`${info.name} research is already in progress.`)
+    return
+  }
+
+  const cost = getNextUpgradeCost('player', kind)
+  if (!cost) {
+    setStatus(`${info.name} is already at maximum level.`)
+    return
+  }
+
+  if (!spendResources('player', cost)) {
+    setStatus(`Need ${formatCost(cost)} to research ${info.name} level ${getUpgradeLevel('player', kind) + 1}.`)
+    return
+  }
+
+  startUpgradeResearchOrder('player', kind, forge.id)
+  setStatus(`Researching ${info.name} level ${getUpgradeLevel('player', kind) + 1} (${info.effect}).`)
 }
 
 export function selectAllLikeSelected(): void {
@@ -519,6 +567,7 @@ export function resetRtsGame(): void {
 
   resetWorld()
   resetEnemyAiTimers()
+  resetUpgrades()
   clearSelectionMarkers()
   resetFogOfWar()
 
@@ -778,8 +827,7 @@ function createSoldier(position: Vector3, team: Team = 'player', variant: Soldie
     `${team === 'enemy' ? 'Enemy ' : ''}${definition.name} ${getTeamSoldierCount(team) + 1}`,
     position,
     team,
-    // Generous click box: units are small targets from the overhead camera.
-    Vector3.create(1.4, 2, 1.4),
+    getSoldierColliderScale(variant),
     variant
   ) as Soldier
 
@@ -789,10 +837,19 @@ function createSoldier(position: Vector3, team: Team = 'player', variant: Soldie
   soldier.damage = definition.damage ?? CONFIG.soldierDamage
   soldier.moveSpeed = definition.moveSpeed ?? CONFIG.soldierMoveSpeed
   soldier.attackRange = definition.attackRange ?? CONFIG.soldierAttackRange
+  soldier.attackRate = definition.attackRate ?? CONFIG.soldierAttackRate
+  soldier.splashRadius = definition.splashRadius ?? 0
   soldier.state = 'idle'
   soldier.attackTimer = 0
   soldier.activeAnimation = 'idle'
   return soldier
+}
+
+/** Generous click boxes sized to each silhouette: flyers hover high, titans are huge. */
+function getSoldierColliderScale(variant: SoldierVariant): Vector3 {
+  if (variant === 'titan') return Vector3.create(2.4, 3.2, 2.4)
+  if (variant === 'flyer') return Vector3.create(1.8, 3.2, 1.8)
+  return Vector3.create(1.4, 2, 1.4)
 }
 
 /** Units are procedurally built per race (no GLBs), so this replaces createSelectableModel for them. */
@@ -908,6 +965,8 @@ const BEACON_HEIGHTS: Record<BuildableKind, number> = {
   temple: 13.5,
   supplyHouse: 5.5,
   barracks: 7.5,
+  techLab: 8.5,
+  forge: 6.5,
   fireplace: 3.5
 }
 
@@ -1370,6 +1429,18 @@ const combatSystemDeps = {
   setStatus
 }
 
+const upgradeSystemDeps = {
+  isForgeAlive: (forgeId: string) => {
+    const forge = getBuildingById(forgeId)
+    return !!forge?.alive && forge.isComplete
+  },
+  onUpgradeComplete: (team: Team, kind: 'damage' | 'speed', newLevel: number) => {
+    if (team === 'player') {
+      setStatus(`${UPGRADE_INFO[kind].name} level ${newLevel} research complete (${UPGRADE_INFO[kind].effect}).`)
+    }
+  }
+}
+
 const dragSelectDeps = {
   isBlocked: () =>
     placementState.state === 'placing' ||
@@ -1496,6 +1567,7 @@ function rtsTickSystem(dt: number): void {
   updateSelectionMarkers(getSelectionMarkerTargets())
   updateWorkerProductionSystem(dt, productionDeps)
   updateSoldierProductionSystem(dt, productionDeps)
+  updateUpgradeResearch(dt, upgradeSystemDeps)
   updateEnemyAiSystem(dt, enemyAiDeps)
   updateWorkersSystem(dt, workerSystemDeps)
   updateWorkerCargoVisuals()
@@ -1801,11 +1873,48 @@ function completeConstruction(site: Building, builder: Worker): void {
 }
 
 function damageCombatTarget(target: Building | Soldier | Worker, amount: number, attacker: Soldier | Worker): void {
-  // Ranged attackers fire a visible tracer toward whatever they hit.
-  if (attacker.kind === 'soldier' && attacker.variant === 'ranged' && attacker.alive && target.alive) {
-    fireProjectile(Transform.get(attacker.entity).position, Transform.get(target.entity).position, getTeam(attacker))
+  const attackerTeam = getTeam(attacker)
+  const targetPosition = cloneVector(Transform.get(target.entity).position)
+  // Weapon upgrades scale every fighter's damage team-wide the moment research lands.
+  const damage = attacker.kind === 'soldier' ? Math.round(amount * getDamageMultiplier(attackerTeam)) : amount
+
+  if (attacker.kind === 'soldier' && attacker.alive && target.alive) {
+    const accent = getRace(attackerTeam).accent
+    const isRangedShot = attacker.variant === 'ranged' || attacker.variant === 'caster' || attacker.variant === 'flyer'
+
+    if (isRangedShot) {
+      // Visible tracer plus a flash where the shot lands.
+      fireProjectile(Transform.get(attacker.entity).position, targetPosition, attackerTeam)
+      spawnImpactFlash(targetPosition, accent)
+    }
+    if (attacker.splashRadius > 0) {
+      // Caster blasts and titan stomps ripple outward.
+      spawnBlastRing(targetPosition, accent, attacker.splashRadius)
+    }
   }
 
+  applyCombatDamage(target, damage, attacker)
+
+  // Area damage: splash hits every enemy unit near the impact at reduced power.
+  if (attacker.kind === 'soldier' && attacker.splashRadius > 0) {
+    const splashDamage = Math.max(1, Math.round(damage * 0.6))
+
+    for (const soldier of soldiers) {
+      if (!soldier.alive || soldier.id === target.id || getTeam(soldier) === attackerTeam) continue
+      if (distanceToPoint(Transform.get(soldier.entity).position, targetPosition) <= attacker.splashRadius) {
+        damageSoldier(soldier, splashDamage, attacker)
+      }
+    }
+    for (const worker of workers) {
+      if (!worker.alive || worker.id === target.id || getTeam(worker) === attackerTeam) continue
+      if (distanceToPoint(Transform.get(worker.entity).position, targetPosition) <= attacker.splashRadius) {
+        damageWorker(worker, splashDamage, attacker)
+      }
+    }
+  }
+}
+
+function applyCombatDamage(target: Building | Soldier | Worker, amount: number, attacker: Soldier | Worker): void {
   if (target.kind === 'soldier') {
     damageSoldier(target, amount, attacker)
     return
@@ -1984,7 +2093,7 @@ function updateConstructionVisual(site: Building): void {
 }
 
 function isBuildableKind(kind: Building['kind']): kind is BuildableKind {
-  return kind === 'temple' || kind === 'supplyHouse' || kind === 'barracks' || kind === 'fireplace'
+  return kind === 'temple' || kind === 'supplyHouse' || kind === 'barracks' || kind === 'techLab' || kind === 'forge' || kind === 'fireplace'
 }
 
 function isCancellableConstruction(selectable: Selectable | undefined): selectable is Building & { kind: BuildableKind } {
@@ -2069,7 +2178,7 @@ function getSelectedRallyPoint(): Vector3 | undefined {
   const selected = getSelected()
 
   if (selected?.kind === 'supplyHouse') return homesteadRallyPoints.get(selected.id)
-  if (selected?.kind === 'barracks') return barracksRallyPoints.get(selected.id)
+  if (selected?.kind === 'barracks' || selected?.kind === 'techLab') return barracksRallyPoints.get(selected.id)
   return undefined
 }
 
@@ -2099,6 +2208,17 @@ function getBuildingDetail(building: Building): string {
     const race = getRace(getTeam(building))
     const soldierNames = `${race.melee.name}s and ${race.ranged.name}s`
     return rallyPoint ? `Complete: creates ${soldierNames}. Spawn ${formatPosition(rallyPoint)}.` : `Complete: creates ${soldierNames}`
+  }
+  if (building.kind === 'techLab') {
+    const rallyPoint = barracksRallyPoints.get(building.id)
+    const race = getRace(getTeam(building))
+    const advancedNames = `${race.caster.name}s, ${race.flyer.name}s and ${race.titan.name}s`
+    return rallyPoint ? `Complete: creates ${advancedNames}. Spawn ${formatPosition(rallyPoint)}.` : `Complete: creates ${advancedNames}`
+  }
+  if (building.kind === 'forge') {
+    const damageLevel = getUpgradeLevel(getTeam(building), 'damage')
+    const speedLevel = getUpgradeLevel(getTeam(building), 'speed')
+    return `Complete: researches upgrades. Weapons Lv${damageLevel}, Propulsion Lv${speedLevel}.`
   }
   if (building.kind === 'fireplace') return 'Complete: camp utility building.'
   if (building.kind === 'enemyBuilding') return 'Enemy structure'
@@ -2476,5 +2596,29 @@ function removeSelectableInteractivity(selectable: Selectable): void {
   }
   GltfContainer.deleteFrom(selectable.entity)
   MeshRenderer.deleteFrom(selectable.entity)
+}
+
+// Test hook: the headless harness (scripts/headless-test.js) sets __RTS_TEST__
+// before main() runs so simulations can spawn units and inspect state directly.
+// Never set in the real client, so this stays inert in production.
+if ((globalThis as unknown as { __RTS_TEST__?: boolean }).__RTS_TEST__) {
+  ;(globalThis as unknown as Record<string, unknown>).__rtsTest = {
+    gameState,
+    buildings,
+    soldiers,
+    workers,
+    selectables,
+    createSoldier,
+    createWorker,
+    createBuilding,
+    assignSoldierToAttack,
+    damageCombatTarget,
+    getUpgradeLevel,
+    startUpgradeResearchOrder,
+    startRtsMatch,
+    queueSoldier,
+    startUpgradeResearch,
+    setStatus
+  }
 }
 

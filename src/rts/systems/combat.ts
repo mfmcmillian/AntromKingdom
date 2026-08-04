@@ -1,7 +1,7 @@
 import { Transform } from '@dcl/sdk/ecs'
 import { Quaternion } from '@dcl/sdk/math'
-import { CONFIG } from '../config'
 import { distanceToPoint, distanceToPosition, moveTowardPosition } from '../math'
+import { getSpeedMultiplier } from '../upgrades'
 import type { Building, Soldier, Worker } from '../types'
 import { buildings, getTeam, soldiers, workers } from '../world'
 
@@ -72,7 +72,7 @@ function updateMovingToAttack(soldier: Soldier, target: CombatTarget, dt: number
       startAttacking(soldier, deps)
       faceTarget(soldier, targetPosition)
     } else {
-      moveTowardPosition(soldier.entity, targetPosition, soldier.moveSpeed, dt)
+      moveTowardPosition(soldier.entity, targetPosition, getUpgradedMoveSpeed(soldier), dt)
       deps.setSoldierAnimation(soldier, 'walk')
     }
     return
@@ -80,7 +80,7 @@ function updateMovingToAttack(soldier: Soldier, target: CombatTarget, dt: number
 
   const attackPosition = soldier.attackPosition ?? deps.getSoldierAttackPosition(target, 0, soldier)
   soldier.attackPosition = attackPosition
-  moveTowardPosition(soldier.entity, attackPosition, soldier.moveSpeed, dt)
+  moveTowardPosition(soldier.entity, attackPosition, getUpgradedMoveSpeed(soldier), dt)
   deps.setSoldierAnimation(soldier, 'walk')
   if (distanceToPosition(soldier.entity, attackPosition) <= 0.25) {
     startAttacking(soldier, deps)
@@ -101,11 +101,16 @@ function updateAttacking(soldier: Soldier, target: CombatTarget, dt: number, dep
   }
 
   soldier.attackTimer += dt
-  if (soldier.attackTimer >= CONFIG.soldierAttackRate) {
+  if (soldier.attackTimer >= soldier.attackRate) {
     soldier.attackTimer = 0
     deps.setSoldierAnimation(soldier, 'attack', true)
     deps.damageCombatTarget(target, soldier.damage, soldier)
   }
+}
+
+/** Propulsion research speeds up every fighter on the team. */
+function getUpgradedMoveSpeed(soldier: Soldier): number {
+  return soldier.moveSpeed * getSpeedMultiplier(getTeam(soldier))
 }
 
 function startAttacking(soldier: Soldier, deps: CombatSystemDeps): void {
@@ -135,7 +140,7 @@ function updateSoldierRallyMovement(soldier: Soldier, dt: number, deps: CombatSy
     return
   }
 
-  moveTowardPosition(soldier.entity, soldier.rallyPoint, soldier.moveSpeed, dt)
+  moveTowardPosition(soldier.entity, soldier.rallyPoint, getUpgradedMoveSpeed(soldier), dt)
   if (distanceToPosition(soldier.entity, soldier.rallyPoint) <= 0.35) {
     soldier.state = 'idle'
     soldier.rallyPoint = undefined

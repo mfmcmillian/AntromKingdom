@@ -2,9 +2,9 @@ import { Color4 } from '@dcl/sdk/math'
 import { gameState } from './state'
 import type { BuildableKind, RaceId, RaceUnitStats, ResourceCost, SoldierVariant, Team } from './types'
 
-// The three playable races. Buildings share models for now (names + beacon color
-// differ per race); units are fully distinct procedural models with their own stats.
-// Every race fields a melee bruiser and a long-range attacker.
+// The three playable races. Units and buildings are fully distinct procedural
+// models with their own stats. Every race fields six unit roles:
+//   worker / melee / ranged / caster (AoE splash) / flyer (fast hoverer) / titan (giant).
 //
 // Balance identity:
 //   human - baseline all-rounder.
@@ -22,6 +22,9 @@ export type RaceDefinition = {
   worker: RaceUnitStats
   melee: RaceUnitStats
   ranged: RaceUnitStats
+  caster: RaceUnitStats
+  flyer: RaceUnitStats
+  titan: RaceUnitStats
   buildingNames: Record<BuildableKind, string>
 }
 
@@ -35,10 +38,15 @@ export const RACES: Record<RaceId, RaceDefinition> = {
     worker: { name: 'Miner', hp: 35, cost: { minerals: 50 }, productionTime: 2, supply: 1 },
     melee: { name: 'Vanguard', hp: 100, damage: 11, moveSpeed: 3, attackRange: MELEE_RANGE, cost: { minerals: 100 }, productionTime: 2, supply: 1 },
     ranged: { name: 'Gunner', hp: 70, damage: 9, moveSpeed: 2.9, attackRange: 6, cost: { minerals: 80, gas: 25 }, productionTime: 2.2, supply: 1 },
+    caster: { name: 'Stormcaller', hp: 60, damage: 14, moveSpeed: 2.7, attackRange: 7, attackRate: 1.7, splashRadius: 2.8, cost: { minerals: 100, gas: 100 }, productionTime: 3.5, supply: 2 },
+    flyer: { name: 'Raptor Gunship', hp: 90, damage: 12, moveSpeed: 4.2, attackRange: 6.5, attackRate: 0.9, cost: { minerals: 120, gas: 80 }, productionTime: 3.5, supply: 2 },
+    titan: { name: 'Colossus', hp: 380, damage: 40, moveSpeed: 2.2, attackRange: 2.8, attackRate: 1.7, splashRadius: 2.2, cost: { minerals: 300, gas: 200 }, productionTime: 8, supply: 4 },
     buildingNames: {
       temple: 'Command Post',
       supplyHouse: 'Habitat',
       barracks: 'Armory',
+      techLab: 'Starforge',
+      forge: 'Engineering Bay',
       fireplace: 'Beacon'
     }
   },
@@ -51,10 +59,15 @@ export const RACES: Record<RaceId, RaceDefinition> = {
     worker: { name: 'Probe', hp: 30, cost: { minerals: 50 }, productionTime: 2.5, supply: 1 },
     melee: { name: 'Stalker', hp: 125, damage: 16, moveSpeed: 2.8, attackRange: MELEE_RANGE, cost: { minerals: 125, gas: 50 }, productionTime: 3, supply: 1 },
     ranged: { name: 'Disruptor', hp: 85, damage: 13, moveSpeed: 2.7, attackRange: 7, cost: { minerals: 100, gas: 75 }, productionTime: 3.2, supply: 1 },
+    caster: { name: 'Oracle', hp: 70, damage: 18, moveSpeed: 2.6, attackRange: 8, attackRate: 1.9, splashRadius: 3.2, cost: { minerals: 125, gas: 125 }, productionTime: 4, supply: 2 },
+    flyer: { name: 'Tempest', hp: 110, damage: 15, moveSpeed: 3.9, attackRange: 7, attackRate: 1.1, cost: { minerals: 150, gas: 100 }, productionTime: 4, supply: 2 },
+    titan: { name: 'Avatar', hp: 450, damage: 50, moveSpeed: 2, attackRange: 3, attackRate: 1.9, splashRadius: 2.4, cost: { minerals: 350, gas: 250 }, productionTime: 9, supply: 4 },
     buildingNames: {
       temple: 'Nexus',
       supplyHouse: 'Pylon',
       barracks: 'Warp Gate',
+      techLab: 'Sanctum',
+      forge: 'Ascension Spire',
       fireplace: 'Obelisk'
     }
   },
@@ -67,10 +80,15 @@ export const RACES: Record<RaceId, RaceDefinition> = {
     worker: { name: 'Drone', hp: 40, cost: { minerals: 50 }, productionTime: 1.5, supply: 1 },
     melee: { name: 'Ravager', hp: 55, damage: 7, moveSpeed: 3.6, attackRange: MELEE_RANGE, cost: { minerals: 60, gas: 10 }, productionTime: 1.2, supply: 1 },
     ranged: { name: 'Spitter', hp: 45, damage: 6, moveSpeed: 3.2, attackRange: 5.5, cost: { minerals: 50, gas: 25 }, productionTime: 1.4, supply: 1 },
+    caster: { name: 'Plague Weaver', hp: 50, damage: 10, moveSpeed: 3, attackRange: 6, attackRate: 1.5, splashRadius: 2.6, cost: { minerals: 80, gas: 60 }, productionTime: 2.5, supply: 2 },
+    flyer: { name: 'Shrieker', hp: 70, damage: 9, moveSpeed: 4.5, attackRange: 5.5, attackRate: 0.8, cost: { minerals: 90, gas: 50 }, productionTime: 2.2, supply: 2 },
+    titan: { name: 'Behemoth', hp: 320, damage: 30, moveSpeed: 2.6, attackRange: 2.6, attackRate: 1.5, splashRadius: 2, cost: { minerals: 250, gas: 150 }, productionTime: 6, supply: 4 },
     buildingNames: {
       temple: 'Hive',
       supplyHouse: 'Growth Pod',
       barracks: 'Spawning Pit',
+      techLab: 'Grand Nest',
+      forge: 'Evolution Chamber',
       fireplace: 'Spore Mound'
     }
   }
@@ -87,8 +105,16 @@ export function getWorkerDefinition(team: Team): RaceUnitStats {
 }
 
 export function getSoldierDefinition(team: Team, variant: SoldierVariant): RaceUnitStats {
-  return variant === 'ranged' ? getRace(team).ranged : getRace(team).melee
+  const race = getRace(team)
+  if (variant === 'ranged') return race.ranged
+  if (variant === 'caster') return race.caster
+  if (variant === 'flyer') return race.flyer
+  if (variant === 'titan') return race.titan
+  return race.melee
 }
+
+/** Variants trained at the advanced structure instead of the barracks. */
+export const ADVANCED_VARIANTS: SoldierVariant[] = ['caster', 'flyer', 'titan']
 
 export function getBuildingDisplayName(kind: BuildableKind, team: Team): string {
   return getRace(team).buildingNames[kind]

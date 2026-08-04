@@ -4,7 +4,7 @@ import type { Color4, Vector3 } from '@dcl/sdk/math'
 export type ResourceKind = 'minerals' | 'gas'
 export type Team = 'player' | 'enemy'
 export type RaceId = 'human' | 'alien' | 'bio'
-export type SelectableKind = 'temple' | 'worker' | 'resource' | 'supplyHouse' | 'barracks' | 'fireplace' | 'soldier' | 'enemyBuilding'
+export type SelectableKind = 'temple' | 'worker' | 'resource' | 'supplyHouse' | 'barracks' | 'techLab' | 'forge' | 'fireplace' | 'soldier' | 'enemyBuilding'
 export type WorkerState =
   | 'idle'
   | 'movingToResource'
@@ -19,8 +19,9 @@ export type WorkerState =
   | 'attacking'
   | 'dead'
 export type SoldierState = 'idle' | 'movingToAttack' | 'attacking' | 'movingToRally' | 'dead'
-export type SoldierVariant = 'melee' | 'ranged'
-export type BuildableKind = 'temple' | 'supplyHouse' | 'barracks' | 'fireplace'
+export type SoldierVariant = 'melee' | 'ranged' | 'caster' | 'flyer' | 'titan'
+export type BuildableKind = 'temple' | 'supplyHouse' | 'barracks' | 'techLab' | 'forge' | 'fireplace'
+export type UpgradeKind = 'damage' | 'speed'
 export type ConstructionState = 'none' | 'placing' | 'movingBuilder' | 'building' | 'paused' | 'complete'
 
 export type BoxConfig = {
@@ -85,6 +86,9 @@ export type Soldier = Selectable & {
   damage: number
   moveSpeed: number
   attackRange: number
+  attackRate: number
+  /** Radius of area damage around the primary target; 0 = single-target. */
+  splashRadius: number
   state: SoldierState
   targetId?: string
   attackPosition?: Vector3
@@ -146,6 +150,16 @@ export type RaceUnitStats = {
   damage?: number
   moveSpeed?: number
   attackRange?: number
+  attackRate?: number
+  splashRadius?: number
+}
+
+export type UpgradeResearch = {
+  team: Team
+  kind: UpgradeKind
+  forgeId: string
+  timer: number
+  researchTime: number
 }
 
 export type ResourceDefinition = {

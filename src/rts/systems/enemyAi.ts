@@ -5,7 +5,8 @@ import { canQueueUnit, getResourceAmount, getSupplyCap, getSupplyUsed, hasResour
 import { distanceToPoint } from '../math'
 import { getSoldierDefinition, getWorkerDefinition } from '../races'
 import { gameState } from '../state'
-import type { BuildableKind, Building, ResourceKind, ResourceNode, Soldier, SoldierVariant, Worker } from '../types'
+import { getNextUpgradeCost, getUpgradeLevel, isUpgradeInProgress, startUpgradeResearchOrder } from '../upgrades'
+import type { BuildableKind, Building, ResourceKind, ResourceNode, Soldier, SoldierVariant, UpgradeKind, Worker } from '../types'
 import {
   getAvailableWorkersForTeam,
   getCompletedTeamBuildings,
@@ -55,6 +56,7 @@ export function updateEnemyAi(dt: number, deps: EnemyAiDeps): void {
   assignIdleEnemyWorkers(deps)
   runEnemyBuildOrder(deps)
   queueEnemyProduction()
+  queueEnemyResearch()
 }
 
 function assignIdleEnemyWorkers(deps: EnemyAiDeps): void {
@@ -85,15 +87,29 @@ function runEnemyBuildOrder(deps: EnemyAiDeps): void {
     return
   }
 
+  // Tech up once the basic army is rolling: advanced structure first, then the forge.
+  if (enemyWorkers >= 8 && enemyBarracks.length > 0 && getTeamBuildings('enemy', 'techLab').length === 0) {
+    tryStartEnemyConstruction('techLab', deps)
+    return
+  }
+
+  if (getCompletedTeamBuildings('enemy', 'techLab').length > 0 && getTeamBuildings('enemy', 'forge').length === 0) {
+    tryStartEnemyConstruction('forge', deps)
+    return
+  }
+
   if (enemyWorkers >= 8 && enemyGuards >= CONFIG.enemyAiDefenderCount && enemyTemples.length < 3) {
     tryStartEnemyConstruction('temple', deps)
     return
   }
 
-  if (getSupplyCap('enemy') - getSupplyUsed('enemy') <= 2 && enemyHomesteads.length < 4) {
+  if (getSupplyCap('enemy') - getSupplyUsed('enemy') <= 2 && enemyHomesteads.length < ENEMY_MAX_HOMESTEADS) {
     tryStartEnemyConstruction('supplyHouse', deps)
   }
 }
+
+// Advanced units cost 2-4 supply each, so the AI needs a bigger supply farm than before.
+const ENEMY_MAX_HOMESTEADS = 7
 
 function queueEnemyProduction(): void {
   const enemyWorkers = getTeamWorkerCount('enemy') + gameState.enemyWorkerQueue
@@ -108,6 +124,9 @@ function queueEnemyProduction(): void {
     gameState.enemyWorkerQueue += 1
   }
 
+  // Advanced units first: they cost supply the basic army would otherwise hog.
+  queueEnemyAdvancedProduction()
+
   if (enemyBarracks && enemyGuards < CONFIG.enemyAiTargetGuards) {
     // Roughly one ranged unit for every two melee; fall back to melee if gas is short.
     let variant: SoldierVariant = enemyGuards % 3 === 2 ? 'ranged' : 'melee'
@@ -121,6 +140,45 @@ function queueEnemyProduction(): void {
       soldierProductionOrders.push({ barracksId: enemyBarracks.id, timer: 0, productionTime: soldierDef.productionTime, team: 'enemy', variant })
       gameState.enemySoldierQueue += 1
     }
+  }
+}
+
+/** With the advanced structure up, the AI folds casters, flyers and the occasional titan into its army. */
+function queueEnemyAdvancedProduction(): void {
+  const techLab = getCompletedTeamBuildings('enemy', 'techLab')[0]
+  if (!techLab) return
+
+  const advancedCount = soldiers.filter(
+    (soldier) => soldier.alive && getTeam(soldier) === 'enemy' && (soldier.variant === 'caster' || soldier.variant === 'flyer' || soldier.variant === 'titan')
+  ).length
+  if (advancedCount >= 8) return
+
+  // Every fourth advanced unit is a titan; the rest alternate caster / flyer.
+  const variant: SoldierVariant = advancedCount % 4 === 3 ? 'titan' : advancedCount % 2 === 0 ? 'caster' : 'flyer'
+  const soldierDef = getSoldierDefinition('enemy', variant)
+
+  if (!canQueueUnit('enemy', soldierDef.supply) || !hasResources('enemy', soldierDef.cost)) return
+  if (!spendResources('enemy', soldierDef.cost)) return
+
+  soldierProductionOrders.push({ barracksId: techLab.id, timer: 0, productionTime: soldierDef.productionTime, team: 'enemy', variant })
+  gameState.enemySoldierQueue += 1
+}
+
+/** Researches upgrades when the bank is healthy, keeping unit production the priority. */
+function queueEnemyResearch(): void {
+  const forge = getCompletedTeamBuildings('enemy', 'forge')[0]
+  if (!forge) return
+  if (isUpgradeInProgress('enemy', 'damage') || isUpgradeInProgress('enemy', 'speed')) return
+
+  const kind: UpgradeKind = getUpgradeLevel('enemy', 'damage') <= getUpgradeLevel('enemy', 'speed') ? 'damage' : 'speed'
+  const cost = getNextUpgradeCost('enemy', kind)
+  if (!cost) return
+
+  if (getResourceAmount('enemy', 'minerals') < (cost.minerals ?? 0) + 200) return
+  if (getResourceAmount('enemy', 'gas') < (cost.gas ?? 0) + 50) return
+
+  if (spendResources('enemy', cost)) {
+    startUpgradeResearchOrder('enemy', kind, forge.id)
   }
 }
 
@@ -164,7 +222,7 @@ function sendEnemyAttackWave(deps: EnemyAiDeps): void {
 
 function shouldBuildEnemyHomestead(completedHomesteadCount: number): boolean {
   if (completedHomesteadCount === 0) return true
-  return getSupplyCap('enemy') - getSupplyUsed('enemy') <= 2 && completedHomesteadCount < 4
+  return getSupplyCap('enemy') - getSupplyUsed('enemy') <= 2 && completedHomesteadCount < ENEMY_MAX_HOMESTEADS
 }
 
 function getEnemyBuilder(): Worker | undefined {
@@ -178,6 +236,8 @@ function getEnemyWorkerResourcePriority(): ResourceKind {
   }
 
   if (assigned.minerals < 3) return 'minerals'
+  // Advanced units and research are gas-hungry, so keep two harvesters on gas.
+  if (assigned.gas < 2 && getTeamWorkerCount('enemy') >= 6) return 'gas'
   if (assigned.gas < 1) return 'gas'
   if (getResourceAmount('enemy', 'gas') < (getSoldierDefinition('enemy', 'ranged').cost.gas ?? 0) * 2) return 'gas'
   return 'minerals'
@@ -237,10 +297,30 @@ function getEnemyBuildOffsets(kind: BuildableKind): Vector3[] {
     ]
   }
 
+  if (kind === 'techLab') {
+    return [
+      Vector3.create(14, 0, -8),
+      Vector3.create(-8, 0, -14),
+      Vector3.create(18, 0, 4)
+    ]
+  }
+
+  if (kind === 'forge') {
+    return [
+      Vector3.create(8, 0, -14),
+      Vector3.create(-12, 0, -12),
+      Vector3.create(16, 0, 12)
+    ]
+  }
+
   return [
     Vector3.create(-10, 0, 0),
     Vector3.create(10, 0, 0),
     Vector3.create(0, 0, -10),
-    Vector3.create(0, 0, 10)
+    Vector3.create(0, 0, 10),
+    Vector3.create(-10, 0, 18),
+    Vector3.create(10, 0, 18),
+    Vector3.create(-22, 0, 6),
+    Vector3.create(22, 0, -6)
   ]
 }

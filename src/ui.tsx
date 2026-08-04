@@ -16,14 +16,16 @@ import {
   setBarracksSpawnPoint,
   setWorkerSpawnPoint,
   startRtsMatch,
+  startUpgradeResearch,
   startWorkerBuildingPlacement
 } from './rtsGame'
 import { getDragScreenRect } from './rts/dragSelect'
 import { minimapPanel } from './rts/minimap'
 import { BUILDING_DEFINITIONS } from './rts/config'
 import { RACES, RACE_IDS, formatRaceCost, getBuildingDisplayName, getRace, getSoldierDefinition, getWorkerDefinition } from './rts/races'
+import { UPGRADE_INFO, UPGRADE_MAX_LEVEL, getNextUpgradeCost, getUpgradeLevel, isUpgradeInProgress } from './rts/upgrades'
 import { isTopDownViewActive, toggleTopDownView } from './rts/topDownCamera'
-import type { RaceId } from './rts/types'
+import type { RaceId, UpgradeKind } from './rts/types'
 
 const UI = {
   panel: Color4.create(0.04, 0.05, 0.08, 0.92),
@@ -116,11 +118,18 @@ export const uiMenu = () => {
           {isPlayerSelection && selected.kind === 'worker' ? actionButton(`Build ${getBuildingDisplayName('temple', 'player')}`, formatRaceCost(BUILDING_DEFINITIONS.temple.cost), () => startWorkerBuildingPlacement('temple'), UI.accent) : null}
           {isPlayerSelection && selected.kind === 'worker' ? actionButton(`Build ${getBuildingDisplayName('supplyHouse', 'player')}`, formatRaceCost(BUILDING_DEFINITIONS.supplyHouse.cost), () => startWorkerBuildingPlacement('supplyHouse'), UI.gold) : null}
           {isPlayerSelection && selected.kind === 'worker' ? actionButton(`Build ${getBuildingDisplayName('barracks', 'player')}`, formatRaceCost(BUILDING_DEFINITIONS.barracks.cost), () => startWorkerBuildingPlacement('barracks'), UI.green) : null}
+          {isPlayerSelection && selected.kind === 'worker' ? actionButton(`Build ${getBuildingDisplayName('techLab', 'player')}`, formatRaceCost(BUILDING_DEFINITIONS.techLab.cost), () => startWorkerBuildingPlacement('techLab'), UI.accent) : null}
+          {isPlayerSelection && selected.kind === 'worker' ? actionButton(`Build ${getBuildingDisplayName('forge', 'player')}`, formatRaceCost(BUILDING_DEFINITIONS.forge.cost), () => startWorkerBuildingPlacement('forge'), UI.gold) : null}
           {isPlayerSelection && selected.kind === 'worker' ? actionButton(`Build ${getBuildingDisplayName('fireplace', 'player')}`, formatRaceCost(BUILDING_DEFINITIONS.fireplace.cost), () => startWorkerBuildingPlacement('fireplace'), UI.red) : null}
           {isPlayerSelection && selected.kind === 'worker' ? actionButton('Select All', `${getWorkerDefinition('player').name.toLowerCase()}s`, selectAllLikeSelected, UI.card) : null}
           {isPlayerSelection && selected.kind === 'barracks' ? actionButton(`Create ${getSoldierDefinition('player', 'melee').name}`, formatRaceCost(getSoldierDefinition('player', 'melee').cost), () => queueSoldier('melee'), UI.green) : null}
           {isPlayerSelection && selected.kind === 'barracks' ? actionButton(`Create ${getSoldierDefinition('player', 'ranged').name}`, formatRaceCost(getSoldierDefinition('player', 'ranged').cost), () => queueSoldier('ranged'), UI.accent) : null}
-          {isPlayerSelection && selected.kind === 'barracks' ? actionButton('Set Spawn', 'current position', setBarracksSpawnPoint, UI.card) : null}
+          {isPlayerSelection && selected.kind === 'techLab' ? actionButton(`Create ${getSoldierDefinition('player', 'caster').name}`, formatRaceCost(getSoldierDefinition('player', 'caster').cost), () => queueSoldier('caster'), UI.accent) : null}
+          {isPlayerSelection && selected.kind === 'techLab' ? actionButton(`Create ${getSoldierDefinition('player', 'flyer').name}`, formatRaceCost(getSoldierDefinition('player', 'flyer').cost), () => queueSoldier('flyer'), UI.green) : null}
+          {isPlayerSelection && selected.kind === 'techLab' ? actionButton(`Create ${getSoldierDefinition('player', 'titan').name}`, formatRaceCost(getSoldierDefinition('player', 'titan').cost), () => queueSoldier('titan'), UI.gold) : null}
+          {isPlayerSelection && selected.kind === 'forge' ? upgradeButton('damage') : null}
+          {isPlayerSelection && selected.kind === 'forge' ? upgradeButton('speed') : null}
+          {isPlayerSelection && (selected.kind === 'barracks' || selected.kind === 'techLab') ? actionButton('Set Spawn', 'current position', setBarracksSpawnPoint, UI.card) : null}
           {showCancelBuild ? actionButton('Cancel Build', 'refund unbuilt cost', cancelSelectedConstruction, UI.red) : null}
           {isPlayerSelection && selected.kind === 'soldier' ? actionButton('Select All', 'fighters', selectAllLikeSelected, UI.card) : null}
           {selected.kind !== 'temple' && selected.kind !== 'worker' ? infoCard(getContextHint(selected.kind)) : null}
@@ -525,6 +534,8 @@ function getCommandTitle(kind: string): string {
   if (kind === 'resource') return 'RESOURCE'
   if (kind === 'supplyHouse') return 'HOMESTEAD'
   if (kind === 'barracks') return 'BARRACKS'
+  if (kind === 'techLab') return 'ADVANCED STRUCTURE'
+  if (kind === 'forge') return 'UPGRADES'
   if (kind === 'fireplace') return 'FIREPLACE'
   if (kind === 'soldier') return 'FIGHTER'
   if (kind === 'enemyBuilding') return 'ENEMY'
@@ -541,6 +552,8 @@ function getContextHint(kind: string): string {
   if (kind === 'worker') return 'Click a resource to gather, a damaged building to repair, an enemy to attack (weak), or ground to move.'
   if (kind === 'supplyHouse') return `${supplyName}s create ${workerName}s and increase your unit cap.`
   if (kind === 'barracks') return `Create ${race.melee.name}s (melee) and ${race.ranged.name}s (ranged) here.`
+  if (kind === 'techLab') return `Create ${race.caster.name}s (AoE), ${race.flyer.name}s (fast flyer), and ${race.titan.name}s (giant) here.`
+  if (kind === 'forge') return 'Research Weapons (+damage) and Propulsion (+speed) for all your fighters.'
   if (kind === 'fireplace') return 'A camp utility building.'
   if (kind === 'soldier') return 'Click an enemy to attack, or click ground to move.'
   if (kind === 'enemyBuilding') return 'Select a fighter, then click this building to attack.'
@@ -556,6 +569,18 @@ function infoCard(text: string) {
       <Label value={text} fontSize={12} color={UI.dim} textAlign="middle-center" />
     </UiEntity>
   )
+}
+
+function upgradeButton(kind: UpgradeKind) {
+  const info = UPGRADE_INFO[kind]
+  const level = getUpgradeLevel('player', kind)
+  const inProgress = isUpgradeInProgress('player', kind)
+  const cost = getNextUpgradeCost('player', kind)
+
+  if (!cost) return actionButton(`${info.name} MAX`, `level ${UPGRADE_MAX_LEVEL} reached`, () => {}, UI.card)
+  if (inProgress) return actionButton(`${info.name}...`, 'researching', () => {}, UI.card)
+
+  return actionButton(`${info.name} Lv${level + 1}`, formatRaceCost(cost), () => startUpgradeResearch(kind), kind === 'damage' ? UI.red : UI.accent)
 }
 
 function actionButton(label: string, subLabel: string, onClick: () => void, color: Color4) {

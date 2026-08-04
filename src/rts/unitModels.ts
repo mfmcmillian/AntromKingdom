@@ -7,7 +7,7 @@ import { RaceId, ResourceKind, Team } from './types'
 // per-state motion (hover bob, tilt, spinners, attack lunges) to mirror the
 // animation clips the game logic requests (idle / walk / talk / attack / impact).
 
-export type UnitRole = 'worker' | 'melee' | 'ranged'
+export type UnitRole = 'worker' | 'melee' | 'ranged' | 'caster' | 'flyer' | 'titan'
 
 type UnitAnimState = 'idle' | 'walk' | 'talk' | 'attack' | 'impact'
 
@@ -23,6 +23,8 @@ interface UnitRig {
   bodyRoot: Entity
   spinner?: Entity
   spinAxis: 'y' | 'z'
+  /** Constant hover offset for flyers; the bob animation rides on top of it. */
+  baseHeight: number
   mineralCargo: Entity[]
   gasCargo: Entity[]
   cargoKind?: ResourceKind
@@ -79,6 +81,7 @@ export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team:
   const rig: UnitRig = {
     bodyRoot,
     spinAxis: 'z',
+    baseHeight: 0,
     mineralCargo: [],
     gasCargo: [],
     fogHidden: false,
@@ -117,15 +120,24 @@ export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team:
   if (race === 'human') {
     if (role === 'worker') buildHumanMiner(rig, addPart, glow)
     else if (role === 'melee') buildHumanVanguard(rig, addPart, glow)
-    else buildHumanGunner(rig, addPart, glow)
+    else if (role === 'ranged') buildHumanGunner(rig, addPart, glow)
+    else if (role === 'caster') buildHumanStormcaller(rig, addPart, glow)
+    else if (role === 'flyer') buildHumanRaptor(rig, addPart, glow)
+    else buildHumanColossus(rig, addPart, glow)
   } else if (race === 'alien') {
     if (role === 'worker') buildAlienProbe(rig, addPart, glow)
     else if (role === 'melee') buildAlienStalker(rig, addPart, glow)
-    else buildAlienDisruptor(rig, addPart, glow)
+    else if (role === 'ranged') buildAlienDisruptor(rig, addPart, glow)
+    else if (role === 'caster') buildAlienOracle(rig, addPart, glow)
+    else if (role === 'flyer') buildAlienTempest(rig, addPart, glow)
+    else buildAlienAvatar(rig, addPart, glow)
   } else {
     if (role === 'worker') buildBioDrone(rig, addPart, glow)
     else if (role === 'melee') buildBioRavager(rig, addPart, glow)
-    else buildBioSpitter(rig, addPart, glow)
+    else if (role === 'ranged') buildBioSpitter(rig, addPart, glow)
+    else if (role === 'caster') buildBioPlagueWeaver(rig, addPart, glow)
+    else if (role === 'flyer') buildBioShrieker(rig, addPart, glow)
+    else buildBioBehemoth(rig, addPart, glow)
   }
 
   if (role === 'worker') addWorkerCargo(rig, addPart)
@@ -507,6 +519,457 @@ function buildBioSpitter(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Advanced units: casters (AoE), flyers (hover high), titans (giants).
+
+/** Human caster: coil-backed tesla trooper crackling with an arc sphere between antenna prongs. */
+function buildHumanStormcaller(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  const STORM = Color4.create(0.55, 0.75, 1, 1)
+
+  addPart(Vector3.create(0, 0.16, 0), Vector3.create(0.5, 0.05, 0.5), STORM, { cylinder: true, emissive: STORM, emissiveIntensity: 2 })
+  addPart(Vector3.create(0, 0.34, 0), Vector3.create(0.56, 0.24, 0.56), METAL_DARK, { cylinder: true })
+
+  // Slim armored torso with a capacitor core.
+  addPart(Vector3.create(0, 0.84, 0), Vector3.create(0.5, 0.54, 0.4), HUMAN_HULL)
+  addPart(Vector3.create(0, 0.9, 0.19), Vector3.create(0.16, 0.22, 0.05), STORM, { emissive: STORM, emissiveIntensity: 2.6 })
+
+  // Backpack coil stack.
+  addPart(Vector3.create(0, 0.94, -0.28), Vector3.create(0.3, 0.42, 0.16), METAL_DARK)
+  addPart(Vector3.create(0, 1.2, -0.28), Vector3.create(0.14, 0.14, 0.14), STORM, { sphere: true, emissive: STORM, emissiveIntensity: 2.4 })
+
+  // Hooded helm with a glowing visor slit.
+  addPart(Vector3.create(0, 1.3, 0), Vector3.create(0.3, 0.26, 0.3), METAL_DARK)
+  addPart(Vector3.create(0, 1.32, 0.14), Vector3.create(0.22, 0.06, 0.05), glow, { emissive: glow, emissiveIntensity: 3 })
+
+  // Twin antenna prongs cradling the storm orb overhead - the orb spins when casting.
+  addPart(Vector3.create(-0.12, 1.56, 0), Vector3.create(0.04, 0.3, 0.04), METAL_LIGHT, { rotation: Quaternion.fromEulerDegrees(0, 0, 14) })
+  addPart(Vector3.create(0.12, 1.56, 0), Vector3.create(0.04, 0.3, 0.04), METAL_LIGHT, { rotation: Quaternion.fromEulerDegrees(0, 0, -14) })
+  rig.spinner = addPart(Vector3.create(0, 1.78, 0), Vector3.create(0.2, 0.2, 0.2), STORM, {
+    sphere: true,
+    emissive: STORM,
+    emissiveIntensity: 3
+  })
+
+  rig.spinAxis = 'y'
+  rig.profiles = {
+    idle: { amplitude: 0.03, speed: 2, tilt: 0, spin: 80, lunge: 0 },
+    walk: { amplitude: 0.05, speed: 7, tilt: 6, spin: 160, lunge: 0 },
+    talk: { amplitude: 0.03, speed: 10, tilt: 5, spin: 240, lunge: 0 },
+    attack: { amplitude: 0.03, speed: 14, tilt: -4, spin: 1000, lunge: -0.08 },
+    impact: { amplitude: 0.05, speed: 20, tilt: -8, spin: 80, lunge: 0 }
+  }
+}
+
+/** Human flyer: a twin-engine gunship hovering with a spinning rotor and chin cannon. */
+function buildHumanRaptor(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  rig.baseHeight = 1.9
+
+  // Fuselage with a cockpit visor.
+  addPart(Vector3.create(0, 0.5, 0.05), Vector3.create(0.5, 0.34, 0.98), HUMAN_HULL)
+  addPart(Vector3.create(0, 0.56, 0.44), Vector3.create(0.32, 0.16, 0.2), glow, { emissive: glow, emissiveIntensity: 2.4 })
+  addPart(Vector3.create(0, 0.68, -0.32), Vector3.create(0.3, 0.14, 0.5), METAL_DARK)
+
+  // Stub wings with engine pods and glow exhausts.
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.5, 0.5, -0.05), Vector3.create(0.5, 0.07, 0.3), METAL_LIGHT)
+    addPart(Vector3.create(side * 0.78, 0.48, -0.05), Vector3.create(0.18, 0.18, 0.44), METAL_DARK, { cylinder: true, rotation: Quaternion.fromEulerDegrees(90, 0, 0) })
+    addPart(Vector3.create(side * 0.78, 0.48, -0.3), Vector3.create(0.13, 0.13, 0.06), glow, {
+      cylinder: true,
+      emissive: glow,
+      emissiveIntensity: 2.6,
+      rotation: Quaternion.fromEulerDegrees(90, 0, 0)
+    })
+  }
+
+  // Top rotor that spins constantly.
+  addPart(Vector3.create(0, 0.72, 0), Vector3.create(0.08, 0.1, 0.08), METAL_DARK, { cylinder: true })
+  rig.spinner = addPart(Vector3.create(0, 0.8, 0), Vector3.create(1.15, 0.03, 0.12), METAL_LIGHT)
+
+  // Chin cannon.
+  addPart(Vector3.create(0, 0.32, 0.36), Vector3.create(0.08, 0.08, 0.4), METAL_DARK, { cylinder: true, rotation: Quaternion.fromEulerDegrees(90, 0, 0) })
+  addPart(Vector3.create(0, 0.32, 0.58), Vector3.create(0.1, 0.1, 0.05), glow, {
+    cylinder: true,
+    emissive: glow,
+    emissiveIntensity: 2.4,
+    rotation: Quaternion.fromEulerDegrees(90, 0, 0)
+  })
+
+  rig.spinAxis = 'y'
+  rig.profiles = {
+    idle: { amplitude: 0.1, speed: 1.6, tilt: 0, spin: 700, lunge: 0 },
+    walk: { amplitude: 0.07, speed: 3.5, tilt: 10, spin: 1000, lunge: 0 },
+    talk: { amplitude: 0.08, speed: 4, tilt: 4, spin: 800, lunge: 0 },
+    attack: { amplitude: 0.05, speed: 12, tilt: 6, spin: 1100, lunge: -0.06 },
+    impact: { amplitude: 0.12, speed: 16, tilt: -8, spin: 700, lunge: 0 }
+  }
+}
+
+/** Human titan: a towering siege mech with piston legs, a furnace core and crushing fists. */
+function buildHumanColossus(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  const FURNACE = Color4.create(1, 0.55, 0.2, 1)
+
+  // Wide stance piston legs on armored feet.
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.42, 0.16, 0), Vector3.create(0.44, 0.22, 0.6), METAL_DARK)
+    addPart(Vector3.create(side * 0.42, 0.62, 0), Vector3.create(0.24, 0.75, 0.28), METAL_LIGHT)
+    addPart(Vector3.create(side * 0.42, 0.62, 0.13), Vector3.create(0.08, 0.6, 0.06), glow, { emissive: glow, emissiveIntensity: 1.4 })
+  }
+
+  // Hip block and massive torso with a glowing furnace core.
+  addPart(Vector3.create(0, 1.1, 0), Vector3.create(0.95, 0.3, 0.6), METAL_DARK)
+  addPart(Vector3.create(0, 1.7, 0), Vector3.create(1.15, 0.95, 0.75), HUMAN_HULL)
+  addPart(Vector3.create(0, 1.72, 0.39), Vector3.create(0.36, 0.36, 0.06), FURNACE, { emissive: FURNACE, emissiveIntensity: 3 })
+  addPart(Vector3.create(0, 2.24, 0), Vector3.create(1.3, 0.2, 0.85), METAL_DARK)
+
+  // Shoulder towers with warning lights.
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.72, 2.1, 0), Vector3.create(0.38, 0.5, 0.5), METAL_LIGHT)
+    addPart(Vector3.create(side * 0.72, 2.42, 0), Vector3.create(0.12, 0.12, 0.12), glow, { sphere: true, emissive: glow, emissiveIntensity: 2.6 })
+  }
+
+  // Small armored head with a heavy visor.
+  addPart(Vector3.create(0, 2.44, 0.1), Vector3.create(0.34, 0.26, 0.34), METAL_DARK)
+  addPart(Vector3.create(0, 2.46, 0.28), Vector3.create(0.26, 0.08, 0.05), glow, { emissive: glow, emissiveIntensity: 3 })
+
+  // Crushing fists on thick arms - the right fist is the lunge weapon.
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.95, 1.6, 0.1), Vector3.create(0.26, 0.7, 0.3), METAL_DARK)
+    addPart(Vector3.create(side * 0.95, 1.15, 0.22), Vector3.create(0.36, 0.34, 0.38), METAL_LIGHT)
+  }
+  rig.spinner = addPart(Vector3.create(0, 1.7, -0.42), Vector3.create(0.5, 0.5, 0.14), FURNACE, {
+    cylinder: true,
+    emissive: FURNACE,
+    emissiveIntensity: 1.6,
+    rotation: Quaternion.fromEulerDegrees(90, 0, 0)
+  })
+
+  rig.spinAxis = 'y'
+  rig.profiles = {
+    idle: { amplitude: 0.02, speed: 1.4, tilt: 0, spin: 30, lunge: 0 },
+    walk: { amplitude: 0.08, speed: 4.5, tilt: 4, spin: 60, lunge: 0 },
+    talk: { amplitude: 0.03, speed: 6, tilt: 3, spin: 40, lunge: 0 },
+    attack: { amplitude: 0.06, speed: 9, tilt: 10, spin: 200, lunge: 0.3 },
+    impact: { amplitude: 0.06, speed: 16, tilt: -6, spin: 30, lunge: 0 }
+  }
+}
+
+/** Alien caster: a levitating seer ringed by orbiting prophecy shards. */
+function buildAlienOracle(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  addPart(Vector3.create(0, 0.16, 0), Vector3.create(0.52, 0.04, 0.52), ALIEN_CRYSTAL, { cylinder: true, emissive: ALIEN_CRYSTAL, emissiveIntensity: 2 })
+
+  // Regal floating robe with golden bands.
+  addPart(Vector3.create(0, 0.66, 0), Vector3.create(0.5, 0.9, 0.5), ALIEN_DARK, {
+    cone: true,
+    rotation: Quaternion.fromEulerDegrees(180, 0, 0)
+  })
+  addPart(Vector3.create(0, 0.94, 0), Vector3.create(0.4, 0.08, 0.4), ALIEN_GOLD, { cylinder: true, metallic: 0.8, roughness: 0.25 })
+  addPart(Vector3.create(0, 1.2, 0), Vector3.create(0.34, 0.34, 0.3), ALIEN_GOLD, { metallic: 0.8, roughness: 0.25 })
+
+  // Crowned head with a third-eye gem.
+  addPart(Vector3.create(0, 1.52, 0), Vector3.create(0.26, 0.26, 0.26), ALIEN_DARK, { sphere: true })
+  addPart(Vector3.create(0, 1.58, 0.13), Vector3.create(0.09, 0.09, 0.06), glow, { sphere: true, emissive: glow, emissiveIntensity: 3.2 })
+  addPart(Vector3.create(0, 1.76, 0), Vector3.create(0.34, 0.16, 0.06), ALIEN_GOLD, { metallic: 0.8, roughness: 0.25 })
+
+  // Orbiting prophecy shards on a spinning carrier ring.
+  const carrier = engine.addEntity()
+  Transform.create(carrier, { parent: rig.bodyRoot, position: Vector3.create(0, 1.16, 0) })
+  rig.parts.push(carrier)
+  rig.spinner = carrier
+  for (let i = 0; i < 3; i++) {
+    const angle = (i / 3) * Math.PI * 2
+    const shard = engine.addEntity()
+    Transform.create(shard, {
+      parent: carrier,
+      position: Vector3.create(Math.cos(angle) * 0.55, 0, Math.sin(angle) * 0.55),
+      scale: Vector3.create(0.09, 0.26, 0.09),
+      rotation: Quaternion.fromEulerDegrees(0, 0, 18)
+    })
+    MeshRenderer.setBox(shard)
+    Material.setPbrMaterial(shard, {
+      albedoColor: ALIEN_CRYSTAL,
+      emissiveColor: ALIEN_CRYSTAL,
+      emissiveIntensity: 2.2,
+      metallic: 0.2,
+      roughness: 0.3,
+      castShadows: false
+    })
+    rig.parts.push(shard)
+  }
+
+  rig.spinAxis = 'y'
+  rig.profiles = {
+    idle: { amplitude: 0.08, speed: 1.5, tilt: 0, spin: 70, lunge: 0 },
+    walk: { amplitude: 0.05, speed: 5, tilt: 8, spin: 130, lunge: 0 },
+    talk: { amplitude: 0.04, speed: 8, tilt: 4, spin: 220, lunge: 0 },
+    attack: { amplitude: 0.04, speed: 12, tilt: 5, spin: 1100, lunge: -0.06 },
+    impact: { amplitude: 0.08, speed: 18, tilt: -8, spin: 70, lunge: 0 }
+  }
+}
+
+/** Alien flyer: a crescent-winged ray gliding high with a charged beam prow. */
+function buildAlienTempest(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  rig.baseHeight = 2.1
+
+  // Central body pod.
+  addPart(Vector3.create(0, 0.5, 0), Vector3.create(0.46, 0.26, 0.8), ALIEN_GOLD, { sphere: true, metallic: 0.8, roughness: 0.25 })
+  addPart(Vector3.create(0, 0.56, 0.3), Vector3.create(0.16, 0.12, 0.2), ALIEN_DARK, { sphere: true })
+
+  // Sweeping crescent wings.
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.55, 0.5, -0.1), Vector3.create(0.75, 0.07, 0.5), ALIEN_GOLD, {
+      metallic: 0.8,
+      roughness: 0.25,
+      rotation: Quaternion.fromEulerDegrees(0, side * -18, side * 8)
+    })
+    addPart(Vector3.create(side * 0.95, 0.52, -0.28), Vector3.create(0.3, 0.05, 0.26), ALIEN_DARK, {
+      rotation: Quaternion.fromEulerDegrees(0, side * -30, side * 10)
+    })
+    // Wingtip crystals.
+    addPart(Vector3.create(side * 1.1, 0.52, -0.38), Vector3.create(0.09, 0.2, 0.09), ALIEN_CRYSTAL, {
+      cone: true,
+      emissive: ALIEN_CRYSTAL,
+      emissiveIntensity: 2.4,
+      rotation: Quaternion.fromEulerDegrees(180, 0, 0)
+    })
+  }
+
+  // Charged beam prow - spins while firing.
+  rig.spinner = addPart(Vector3.create(0, 0.48, 0.52), Vector3.create(0.16, 0.16, 0.16), glow, {
+    sphere: true,
+    emissive: glow,
+    emissiveIntensity: 3
+  })
+
+  // Trailing keel fin.
+  addPart(Vector3.create(0, 0.4, -0.45), Vector3.create(0.06, 0.3, 0.34), ALIEN_DARK, { rotation: Quaternion.fromEulerDegrees(-24, 0, 0) })
+
+  rig.spinAxis = 'y'
+  rig.profiles = {
+    idle: { amplitude: 0.12, speed: 1.4, tilt: 0, spin: 60, lunge: 0 },
+    walk: { amplitude: 0.08, speed: 3, tilt: 12, spin: 120, lunge: 0 },
+    talk: { amplitude: 0.09, speed: 4, tilt: 5, spin: 100, lunge: 0 },
+    attack: { amplitude: 0.05, speed: 11, tilt: 8, spin: 900, lunge: -0.07 },
+    impact: { amplitude: 0.14, speed: 16, tilt: -10, spin: 60, lunge: 0 }
+  }
+}
+
+/** Alien titan: a colossal energy being - armored shell around a blazing core, no legs, pure levitation. */
+function buildAlienAvatar(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  const CORE = Color4.create(0.85, 0.65, 1, 1)
+
+  // Levitation base glow.
+  addPart(Vector3.create(0, 0.2, 0), Vector3.create(1.3, 0.08, 1.3), ALIEN_CRYSTAL, { cylinder: true, emissive: ALIEN_CRYSTAL, emissiveIntensity: 2 })
+
+  // Tapered lower shell hovering above the ground.
+  addPart(Vector3.create(0, 1, 0), Vector3.create(1.05, 1.2, 1.05), ALIEN_DARK, {
+    cone: true,
+    rotation: Quaternion.fromEulerDegrees(180, 0, 0)
+  })
+
+  // Massive torso shell with the exposed core - the core spins.
+  addPart(Vector3.create(0, 2, 0), Vector3.create(1.5, 1.1, 1.1), ALIEN_GOLD, { metallic: 0.8, roughness: 0.25 })
+  rig.spinner = addPart(Vector3.create(0, 2.05, 0.5), Vector3.create(0.45, 0.45, 0.45), CORE, {
+    sphere: true,
+    emissive: CORE,
+    emissiveIntensity: 3.2
+  })
+
+  // Crowned helm.
+  addPart(Vector3.create(0, 2.85, 0), Vector3.create(0.5, 0.45, 0.5), ALIEN_DARK)
+  addPart(Vector3.create(0, 2.9, 0.26), Vector3.create(0.34, 0.08, 0.05), glow, { emissive: glow, emissiveIntensity: 3.4 })
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.34, 3.2, 0), Vector3.create(0.12, 0.5, 0.12), ALIEN_GOLD, {
+      cone: true,
+      metallic: 0.8,
+      roughness: 0.25,
+      rotation: Quaternion.fromEulerDegrees(0, 0, side * 12)
+    })
+  }
+
+  // Floating pauldron slabs and energy blade arms.
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 1.05, 2.5, 0), Vector3.create(0.55, 0.28, 0.7), ALIEN_GOLD, {
+      metallic: 0.8,
+      roughness: 0.25,
+      rotation: Quaternion.fromEulerDegrees(0, 0, side * -10)
+    })
+    addPart(Vector3.create(side * 1.15, 1.8, 0.15), Vector3.create(0.2, 0.85, 0.2), ALIEN_DARK)
+    addPart(Vector3.create(side * 1.18, 1.2, 0.4), Vector3.create(0.08, 0.9, 0.14), ALIEN_CRYSTAL, {
+      emissive: ALIEN_CRYSTAL,
+      emissiveIntensity: 2.6,
+      rotation: Quaternion.fromEulerDegrees(40, 0, 0)
+    })
+  }
+
+  rig.spinAxis = 'y'
+  rig.profiles = {
+    idle: { amplitude: 0.06, speed: 1.2, tilt: 0, spin: 50, lunge: 0 },
+    walk: { amplitude: 0.05, speed: 3.5, tilt: 5, spin: 90, lunge: 0 },
+    talk: { amplitude: 0.04, speed: 5, tilt: 3, spin: 70, lunge: 0 },
+    attack: { amplitude: 0.05, speed: 9, tilt: 9, spin: 600, lunge: 0.26 },
+    impact: { amplitude: 0.07, speed: 15, tilt: -6, spin: 50, lunge: 0 }
+  }
+}
+
+/** Bio caster: a bloated toxin sac walker that brews plague in a bubbling dorsal cauldron. */
+function buildBioPlagueWeaver(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  const ACID = Color4.create(0.55, 0.85, 0.2, 1)
+  const ACID_DARK = Color4.create(0.4, 0.55, 0.16, 1)
+
+  // Bloated body dragging low.
+  addPart(Vector3.create(0, 0.42, -0.05), Vector3.create(0.56, 0.44, 0.62), BIO_FLESH, { sphere: true, metallic: 0.05, roughness: 0.85 })
+
+  // Dorsal cauldron sac with a glowing plague brew - it pulses via spin on the lid.
+  addPart(Vector3.create(0, 0.72, -0.16), Vector3.create(0.4, 0.34, 0.4), ACID_DARK, {
+    sphere: true,
+    emissive: ACID,
+    emissiveIntensity: 1.4,
+    metallic: 0.05,
+    roughness: 0.7
+  })
+  rig.spinner = addPart(Vector3.create(0, 0.92, -0.16), Vector3.create(0.22, 0.08, 0.22), ACID, {
+    cylinder: true,
+    emissive: ACID,
+    emissiveIntensity: 2.6
+  })
+
+  // Bone chimney vents leaking glow.
+  addPart(Vector3.create(-0.16, 0.9, -0.3), Vector3.create(0.06, 0.22, 0.06), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(-14, 0, -10) })
+  addPart(Vector3.create(0.18, 0.86, -0.26), Vector3.create(0.05, 0.18, 0.05), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(-10, 0, 12) })
+
+  // Head with team-glow eyes and drooping feeler tendrils.
+  addPart(Vector3.create(0, 0.44, 0.4), Vector3.create(0.3, 0.24, 0.26), BIO_CARAPACE, { sphere: true })
+  addPart(Vector3.create(-0.08, 0.5, 0.52), Vector3.create(0.06, 0.06, 0.04), glow, { sphere: true, emissive: glow, emissiveIntensity: 3 })
+  addPart(Vector3.create(0.08, 0.5, 0.52), Vector3.create(0.06, 0.06, 0.04), glow, { sphere: true, emissive: glow, emissiveIntensity: 3 })
+  addPart(Vector3.create(-0.12, 0.3, 0.5), Vector3.create(0.04, 0.2, 0.04), BIO_FLESH, { rotation: Quaternion.fromEulerDegrees(24, 0, 10) })
+  addPart(Vector3.create(0.12, 0.3, 0.5), Vector3.create(0.04, 0.2, 0.04), BIO_FLESH, { rotation: Quaternion.fromEulerDegrees(24, 0, -10) })
+
+  // Six stubby legs.
+  for (const side of [-1, 1]) {
+    for (const offset of [-0.26, 0, 0.26]) {
+      addPart(Vector3.create(side * 0.28, 0.14, offset), Vector3.create(0.06, 0.24, 0.06), BIO_CARAPACE, {
+        rotation: Quaternion.fromEulerDegrees(0, 0, side * 26)
+      })
+    }
+  }
+
+  rig.spinAxis = 'y'
+  rig.profiles = {
+    idle: { amplitude: 0.04, speed: 2.4, tilt: 0, spin: 60, lunge: 0 },
+    walk: { amplitude: 0.06, speed: 10, tilt: 4, spin: 120, lunge: 0 },
+    talk: { amplitude: 0.04, speed: 12, tilt: 5, spin: 160, lunge: 0 },
+    attack: { amplitude: 0.04, speed: 14, tilt: -5, spin: 900, lunge: -0.06 },
+    impact: { amplitude: 0.07, speed: 20, tilt: -8, spin: 60, lunge: 0 }
+  }
+}
+
+/** Bio flyer: a shrieking winged terror with beating membrane wings and a barbed tail. */
+function buildBioShrieker(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  rig.baseHeight = 1.8
+
+  // Sleek body tapering to a barbed tail.
+  addPart(Vector3.create(0, 0.5, 0.1), Vector3.create(0.34, 0.3, 0.66), BIO_FLESH, { sphere: true, metallic: 0.05, roughness: 0.85 })
+  addPart(Vector3.create(0, 0.46, -0.4), Vector3.create(0.16, 0.14, 0.5), BIO_CARAPACE, { sphere: true })
+  addPart(Vector3.create(0, 0.44, -0.72), Vector3.create(0.06, 0.22, 0.06), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(105, 0, 0) })
+
+  // Head with glow eyes and a shrieking maw of bone fangs.
+  addPart(Vector3.create(0, 0.56, 0.5), Vector3.create(0.26, 0.22, 0.3), BIO_CARAPACE, { sphere: true })
+  addPart(Vector3.create(-0.08, 0.62, 0.62), Vector3.create(0.06, 0.06, 0.04), glow, { sphere: true, emissive: glow, emissiveIntensity: 3.2 })
+  addPart(Vector3.create(0.08, 0.62, 0.62), Vector3.create(0.06, 0.06, 0.04), glow, { sphere: true, emissive: glow, emissiveIntensity: 3.2 })
+  addPart(Vector3.create(-0.06, 0.44, 0.62), Vector3.create(0.04, 0.12, 0.04), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(160, 0, 6) })
+  addPart(Vector3.create(0.06, 0.44, 0.62), Vector3.create(0.04, 0.12, 0.04), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(160, 0, -6) })
+
+  // Membrane wings on a spinning flap carrier (the carrier tilts as it "beats").
+  const wingCarrier = engine.addEntity()
+  Transform.create(wingCarrier, { parent: rig.bodyRoot, position: Vector3.create(0, 0.62, 0.05) })
+  rig.parts.push(wingCarrier)
+  rig.spinner = wingCarrier
+  for (const side of [-1, 1]) {
+    const wing = engine.addEntity()
+    Transform.create(wing, {
+      parent: wingCarrier,
+      position: Vector3.create(side * 0.55, 0.08, -0.05),
+      scale: Vector3.create(0.95, 0.04, 0.55),
+      rotation: Quaternion.fromEulerDegrees(0, side * -12, side * 16)
+    })
+    MeshRenderer.setBox(wing)
+    Material.setPbrMaterial(wing, {
+      albedoColor: Color4.create(BIO_FLESH.r, BIO_FLESH.g, BIO_FLESH.b, 0.85),
+      emissiveColor: Color4.create(0.4, 0.1, 0.1, 1),
+      emissiveIntensity: 0.5,
+      metallic: 0.05,
+      roughness: 0.8,
+      castShadows: false
+    })
+    rig.parts.push(wing)
+    // Bone wing fingers.
+    const finger = engine.addEntity()
+    Transform.create(finger, {
+      parent: wingCarrier,
+      position: Vector3.create(side * 0.5, 0.1, 0.18),
+      scale: Vector3.create(0.05, 0.05, 0.6),
+      rotation: Quaternion.fromEulerDegrees(0, side * -16, 0)
+    })
+    MeshRenderer.setBox(finger)
+    Material.setPbrMaterial(finger, { albedoColor: BIO_BONE, metallic: 0.1, roughness: 0.6, castShadows: false })
+    rig.parts.push(finger)
+  }
+
+  // Dangling talons.
+  addPart(Vector3.create(-0.1, 0.28, 0.2), Vector3.create(0.05, 0.18, 0.05), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(170, 0, 8) })
+  addPart(Vector3.create(0.1, 0.28, 0.2), Vector3.create(0.05, 0.18, 0.05), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(170, 0, -8) })
+
+  rig.spinAxis = 'z'
+  rig.profiles = {
+    idle: { amplitude: 0.14, speed: 3, tilt: 0, spin: 30, lunge: 0 },
+    walk: { amplitude: 0.12, speed: 6, tilt: 12, spin: 60, lunge: 0 },
+    talk: { amplitude: 0.1, speed: 6, tilt: 5, spin: 40, lunge: 0 },
+    attack: { amplitude: 0.08, speed: 14, tilt: 14, spin: 90, lunge: 0.12 },
+    impact: { amplitude: 0.16, speed: 18, tilt: -10, spin: 30, lunge: 0 }
+  }
+}
+
+/** Bio titan: a mountain of muscle and carapace with tusks, crushing arms and a spiked shell. */
+function buildBioBehemoth(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  // Elephantine legs.
+  for (const side of [-1, 1]) {
+    for (const offset of [-0.35, 0.4]) {
+      addPart(Vector3.create(side * 0.5, 0.35, offset), Vector3.create(0.3, 0.7, 0.3), BIO_CARAPACE, { cylinder: true })
+    }
+  }
+
+  // Massive body with an armored spiked shell.
+  addPart(Vector3.create(0, 1.25, -0.05), Vector3.create(1.5, 1.15, 1.7), BIO_FLESH, { sphere: true, metallic: 0.05, roughness: 0.85 })
+  addPart(Vector3.create(0, 1.85, -0.25), Vector3.create(1.1, 0.6, 1.2), BIO_CARAPACE, { sphere: true, metallic: 0.1, roughness: 0.7 })
+
+  // Shell spikes.
+  addPart(Vector3.create(0, 2.35, -0.3), Vector3.create(0.14, 0.65, 0.14), BIO_BONE, { cone: true })
+  addPart(Vector3.create(-0.4, 2.2, -0.1), Vector3.create(0.11, 0.5, 0.11), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(0, 0, -18) })
+  addPart(Vector3.create(0.4, 2.2, -0.1), Vector3.create(0.11, 0.5, 0.11), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(0, 0, 18) })
+  addPart(Vector3.create(0, 2.15, -0.75), Vector3.create(0.11, 0.5, 0.11), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(-24, 0, 0) })
+
+  // Head slung low with giant tusks and team-glow eyes.
+  addPart(Vector3.create(0, 1.05, 0.85), Vector3.create(0.66, 0.5, 0.5), BIO_CARAPACE, { sphere: true })
+  addPart(Vector3.create(-0.16, 1.2, 1.06), Vector3.create(0.1, 0.1, 0.06), glow, { sphere: true, emissive: glow, emissiveIntensity: 3.2 })
+  addPart(Vector3.create(0.16, 1.2, 1.06), Vector3.create(0.1, 0.1, 0.06), glow, { sphere: true, emissive: glow, emissiveIntensity: 3.2 })
+  addPart(Vector3.create(-0.3, 0.85, 1.05), Vector3.create(0.09, 0.55, 0.09), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(135, 0, 14) })
+  addPart(Vector3.create(0.3, 0.85, 1.05), Vector3.create(0.09, 0.55, 0.09), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(135, 0, -14) })
+
+  // Crushing forearms ending in bone cleavers.
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.95, 1.1, 0.45), Vector3.create(0.3, 0.8, 0.34), BIO_FLESH, { rotation: Quaternion.fromEulerDegrees(18, 0, side * 8) })
+    addPart(Vector3.create(side * 1.05, 0.6, 0.75), Vector3.create(0.1, 0.6, 0.14), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(130, 0, side * 6) })
+  }
+
+  rig.profiles = {
+    idle: { amplitude: 0.03, speed: 1.6, tilt: 0, spin: 0, lunge: 0 },
+    walk: { amplitude: 0.1, speed: 5, tilt: 4, spin: 0, lunge: 0 },
+    talk: { amplitude: 0.05, speed: 7, tilt: 4, spin: 0, lunge: 0 },
+    attack: { amplitude: 0.08, speed: 9, tilt: 12, spin: 0, lunge: 0.3 },
+    impact: { amplitude: 0.09, speed: 16, tilt: -7, spin: 0, lunge: 0 }
+  }
+}
+
 /** Cargo strapped to a worker's back: faceted mineral crystals or a banded gas barrel. */
 function addWorkerCargo(rig: UnitRig, addPart: PartAdder): void {
   rig.mineralCargo = [
@@ -612,7 +1075,7 @@ function unitAnimationSystem(dt: number): void {
 
     const bodyTransform = Transform.getMutable(rig.bodyRoot)
     const lungeOffset = profile.lunge === 0 ? 0 : profile.lunge * Math.max(0, Math.sin(rig.time * profile.speed))
-    bodyTransform.position = Vector3.create(0, profile.amplitude * Math.sin(rig.time * profile.speed) + profile.amplitude, lungeOffset)
+    bodyTransform.position = Vector3.create(0, rig.baseHeight + profile.amplitude * Math.sin(rig.time * profile.speed) + profile.amplitude, lungeOffset)
     bodyTransform.rotation = Quaternion.fromEulerDegrees(profile.tilt, 0, 0)
 
     if (profile.spin > 0 && rig.spinner) {
