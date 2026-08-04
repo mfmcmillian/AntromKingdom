@@ -1,5 +1,5 @@
 import ReactEcs, { Button, Label, ReactEcsRenderer, UiEntity } from '@dcl/sdk/react-ecs'
-import { engine } from '@dcl/sdk/ecs'
+import { InputModifier, engine } from '@dcl/sdk/ecs'
 import { Color4 } from '@dcl/sdk/math'
 import {
   assignControlGroup,
@@ -148,10 +148,26 @@ let titleTime = 0
 // Pre-match menu flow: title screen (race pick) -> match setup (opponents + hero).
 let titleStage: 'title' | 'setup' = 'title'
 
+/** Avatar movement is frozen on menu screens so the player can't wander under the UI. */
+let menuMovementLocked = false
+
+function updateMenuMovementLock(): void {
+  const shouldLock = gameState.matchStatus !== 'active'
+  if (shouldLock === menuMovementLocked) return
+
+  menuMovementLocked = shouldLock
+  if (shouldLock) {
+    InputModifier.createOrReplace(engine.PlayerEntity, { mode: InputModifier.Mode.Standard({ disableAll: true }) })
+  } else {
+    InputModifier.deleteFrom(engine.PlayerEntity)
+  }
+}
+
 export function setupUi() {
   ReactEcsRenderer.setUiRenderer(uiMenu, { virtualWidth: 1920, virtualHeight: 1080 })
   engine.addSystem((dt: number) => {
     if (gameState.matchStatus === 'notStarted') titleTime += dt
+    updateMenuMovementLock()
   })
 }
 
