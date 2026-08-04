@@ -60,6 +60,7 @@ import { updateSoldierProduction as updateSoldierProductionSystem, updateWorkerP
 import { updateWorkers as updateWorkersSystem } from './rts/systems/workers'
 import { updateDragSelect } from './rts/dragSelect'
 import { initFogOfWar, resetFogOfWar } from './rts/fogOfWar'
+import { isPointerOverHud } from './rts/hud'
 import { SelectionMarkerTarget, clearSelectionMarkers, updateSelectionMarkers } from './rts/selectionMarkers'
 import { buildEnvironmentEnclosure } from './rts/environment'
 import { buildUnitModel, disposeUnit, isProceduralUnit, setUnitAnimation, updateUnitCargo } from './rts/unitModels'
@@ -264,6 +265,7 @@ function updateRallyPlacementInput(dt: number): void {
   rallyPlacementCooldown = Math.max(0, rallyPlacementCooldown - dt)
   if (rallyPlacementCooldown > 0) return
   if (!inputSystem.isTriggered(InputAction.IA_POINTER, PointerEventType.PET_DOWN)) return
+  if (isPointerOverHud()) return
 
   const ground = getPointerGroundPosition()
   if (!ground) {
@@ -1223,6 +1225,8 @@ function handleSelectableClick(id: string): void {
   const clicked = selectables.get(id)
 
   if (!clicked || !clicked.alive) return
+  // The click landed on a HUD panel; the raycast into the world behind it doesn't count.
+  if (isPointerOverHud()) return
 
   if (placementState.state === 'placing') {
     confirmBuildingPlacement()
@@ -1783,6 +1787,7 @@ function updatePlacementConfirmInput(dt: number): void {
   placementConfirmCooldown = Math.max(0, placementConfirmCooldown - dt)
   if (placementConfirmCooldown > 0) return
   if (!inputSystem.isTriggered(InputAction.IA_POINTER, PointerEventType.PET_DOWN)) return
+  if (isPointerOverHud()) return
 
   confirmBuildingPlacement()
 }

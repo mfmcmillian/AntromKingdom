@@ -30,6 +30,7 @@ import { BUILDING_DEFINITIONS } from './rts/config'
 import { RACES, RACE_IDS, getBuildingDisplayName, getRace, getSoldierDefinition, getWorkerDefinition } from './rts/races'
 import { UPGRADE_INFO, UPGRADE_MAX_LEVEL, getNextUpgradeCost, getUpgradeLevel, isUpgradeInProgress } from './rts/upgrades'
 import { isTopDownViewActive, toggleTopDownView } from './rts/topDownCamera'
+import { CONSOLE_HEIGHT } from './rts/hud'
 import type { BuildableKind, RaceId, ResourceCost, SelectedSummary, SoldierVariant, UpgradeKind } from './rts/types'
 
 const UI = {
@@ -83,7 +84,6 @@ const ICON = {
 }
 
 // Bottom console geometry (virtual 1920x1080).
-const CONSOLE_HEIGHT = 250
 const SLOT_SIZE = 66
 const SLOT_GAP = 6
 const CARD_COLUMNS = 3
@@ -257,21 +257,20 @@ function infoPanel(selected: SelectedSummary) {
     <UiEntity
       uiTransform={{
         positionType: 'absolute',
-        position: { bottom: 14, left: 320 },
-        width: 1160,
+        // Starts right of Decentraland's chat window / sidebar so nothing hides it.
+        position: { bottom: 14, left: 500 },
+        width: 900,
         height: CONSOLE_HEIGHT - 34,
         flexDirection: 'row'
       }}
     >
-      {multi ? wireframeGrid(units) : null}
-
       {portrait ? (
         <UiEntity uiTransform={{ width: 156, height: 156, padding: 3, margin: { top: 20, right: 22 } }} uiBackground={{ color: UI.slotFrame }}>
           <UiEntity uiTransform={{ width: '100%', height: '100%' }} uiBackground={{ textureMode: 'stretch', texture: { src: portrait } }} />
         </UiEntity>
       ) : null}
 
-      <UiEntity uiTransform={{ flexDirection: 'column', width: 470, height: '100%', padding: { top: 24 } }}>
+      <UiEntity uiTransform={{ flexDirection: 'column', width: 380, height: '100%', padding: { top: 24 } }}>
         <Label value={getCommandTitle(selected.kind)} fontSize={13} color={isEnemy ? UI.red : UI.dim} textAlign="middle-left" />
         <Label value={selected.name} fontSize={30} color={UI.text} textAlign="middle-left" uiTransform={{ margin: { top: 2, bottom: 8 } }} />
 
@@ -299,12 +298,12 @@ function infoPanel(selected: SelectedSummary) {
         ) : null}
       </UiEntity>
 
-      {multi ? null : productionQueuePanel(selected)}
+      {multi ? wireframeGrid(units) : productionQueuePanel(selected)}
     </UiEntity>
   )
 }
 
-/** SC-style multi-selection wireframes, left of the portrait: unit images whose
+/** SC-style multi-selection wireframes beside the unit info: unit images whose
  * frame color shows their HP (green / gold / red). Clicking one selects it. */
 function wireframeGrid(units: ReturnType<typeof getSelectedUnitsInfo>) {
   const shown = units.slice(0, 15)
@@ -318,7 +317,7 @@ function wireframeGrid(units: ReturnType<typeof getSelectedUnitsInfo>) {
         alignContent: 'flex-start',
         width: 305,
         height: '100%',
-        margin: { right: 20 },
+        margin: { left: 10 },
         padding: { top: 20 }
       }}
     >

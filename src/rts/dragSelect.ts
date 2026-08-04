@@ -1,4 +1,5 @@
 import { InputAction, PrimaryPointerInfo, Transform, UiCanvasInformation, engine, inputSystem } from '@dcl/sdk/ecs'
+import { isPointerOverHud } from './hud'
 
 export type DragSelectDeps = {
   /** Returns true while other click-driven modes own the pointer (placement, move/attack command). */
@@ -35,6 +36,8 @@ export function updateDragSelect(deps: DragSelectDeps): void {
 
   if (pointerPressed && !pressActive) {
     if (!screen) return
+    // Presses that start on the HUD belong to the UI, not the battlefield.
+    if (isPointerOverHud()) return
     pressActive = true
     dragging = false
     pressOnSelectable = deps.isPressOnSelectable?.() ?? false
