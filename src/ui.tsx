@@ -725,8 +725,8 @@ function getBuildingDescription(kind: BuildableKind): string {
 }
 
 // ---------------------------------------------------------------------------
-// Control groups: numbered slots above the command card. Click to recall the
-// saved units, press SET to store the current selection.
+// Control groups: numbered slots sitting on top of the minimap. Click to
+// recall the saved units, press SET to store the current selection.
 // ---------------------------------------------------------------------------
 
 function controlGroupsBar() {
@@ -734,7 +734,7 @@ function controlGroupsBar() {
     <UiEntity
       uiTransform={{
         positionType: 'absolute',
-        position: { bottom: CONSOLE_HEIGHT + 8, right: CARD_RIGHT },
+        position: { bottom: MINIMAP_SPAN + 16, right: 12 },
         flexDirection: 'row'
       }}
     >
@@ -775,8 +775,8 @@ function idleWorkerButton() {
     <UiEntity
       uiTransform={{
         positionType: 'absolute',
-        // Floats just above the minimap in the bottom-right corner.
-        position: { bottom: MINIMAP_SPAN + 20, right: 12 },
+        // Floats above the control group slots, which sit on the minimap.
+        position: { bottom: MINIMAP_SPAN + 76, right: 12 },
         width: 62,
         height: 62,
         padding: 2
