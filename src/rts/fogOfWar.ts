@@ -1,6 +1,7 @@
 import { Entity, Material, MeshRenderer, Transform, VisibilityComponent, engine } from '@dcl/sdk/ecs'
 import { Color4, Vector3 } from '@dcl/sdk/math'
 import { SCENE } from './config'
+import { isRobot, setRobotVisible } from './robotModel'
 import { isTopDownViewActive } from './topDownCamera'
 import { buildings, getTeam, resources, soldiers, workers } from './world'
 
@@ -151,7 +152,8 @@ function setEntityVisible(entity: Entity, visible: boolean): void {
 
 /** Visibility doesn't cascade to children, so hide the floating name label along with the model. */
 function setSelectableVisible(selectable: { entity: Entity; labelEntity?: Entity }, visible: boolean): void {
-  setEntityVisible(selectable.entity, visible)
+  if (isRobot(selectable.entity)) setRobotVisible(selectable.entity, visible)
+  else setEntityVisible(selectable.entity, visible)
   if (selectable.labelEntity) setEntityVisible(selectable.labelEntity, visible)
 }
 

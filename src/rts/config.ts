@@ -112,7 +112,7 @@ export const SCENE = {
 }
 
 export const COLORS = {
-  ground: Color4.create(0.32, 0.46, 0.24, 1),
+  ground: Color4.create(0.24, 0.24, 0.28, 1),
   temple: Color4.create(0.1, 0.35, 1, 1),
   worker: Color4.create(0.3, 0.75, 1, 1),
   rock: Color4.create(0.45, 0.48, 0.52, 1),

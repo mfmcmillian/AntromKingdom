@@ -20,7 +20,7 @@ const FOG_CELL_SIZE = MAP_SIZE / FOG_GRID_SIZE
 
 const MINIMAP_COLORS = {
   frame: Color4.create(0.03, 0.035, 0.05, 0.95),
-  ground: Color4.create(0.16, 0.24, 0.13, 1),
+  ground: Color4.create(0.13, 0.13, 0.17, 1),
   fog: Color4.create(0.02, 0.02, 0.035, 0.94),
   playerUnit: Color4.create(0.3, 0.75, 1, 1),
   playerBuilding: Color4.create(0.2, 0.9, 0.4, 1),

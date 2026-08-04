@@ -8,8 +8,8 @@ import { SCENE } from './config'
 
 const WALL_HEIGHT = 90
 const WALL_INSET = 0.2
-const HORIZON_TEXTURE = 'assets/textures/forest_horizon.png'
-const CEILING_TEXTURE = 'assets/textures/sky_ceiling.png'
+const HORIZON_TEXTURE = 'assets/textures/space_horizon.png'
+const CEILING_TEXTURE = 'assets/textures/space_ceiling.png'
 
 export function buildEnvironmentEnclosure(): void {
   const size = SCENE.size

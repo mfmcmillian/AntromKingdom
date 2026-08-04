@@ -61,6 +61,7 @@ import { updateDragSelect } from './rts/dragSelect'
 import { initFogOfWar, resetFogOfWar } from './rts/fogOfWar'
 import { SelectionMarkerTarget, clearSelectionMarkers, updateSelectionMarkers } from './rts/selectionMarkers'
 import { buildEnvironmentEnclosure } from './rts/environment'
+import { buildMinerRobot, disposeRobot, isRobot, setRobotAnimation } from './rts/robotModel'
 import { showMoveMarker } from './rts/moveMarker'
 import { disableTopDownView, enableTopDownView, getCameraFocus, isTopDownViewActive } from './rts/topDownCamera'
 import { createBuildingDamageVfx, removeBuildingDamageVfx, updateBuildingDamageVfx } from './rts/vfx'
@@ -659,7 +660,7 @@ function createGround(): void {
   scatterGroundDecorations()
 }
 
-/** Deterministic scatter of pebbles and darker grass patches so the ground doesn't read as one flat color. */
+/** Deterministic scatter of moon rocks, craters, and glowing crystals so the surface doesn't read as one flat color. */
 function scatterGroundDecorations(): void {
   let seed = 1337
   const random = () => {
@@ -667,34 +668,52 @@ function scatterGroundDecorations(): void {
     return seed / 2147483647
   }
 
-  for (let i = 0; i < 110; i++) {
+  for (let i = 0; i < 130; i++) {
     const x = 3 + random() * (SCENE.size - 6)
     const z = 3 + random() * (SCENE.size - 6)
     const entity = engine.addEntity()
+    const roll = random()
 
-    if (random() < 0.4) {
-      // Flat pebble. Kept low so it stays under the fog tiles of unexplored cells.
-      const size = 0.35 + random() * 0.7
+    if (roll < 0.35) {
+      // Moon rock. Kept low so it stays under the fog tiles of unexplored cells.
+      const size = 0.35 + random() * 0.8
       Transform.create(entity, {
-        position: Vector3.create(x, 0.05, z),
-        rotation: Quaternion.fromEulerDegrees(0, random() * 360, 0),
-        scale: Vector3.create(size, 0.09, size * (0.65 + random() * 0.55))
+        position: Vector3.create(x, 0.06, z),
+        rotation: Quaternion.fromEulerDegrees(random() * 14, random() * 360, random() * 14),
+        scale: Vector3.create(size, 0.12 + random() * 0.14, size * (0.65 + random() * 0.55))
       })
       MeshRenderer.setBox(entity)
       Material.setPbrMaterial(entity, {
-        albedoColor: Color4.create(0.42, 0.45, 0.48, 1),
+        albedoColor: Color4.create(0.36, 0.37, 0.42, 1),
+        roughness: 1,
         castShadows: false
       })
-    } else {
-      // Darker grass patch.
-      const size = 1.2 + random() * 2.4
+    } else if (roll < 0.85) {
+      // Dark crater patch.
+      const size = 1.4 + random() * 3
       Transform.create(entity, {
         position: Vector3.create(x, 0.03, z),
         scale: Vector3.create(size, 0.015, size)
       })
       MeshRenderer.setCylinder(entity)
       Material.setPbrMaterial(entity, {
-        albedoColor: Color4.create(0.27, 0.4, 0.2, 1),
+        albedoColor: Color4.create(0.14, 0.14, 0.18, 1),
+        roughness: 1,
+        castShadows: false
+      })
+    } else {
+      // Glowing crystal shard poking out of the regolith.
+      const height = 0.25 + random() * 0.45
+      Transform.create(entity, {
+        position: Vector3.create(x, height / 2, z),
+        rotation: Quaternion.fromEulerDegrees(random() * 18 - 9, random() * 360, random() * 18 - 9),
+        scale: Vector3.create(0.12 + random() * 0.1, height, 0.12 + random() * 0.1)
+      })
+      MeshRenderer.setBox(entity)
+      Material.setPbrMaterial(entity, {
+        albedoColor: Color4.create(0.25, 0.85, 0.9, 1),
+        emissiveColor: Color4.create(0.2, 0.8, 0.9, 1),
+        emissiveIntensity: 1.6,
         castShadows: false
       })
     }
@@ -732,17 +751,11 @@ function spawnResourceNodes(resource: ResourceKind, positions: Vector3[]): void 
 }
 
 function createWorker(position: Vector3, team: Team = 'player'): Worker {
-  const worker = createSelectableModel('worker', `${team === 'enemy' ? 'Enemy Worker' : 'Worker'} ${getTeamWorkerCount(team) + 1}`, {
+  const worker = createRobotWorkerSelectable(
+    `${team === 'enemy' ? 'Enemy Miner' : 'Miner'} ${getTeamWorkerCount(team) + 1}`,
     position,
-    scale: Vector3.create(1, 1, 1),
-    src: getRandomWorkerModel(),
-    colliderScale: Vector3.create(0.55, 1.6, 0.55),
-    animations: [
-      { clip: 'idle', playing: true, loop: true },
-      { clip: 'walk', playing: false, loop: true },
-      { clip: 'talk', playing: false, loop: true }
-    ]
-  }, true, team) as Worker
+    team
+  ) as Worker
 
   worker.hp = CONFIG.workerHp
   worker.maxHp = CONFIG.workerHp
@@ -753,8 +766,23 @@ function createWorker(position: Vector3, team: Team = 'player'): Worker {
   return worker
 }
 
-function getRandomWorkerModel(): string {
-  return ASSETS.workers[Math.floor(Math.random() * ASSETS.workers.length)]
+/** Workers on the space branch are procedurally built mining robots instead of GLB villagers. */
+function createRobotWorkerSelectable(name: string, position: Vector3, team: Team): Selectable {
+  const id = createEntityId('worker')
+  const entity = engine.addEntity()
+  Transform.create(entity, { position: cloneVector(position) })
+  buildMinerRobot(entity, team)
+
+  const selectable: Selectable = { id, kind: 'worker', name, entity, alive: true, team }
+  selectable.colliderEntity = createModelColliderEntity(entity, {
+    position,
+    scale: Vector3.create(1, 1, 1),
+    src: '',
+    colliderScale: Vector3.create(0.55, 1.6, 0.55)
+  })
+  selectables.set(id, selectable)
+  registerSelectable(selectable)
+  return selectable
 }
 
 function createSoldier(position: Vector3, team: Team = 'player'): Soldier {
@@ -2031,7 +2059,8 @@ function depleteResourceNode(resource: ResourceNode): void {
 function setWorkerAnimation(worker: Worker, clipName: string, restart = false): void {
   if (worker.activeAnimation === clipName && !restart) return
 
-  playAnimation(worker.entity, clipName)
+  if (isRobot(worker.entity)) setRobotAnimation(worker.entity, clipName)
+  else playAnimation(worker.entity, clipName)
   worker.activeAnimation = clipName
 }
 
@@ -2320,6 +2349,8 @@ function cancelSoldierCommand(): void {
 function removeSelectable(selectable: Selectable): void {
   selectable.alive = false
   removeSelectableInteractivity(selectable)
+  // Robot parts follow the hidden root, so only the animation rig needs unregistering.
+  disposeRobot(selectable.entity, false)
   hideEntity(selectable.entity)
   if (selectable.labelEntity) hideEntity(selectable.labelEntity)
   selectables.delete(selectable.id)
@@ -2336,6 +2367,7 @@ function removeSelectable(selectable: Selectable): void {
 function destroySelectable(selectable: Selectable): void {
   selectable.alive = false
   removeSelectableInteractivity(selectable)
+  disposeRobot(selectable.entity, true)
   if (selectable.labelEntity) engine.removeEntity(selectable.labelEntity)
   engine.removeEntity(selectable.entity)
   selectables.delete(selectable.id)
