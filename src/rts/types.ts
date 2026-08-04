@@ -15,6 +15,8 @@ export type WorkerState =
   | 'movingToRepair'
   | 'repairing'
   | 'movingToRally'
+  | 'movingToAttack'
+  | 'attacking'
   | 'dead'
 export type SoldierState = 'idle' | 'movingToAttack' | 'attacking' | 'movingToRally' | 'dead'
 export type SoldierVariant = 'melee' | 'ranged'
@@ -67,6 +69,7 @@ export type Worker = Selectable & {
   targetResourceId?: string
   buildSiteId?: string
   repairTargetId?: string
+  attackTargetId?: string
   rallyPoint?: Vector3
   timer: number
   carrying: number

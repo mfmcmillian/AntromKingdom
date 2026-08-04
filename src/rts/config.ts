@@ -8,6 +8,9 @@ export const CONFIG = {
   workerMineTime: 3,
   workerCarryAmount: 10,
   workerMoveSpeed: 2.5,
+  // Workers can fight when commanded, but poorly - pulling them is a last resort.
+  workerDamage: 3,
+  workerAttackRange: 1.6,
   builderMoveSpeed: 2.2,
   // Per-race unit stats live in races.ts; these are engine-level fallbacks.
   soldierMoveSpeed: 3,

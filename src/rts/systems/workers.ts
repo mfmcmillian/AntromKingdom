@@ -1,11 +1,13 @@
 import { Transform } from '@dcl/sdk/ecs'
-import type { Vector3 } from '@dcl/sdk/math'
+import { Quaternion, type Vector3 } from '@dcl/sdk/math'
 import { CONFIG, RESOURCE_LABELS } from '../config'
 import { addResource, getResourceAmount, spendResources } from '../economy'
 import { distanceToPosition, moveTowardPosition } from '../math'
 import { gameState } from '../state'
-import type { Building, ResourceNode, Worker } from '../types'
+import type { Building, ResourceNode, Soldier, Worker } from '../types'
 import { getTeam, resources, workers } from '../world'
+
+type WorkerCombatTarget = Building | Soldier | Worker
 
 export type WorkerSystemDeps = {
   getBuildingById(id: string): Building | undefined
@@ -15,6 +17,8 @@ export type WorkerSystemDeps = {
   getBuilderWorkPosition(site: Building, workerPosition: Vector3): Vector3
   getRepairWorkPosition(site: Building, workerPosition: Vector3): Vector3
   getWorkerRallyPosition(worker: Worker): Vector3
+  getCombatTargetById(id: string): WorkerCombatTarget | undefined
+  damageCombatTarget(target: WorkerCombatTarget, amount: number, attacker: Worker): void
   setWorkerAnimation(worker: Worker, clipName: string, restart?: boolean): void
   playResourceGatherFeedback(resource: ResourceNode): void
   depleteResourceNode(resource: ResourceNode): void
@@ -30,7 +34,63 @@ export function updateWorkers(dt: number, deps: WorkerSystemDeps): void {
     updateWorkerBuildMovement(worker, dt, deps)
     updateWorkerRepairMovement(worker, dt, deps)
     updateWorkerRallyMovement(worker, dt, deps)
+    updateWorkerCombat(worker, dt, deps)
   }
+}
+
+/**
+ * Commanded worker attacks: weak melee jabs, no auto-aggro. Workers chase the
+ * target directly and swing at close range, mirroring the soldier chase logic.
+ */
+function updateWorkerCombat(worker: Worker, dt: number, deps: WorkerSystemDeps): void {
+  if ((worker.state !== 'movingToAttack' && worker.state !== 'attacking') || !worker.attackTargetId) return
+
+  const target = deps.getCombatTargetById(worker.attackTargetId)
+  if (!target?.alive) {
+    worker.state = 'idle'
+    worker.attackTargetId = undefined
+    deps.setWorkerAnimation(worker, 'idle')
+    return
+  }
+
+  const targetPosition = Transform.get(target.entity).position
+  const range = target.kind === 'soldier' || target.kind === 'worker' ? CONFIG.workerAttackRange : CONFIG.workerAttackRange + 1.6
+
+  if (worker.state === 'movingToAttack') {
+    if (distanceToPosition(worker.entity, targetPosition) <= range) {
+      worker.state = 'attacking'
+      worker.timer = 0
+      faceWorkerTarget(worker, targetPosition)
+      deps.setWorkerAnimation(worker, 'talk', true)
+    } else {
+      moveTowardPosition(worker.entity, targetPosition, CONFIG.workerMoveSpeed, dt)
+      deps.setWorkerAnimation(worker, 'walk')
+    }
+    return
+  }
+
+  if (distanceToPosition(worker.entity, targetPosition) > range + 0.6) {
+    worker.state = 'movingToAttack'
+    deps.setWorkerAnimation(worker, 'walk')
+    return
+  }
+
+  faceWorkerTarget(worker, targetPosition)
+  worker.timer += dt
+  if (worker.timer >= CONFIG.soldierAttackRate) {
+    worker.timer = 0
+    deps.setWorkerAnimation(worker, 'talk', true)
+    deps.damageCombatTarget(target, CONFIG.workerDamage, worker)
+  }
+}
+
+function faceWorkerTarget(worker: Worker, targetPosition: Vector3): void {
+  const transform = Transform.getMutable(worker.entity)
+  const dx = targetPosition.x - transform.position.x
+  const dz = targetPosition.z - transform.position.z
+  if (dx * dx + dz * dz < 0.0001) return
+
+  transform.rotation = Quaternion.fromEulerDegrees(0, (Math.atan2(dx, dz) * 180) / Math.PI, 0)
 }
 
 function updateWorkerGathering(worker: Worker, dt: number, deps: WorkerSystemDeps): void {

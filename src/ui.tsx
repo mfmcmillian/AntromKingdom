@@ -538,7 +538,7 @@ function getContextHint(kind: string): string {
   const supplyName = getBuildingDisplayName('supplyHouse', 'player')
 
   if (kind === 'resource') return `Select a ${workerName}, then click this resource.`
-  if (kind === 'worker') return 'Click a resource to gather, a damaged building to repair, or ground to move.'
+  if (kind === 'worker') return 'Click a resource to gather, a damaged building to repair, an enemy to attack (weak), or ground to move.'
   if (kind === 'supplyHouse') return `${supplyName}s create ${workerName}s and increase your unit cap.`
   if (kind === 'barracks') return `Create ${race.melee.name}s (melee) and ${race.ranged.name}s (ranged) here.`
   if (kind === 'fireplace') return 'A camp utility building.'

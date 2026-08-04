@@ -1099,9 +1099,22 @@ function handleSelectableClick(id: string): void {
     return
   }
 
-  if (getSelectedSoldiers().length > 0 && isEnemyAttackTarget(clicked)) {
-    assignCommandableSoldiersToAttack(clicked)
-    return
+  if (isEnemyAttackTarget(clicked)) {
+    const attackSoldiers = getSelectedSoldiers()
+    const attackWorkers = selectedWorkers.filter((worker) => worker.alive)
+
+    if (attackSoldiers.length > 0) {
+      assignCommandableSoldiersToAttack(clicked)
+    }
+    if (attackWorkers.length > 0) {
+      for (const worker of attackWorkers) {
+        assignWorkerToAttack(worker, clicked)
+      }
+      if (attackSoldiers.length === 0) {
+        setStatus(`${attackWorkers.length} worker${attackWorkers.length === 1 ? '' : 's'} attacking ${clicked.name}. They are weak fighters!`)
+      }
+    }
+    if (attackSoldiers.length + attackWorkers.length > 0) return
   }
 
   selectObject(clicked)
@@ -1132,6 +1145,7 @@ function assignWorkerToResource(worker: Worker, resource: ResourceNode, announce
   worker.targetResourceId = resource.id
   worker.buildSiteId = undefined
   worker.repairTargetId = undefined
+  worker.attackTargetId = undefined
   worker.rallyPoint = undefined
   worker.timer = 0
   worker.carrying = 0
@@ -1157,6 +1171,7 @@ function sendWorkerToRally(worker: Worker, rallyPoint: Vector3): void {
   worker.targetResourceId = undefined
   worker.buildSiteId = undefined
   worker.repairTargetId = undefined
+  worker.attackTargetId = undefined
   worker.timer = 0
   worker.carrying = 0
   worker.carryingResource = undefined
@@ -1186,6 +1201,22 @@ function assignSoldierToAttack(soldier: Soldier, target: Building | Soldier | Wo
   if (announce && getTeam(soldier) === 'player') setStatus(`${soldier.name} attacking ${target.name}.`)
 }
 
+function assignWorkerToAttack(worker: Worker, target: Building | Soldier | Worker): void {
+  if (!worker.alive || !target.alive) return
+  if (worker.state === 'movingToBuild' || worker.state === 'constructing' || worker.state === 'movingToRepair' || worker.state === 'repairing') return
+
+  worker.state = 'movingToAttack'
+  worker.targetResourceId = undefined
+  worker.buildSiteId = undefined
+  worker.repairTargetId = undefined
+  worker.attackTargetId = target.id
+  worker.rallyPoint = undefined
+  worker.timer = 0
+  worker.carrying = 0
+  worker.carryingResource = undefined
+  setWorkerAnimation(worker, 'walk')
+}
+
 function assignWorkerToRepair(worker: Worker, building: Building): void {
   if (!worker.alive || !building.alive || !building.isComplete) return
   if (getTeam(worker) !== getTeam(building)) return
@@ -1202,6 +1233,7 @@ function assignWorkerToRepair(worker: Worker, building: Building): void {
   worker.targetResourceId = undefined
   worker.buildSiteId = undefined
   worker.repairTargetId = building.id
+  worker.attackTargetId = undefined
   worker.rallyPoint = undefined
   worker.timer = 0
   worker.carrying = 0
@@ -1263,6 +1295,7 @@ function confirmBuildingPlacement(hitPosition?: Vector3): void {
   builder.targetResourceId = undefined
   builder.buildSiteId = site.id
   builder.repairTargetId = undefined
+  builder.attackTargetId = undefined
   builder.rallyPoint = undefined
   builder.timer = 0
   builder.carrying = 0
@@ -1319,6 +1352,8 @@ const workerSystemDeps = {
   getBuilderWorkPosition,
   getRepairWorkPosition: getBuilderWorkPosition,
   getWorkerRallyPosition,
+  getCombatTargetById,
+  damageCombatTarget,
   setWorkerAnimation,
   playResourceGatherFeedback,
   depleteResourceNode,
@@ -1765,9 +1800,9 @@ function completeConstruction(site: Building, builder: Worker): void {
   }
 }
 
-function damageCombatTarget(target: Building | Soldier | Worker, amount: number, attacker: Soldier): void {
+function damageCombatTarget(target: Building | Soldier | Worker, amount: number, attacker: Soldier | Worker): void {
   // Ranged attackers fire a visible tracer toward whatever they hit.
-  if (attacker.variant === 'ranged' && attacker.alive && target.alive) {
+  if (attacker.kind === 'soldier' && attacker.variant === 'ranged' && attacker.alive && target.alive) {
     fireProjectile(Transform.get(attacker.entity).position, Transform.get(target.entity).position, getTeam(attacker))
   }
 
@@ -1784,7 +1819,7 @@ function damageCombatTarget(target: Building | Soldier | Worker, amount: number,
   damageBuilding(target, amount, attacker)
 }
 
-function damageBuilding(building: Building, amount: number, attacker?: Soldier): void {
+function damageBuilding(building: Building, amount: number, attacker?: Soldier | Worker): void {
   building.hp = Math.max(0, building.hp - amount)
   if (attacker && isPlayerTempleUnderAttack(building, attacker)) {
     showPlayerAttackAlert()
@@ -1806,7 +1841,7 @@ function damageBuilding(building: Building, amount: number, attacker?: Soldier):
   updateMatchEndState()
 }
 
-function isPlayerTempleUnderAttack(building: Building, attacker?: Soldier): boolean {
+function isPlayerTempleUnderAttack(building: Building, attacker?: Soldier | Worker): boolean {
   return building.kind === 'temple' && getTeam(building) === 'player' && attacker !== undefined && getTeam(attacker) === 'enemy'
 }
 
@@ -1816,7 +1851,7 @@ function showPlayerAttackAlert(): void {
   setStatus(gameState.attackAlert)
 }
 
-function damageSoldier(soldier: Soldier, amount: number, attacker?: Soldier): void {
+function damageSoldier(soldier: Soldier, amount: number, attacker?: Soldier | Worker): void {
   soldier.hp = Math.max(0, soldier.hp - amount)
 
   if (soldier.hp > 0) {
@@ -1849,7 +1884,7 @@ function shouldRetaliate(victim: Soldier): boolean {
   return !currentTarget || (currentTarget.kind !== 'soldier' && currentTarget.kind !== 'worker')
 }
 
-function damageWorker(worker: Worker, amount: number, attacker?: Soldier): void {
+function damageWorker(worker: Worker, amount: number, attacker?: Soldier | Worker): void {
   worker.hp = Math.max(0, worker.hp - amount)
 
   if (worker.hp > 0) return
@@ -1860,6 +1895,7 @@ function damageWorker(worker: Worker, amount: number, attacker?: Soldier): void 
   worker.targetResourceId = undefined
   worker.buildSiteId = undefined
   worker.repairTargetId = undefined
+  worker.attackTargetId = undefined
   worker.rallyPoint = undefined
   worker.carrying = 0
   worker.carryingResource = undefined
@@ -1868,7 +1904,7 @@ function damageWorker(worker: Worker, amount: number, attacker?: Soldier): void 
   clearAttackersTargeting(worker.id)
 }
 
-function creditUnitKill(attacker: Soldier | undefined, target: Soldier | Worker): void {
+function creditUnitKill(attacker: Soldier | Worker | undefined, target: Soldier | Worker): void {
   if (!attacker || getTeam(attacker) === getTeam(target)) return
 
   gameState.matchStats[getTeam(attacker)].unitsKilled += 1
@@ -1885,7 +1921,7 @@ function clearAttackersTargeting(targetId: string): void {
   }
 }
 
-function alertDefenders(building: Building, attacker: Soldier): void {
+function alertDefenders(building: Building, attacker: Soldier | Worker): void {
   if (getTeam(building) !== 'enemy' || getTeam(attacker) !== 'player' || !attacker.alive) return
 
   const buildingPosition = Transform.get(building.entity).position
