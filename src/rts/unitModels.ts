@@ -20,6 +20,25 @@ type MotionProfile = {
   lunge: number
 }
 
+/**
+ * Procedural particle effects animated by the unit system (transform-only, so
+ * they cost nothing in per-frame material writes):
+ *   orbit - circles the anchor with a gentle vertical wobble.
+ *   ember - rises from the anchor while shrinking to nothing, then loops.
+ *   pulse - breathes its XZ scale and slowly rotates in place (ground rings).
+ */
+type UnitFx = {
+  entity: Entity
+  mode: 'orbit' | 'ember' | 'pulse'
+  anchor: Vector3
+  radius: number
+  height: number
+  /** Cycles (ember) or radians (orbit) or pulses per second. */
+  speed: number
+  phase: number
+  size: number
+}
+
 interface UnitRig {
   bodyRoot: Entity
   spinner?: Entity
@@ -33,6 +52,8 @@ interface UnitRig {
   parts: Entity[]
   /** Upgrade rank pips floating above the unit; rebuilt whenever research completes. */
   insignia: Entity[]
+  /** Animated particle effects (hero auras, embers, orbiting motes). */
+  fx: UnitFx[]
   state: UnitAnimState
   time: number
   profiles: Record<UnitAnimState, MotionProfile>
@@ -56,6 +77,11 @@ const ALIEN_CRYSTAL = Color4.create(0.75, 0.55, 1, 1)
 const BIO_FLESH = Color4.create(0.48, 0.18, 0.16, 1)
 const BIO_CARAPACE = Color4.create(0.22, 0.1, 0.13, 1)
 const BIO_BONE = Color4.create(0.75, 0.68, 0.55, 1)
+
+// Hero regalia palette, shared across the champion models.
+const HERO_GOLD = Color4.create(0.92, 0.76, 0.32, 1)
+const CAPE_CRIMSON = Color4.create(0.4, 0.07, 0.1, 1)
+const BLADE_STEEL = Color4.create(0.78, 0.84, 0.92, 1)
 
 // Player is cyan, allied computers glow friendly gold, and each hostile
 // computer gets its own hue so mixed armies read at a glance.
@@ -99,6 +125,7 @@ export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team:
     fogHidden: false,
     parts: [bodyRoot],
     insignia: [],
+    fx: [],
     state: 'idle',
     time: Math.random() * 10,
     profiles: { idle: STILL, walk: STILL, talk: STILL, attack: STILL, impact: STILL }
@@ -996,17 +1023,118 @@ function applyHeroScale(rig: UnitRig, scale = 1.3): void {
   Transform.getMutable(rig.bodyRoot).scale = Vector3.create(scale, scale, scale)
 }
 
-/** Warmaster Kael: a Juggernaut chassis flying a glowing command banner. */
+/**
+ * Warmaster Kael: a bespoke armored warlord - layered gold-trimmed plate, a
+ * crimson command cape, a back-mounted battle standard and an energy
+ * greatsword. Particle FX sell the Battle Standard trait: a pulsing aura ring
+ * underfoot, energy motes orbiting the chest core, and gold embers rising off
+ * the banner.
+ */
 function buildHumanHero(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
-  buildHumanColossus(rig, addPart, glow)
+  const gild = { metallic: 0.95, roughness: 0.15 }
 
-  // Command banner rising off the left shoulder tower.
-  addPart(Vector3.create(-0.72, 3.35, -0.15), Vector3.create(0.07, 1.8, 0.07), METAL_LIGHT, { cylinder: true })
-  addPart(Vector3.create(-0.47, 3.95, -0.15), Vector3.create(0.55, 0.38, 0.04), glow, { emissive: glow, emissiveIntensity: 2.6 })
-  // Gilded crest along the helm.
-  addPart(Vector3.create(0, 2.72, 0.05), Vector3.create(0.1, 0.28, 0.46), Color4.create(0.9, 0.75, 0.3, 1), { metallic: 0.9, roughness: 0.2 })
+  // --- Legs: armored boots, greaves and gilded knee guards. ---------------
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.22, 0.09, 0.03), Vector3.create(0.26, 0.18, 0.42), METAL_DARK)
+    addPart(Vector3.create(side * 0.22, 0.42, 0), Vector3.create(0.2, 0.52, 0.24), METAL_LIGHT)
+    addPart(Vector3.create(side * 0.22, 0.7, 0.06), Vector3.create(0.2, 0.16, 0.22), HERO_GOLD, { ...gild, rotation: Quaternion.fromEulerDegrees(-12, 0, 0) })
+  }
 
-  applyHeroScale(rig)
+  // --- Hips: pelvis block, command belt and hanging tasset plates. --------
+  addPart(Vector3.create(0, 0.88, 0), Vector3.create(0.5, 0.22, 0.32), METAL_DARK)
+  addPart(Vector3.create(0, 1, 0), Vector3.create(0.56, 0.09, 0.38), HERO_GOLD, gild)
+  addPart(Vector3.create(0, 1.02, 0.2), Vector3.create(0.14, 0.12, 0.05), glow, { emissive: glow, emissiveIntensity: 3 })
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.3, 0.8, 0), Vector3.create(0.1, 0.34, 0.3), HUMAN_HULL, { rotation: Quaternion.fromEulerDegrees(0, 0, side * 10) })
+  }
+  addPart(Vector3.create(0, 0.78, 0.17), Vector3.create(0.24, 0.32, 0.06), HUMAN_HULL, { rotation: Quaternion.fromEulerDegrees(8, 0, 0) })
+
+  // --- Torso: abdomen, broad chest plate, glowing core, back armor. -------
+  addPart(Vector3.create(0, 1.16, 0), Vector3.create(0.42, 0.24, 0.3), METAL_LIGHT)
+  addPart(Vector3.create(0, 1.44, 0), Vector3.create(0.62, 0.44, 0.4), HUMAN_HULL)
+  addPart(Vector3.create(0, 1.62, 0), Vector3.create(0.66, 0.1, 0.44), METAL_DARK)
+  // Reactor core - the visual anchor of the Battle Standard aura.
+  addPart(Vector3.create(0, 1.48, 0.19), Vector3.create(0.2, 0.2, 0.07), glow, { cylinder: true, emissive: glow, emissiveIntensity: 4, rotation: Quaternion.fromEulerDegrees(90, 0, 0) })
+  // Gold trim chevrons running from the core up to each shoulder.
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.18, 1.56, 0.2), Vector3.create(0.22, 0.05, 0.04), HERO_GOLD, { ...gild, rotation: Quaternion.fromEulerDegrees(0, 0, side * 24) })
+  }
+  addPart(Vector3.create(0, 1.44, -0.19), Vector3.create(0.5, 0.38, 0.1), METAL_DARK)
+
+  // --- Pauldrons: double-layered with a glowing rim light. ----------------
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.44, 1.6, 0), Vector3.create(0.34, 0.18, 0.42), METAL_LIGHT, { rotation: Quaternion.fromEulerDegrees(0, 0, side * -8) })
+    addPart(Vector3.create(side * 0.47, 1.72, 0), Vector3.create(0.38, 0.12, 0.46), HUMAN_HULL, { rotation: Quaternion.fromEulerDegrees(0, 0, side * -12) })
+    addPart(Vector3.create(side * 0.56, 1.78, 0), Vector3.create(0.05, 0.05, 0.42), glow, { emissive: glow, emissiveIntensity: 2.4, rotation: Quaternion.fromEulerDegrees(0, 0, side * -12) })
+  }
+
+  // --- Arms: left fist clenched, right hand gripping the greatsword. ------
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.5, 1.36, 0.02), Vector3.create(0.15, 0.32, 0.17), METAL_DARK)
+    addPart(Vector3.create(side * 0.54, 1.06, 0.06), Vector3.create(0.18, 0.3, 0.2), METAL_LIGHT)
+    addPart(Vector3.create(side * 0.54, 0.94, 0.1), Vector3.create(0.16, 0.12, 0.16), HERO_GOLD, gild)
+  }
+
+  // --- Greatsword: gold crossguard, steel blade, white-hot energy core. ---
+  addPart(Vector3.create(0.62, 0.86, 0.12), Vector3.create(0.055, 0.26, 0.055), METAL_DARK, { cylinder: true })
+  addPart(Vector3.create(0.62, 0.72, 0.12), Vector3.create(0.09, 0.09, 0.09), HERO_GOLD, { ...gild, sphere: true })
+  addPart(Vector3.create(0.62, 1.02, 0.12), Vector3.create(0.32, 0.07, 0.12), HERO_GOLD, gild)
+  addPart(Vector3.create(0.62, 1.62, 0.12), Vector3.create(0.1, 1.14, 0.05), BLADE_STEEL, { metallic: 0.85, roughness: 0.25 })
+  addPart(Vector3.create(0.62, 1.62, 0.12), Vector3.create(0.045, 1.08, 0.06), glow, { emissive: glow, emissiveIntensity: 5 })
+  addPart(Vector3.create(0.62, 2.28, 0.12), Vector3.create(0.09, 0.22, 0.05), glow, { cone: true, emissive: glow, emissiveIntensity: 5 })
+
+  // --- Head: commander helm, glowing T-visor, cheek guards, gold crest. ---
+  addPart(Vector3.create(0, 1.72, 0), Vector3.create(0.12, 0.1, 0.12), METAL_DARK, { cylinder: true })
+  addPart(Vector3.create(0, 1.9, 0.02), Vector3.create(0.27, 0.28, 0.3), METAL_DARK)
+  addPart(Vector3.create(0, 1.94, 0.17), Vector3.create(0.21, 0.055, 0.04), glow, { emissive: glow, emissiveIntensity: 4 })
+  addPart(Vector3.create(0, 1.86, 0.17), Vector3.create(0.055, 0.12, 0.04), glow, { emissive: glow, emissiveIntensity: 4 })
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.15, 1.85, 0.1), Vector3.create(0.04, 0.16, 0.14), HERO_GOLD, gild)
+  }
+  addPart(Vector3.create(0, 2.1, 0), Vector3.create(0.06, 0.14, 0.4), HERO_GOLD, gild)
+  addPart(Vector3.create(0, 2.2, -0.06), Vector3.create(0.03, 0.08, 0.26), glow, { emissive: glow, emissiveIntensity: 2.2 })
+
+  // --- Command cape: two draped crimson segments with a gold hem. ---------
+  addPart(Vector3.create(0, 1.5, -0.3), Vector3.create(0.56, 0.5, 0.05), CAPE_CRIMSON, { roughness: 0.95, metallic: 0.05, rotation: Quaternion.fromEulerDegrees(-7, 0, 0) })
+  addPart(Vector3.create(0, 1.02, -0.37), Vector3.create(0.5, 0.55, 0.04), CAPE_CRIMSON, { roughness: 0.95, metallic: 0.05, rotation: Quaternion.fromEulerDegrees(-11, 0, 0) })
+  addPart(Vector3.create(0, 0.74, -0.42), Vector3.create(0.5, 0.06, 0.05), HERO_GOLD, { ...gild, rotation: Quaternion.fromEulerDegrees(-11, 0, 0) })
+
+  // --- Battle standard: pole, crossbar, sigil banner, glowing finial. -----
+  addPart(Vector3.create(-0.32, 1.95, -0.28), Vector3.create(0.05, 1.75, 0.05), METAL_LIGHT, { cylinder: true })
+  addPart(Vector3.create(-0.32, 2.72, -0.28), Vector3.create(0.52, 0.045, 0.045), HERO_GOLD, gild)
+  addPart(Vector3.create(-0.15, 2.42, -0.28), Vector3.create(0.36, 0.55, 0.03), CAPE_CRIMSON, { roughness: 0.95, metallic: 0.05 })
+  addPart(Vector3.create(-0.15, 2.42, -0.26), Vector3.create(0.13, 0.13, 0.02), glow, { emissive: glow, emissiveIntensity: 3.2, rotation: Quaternion.fromEulerDegrees(0, 0, 45) })
+  addPart(Vector3.create(-0.15, 2.12, -0.28), Vector3.create(0.36, 0.05, 0.035), HERO_GOLD, gild)
+  addPart(Vector3.create(-0.32, 2.86, -0.28), Vector3.create(0.1, 0.1, 0.1), glow, { sphere: true, emissive: glow, emissiveIntensity: 4 })
+
+  // --- Particle FX -------------------------------------------------------
+  // Battle Standard aura: a pulsing ground ring in the team color.
+  const auraRing = addPart(Vector3.create(0, 0.04, 0), Vector3.create(1.5, 0.025, 1.5), Color4.create(glow.r, glow.g, glow.b, 0.4), { cylinder: true, emissive: glow, emissiveIntensity: 1.6 })
+  rig.fx.push({ entity: auraRing, mode: 'pulse', anchor: Vector3.create(0, 0.04, 0), radius: 0, height: 0, speed: 2.4, phase: 0, size: 1.5 })
+  const auraCore = addPart(Vector3.create(0, 0.07, 0), Vector3.create(0.9, 0.02, 0.9), Color4.create(glow.r, glow.g, glow.b, 0.25), { cylinder: true, emissive: glow, emissiveIntensity: 1.2 })
+  rig.fx.push({ entity: auraCore, mode: 'pulse', anchor: Vector3.create(0, 0.07, 0), radius: 0, height: 0, speed: 2.4, phase: Math.PI, size: 0.9 })
+
+  // Energy motes circling the reactor core.
+  for (let i = 0; i < 3; i++) {
+    const mote = addPart(Vector3.create(0, 1.45, 0), Vector3.create(0.06, 0.06, 0.06), glow, { sphere: true, emissive: glow, emissiveIntensity: 4 })
+    rig.fx.push({ entity: mote, mode: 'orbit', anchor: Vector3.create(0, 1.45, 0), radius: 0.55, height: 0.14, speed: 1.7, phase: (i / 3) * Math.PI * 2, size: 0.06 })
+  }
+
+  // Gold embers drifting up from the battle standard.
+  for (let i = 0; i < 4; i++) {
+    const ember = addPart(Vector3.create(-0.2, 2.3, -0.28), Vector3.create(0.045, 0.045, 0.045), HERO_GOLD, { emissive: HERO_GOLD, emissiveIntensity: 3.4 })
+    rig.fx.push({ entity: ember, mode: 'ember', anchor: Vector3.create(-0.2, 2.3, -0.28), radius: 0.1, height: 0.85, speed: 0.42, phase: i / 4, size: 0.045 })
+  }
+
+  rig.profiles = {
+    idle: { amplitude: 0.025, speed: 1.6, tilt: 0, spin: 0, lunge: 0 },
+    walk: { amplitude: 0.055, speed: 5, tilt: 5, spin: 0, lunge: 0 },
+    talk: { amplitude: 0.03, speed: 7, tilt: 3, spin: 0, lunge: 0 },
+    attack: { amplitude: 0.04, speed: 10, tilt: -6, spin: 0, lunge: 0.22 },
+    impact: { amplitude: 0.06, speed: 16, tilt: -8, spin: 0, lunge: 0 }
+  }
+
+  applyHeroScale(rig, 1.35)
 }
 
 /** Riftlord Auren: an Avatar shell crowned by a floating rift halo. */
@@ -1221,7 +1349,43 @@ function unitAnimationSystem(dt: number): void {
       const angle = (rig.time * profile.spin) % 360
       spinnerTransform.rotation = rig.spinAxis === 'y' ? Quaternion.fromEulerDegrees(0, angle, 0) : Quaternion.fromEulerDegrees(0, 0, angle)
     }
+
+    for (const fx of rig.fx) {
+      animateFx(fx, rig.time)
+    }
   }
+}
+
+function animateFx(fx: UnitFx, time: number): void {
+  const t = time * fx.speed + fx.phase
+  const transform = Transform.getMutable(fx.entity)
+
+  if (fx.mode === 'orbit') {
+    transform.position = Vector3.create(
+      fx.anchor.x + Math.cos(t) * fx.radius,
+      fx.anchor.y + Math.sin(t * 2.3) * fx.height,
+      fx.anchor.z + Math.sin(t) * fx.radius
+    )
+    return
+  }
+
+  if (fx.mode === 'ember') {
+    // Rise, shrink to nothing, respawn at the anchor - a looping spark.
+    const cycle = t - Math.floor(t)
+    const fade = 1 - cycle
+    transform.position = Vector3.create(
+      fx.anchor.x + Math.sin(t * 6.7) * fx.radius,
+      fx.anchor.y + cycle * fx.height,
+      fx.anchor.z + Math.cos(t * 5.3) * fx.radius
+    )
+    transform.scale = Vector3.create(fx.size * fade, fx.size * fade, fx.size * fade)
+    return
+  }
+
+  // pulse: breathe in XZ while slowly turning - reads as a live energy field.
+  const pulse = 1 + Math.sin(t) * 0.13
+  transform.scale = Vector3.create(fx.size * pulse, transform.scale.y, fx.size * pulse)
+  transform.rotation = Quaternion.fromEulerDegrees(0, (time * 24) % 360, 0)
 }
 
 engine.addSystem(unitAnimationSystem)
