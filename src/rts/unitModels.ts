@@ -31,6 +31,8 @@ interface UnitRig {
   cargoKind?: ResourceKind
   fogHidden: boolean
   parts: Entity[]
+  /** Upgrade rank pips floating above the unit; rebuilt whenever research completes. */
+  insignia: Entity[]
   state: UnitAnimState
   time: number
   profiles: Record<UnitAnimState, MotionProfile>
@@ -96,6 +98,7 @@ export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team:
     gasCargo: [],
     fogHidden: false,
     parts: [bodyRoot],
+    insignia: [],
     state: 'idle',
     time: Math.random() * 10,
     profiles: { idle: STILL, walk: STILL, talk: STILL, attack: STILL, impact: STILL }
@@ -1122,8 +1125,73 @@ export function setUnitVisible(root: Entity, visible: boolean): void {
     if (cargoParts.has(part)) continue
     VisibilityComponent.createOrReplace(part, { visible })
   }
+  for (const pip of rig.insignia) {
+    VisibilityComponent.createOrReplace(pip, { visible })
+  }
   // Cargo pieces stay hidden unless the worker is actually carrying that resource.
   applyCargoVisibility(rig)
+}
+
+// Upgrade rank pips: orange diamonds for Weapons levels, cyan for Propulsion.
+const WEAPON_PIP_COLOR = Color4.create(1, 0.5, 0.15, 1)
+const SPEED_PIP_COLOR = Color4.create(0.3, 0.85, 1, 1)
+const PIP_SPACING = 0.2
+const PIP_SIZE = 0.1
+
+/**
+ * Shows the team's research on the unit itself: one orange diamond per Weapons
+ * level and one cyan diamond per Propulsion level, floating above the model.
+ * Called on spawn and re-called for fielded units when research completes.
+ */
+export function setUnitUpgradeInsignia(root: Entity, damageLevel: number, speedLevel: number): void {
+  const rig = rigs.get(root)
+  if (!rig) return
+
+  for (const pip of rig.insignia) engine.removeEntity(pip)
+  rig.insignia = []
+  if (damageLevel <= 0 && speedLevel <= 0) return
+
+  const rows: { level: number; color: Color4 }[] = [
+    { level: damageLevel, color: WEAPON_PIP_COLOR },
+    { level: speedLevel, color: SPEED_PIP_COLOR }
+  ]
+
+  let rowY = getRigTopY(rig) + 0.28
+  for (const row of rows) {
+    if (row.level <= 0) continue
+    for (let i = 0; i < row.level; i++) {
+      const pip = engine.addEntity()
+      Transform.create(pip, {
+        parent: rig.bodyRoot,
+        position: Vector3.create((i - (row.level - 1) / 2) * PIP_SPACING, rowY, 0),
+        scale: Vector3.create(PIP_SIZE, PIP_SIZE, PIP_SIZE),
+        rotation: Quaternion.fromEulerDegrees(0, 0, 45)
+      })
+      MeshRenderer.setBox(pip)
+      Material.setPbrMaterial(pip, {
+        albedoColor: row.color,
+        emissiveColor: row.color,
+        emissiveIntensity: 3,
+        metallic: 0,
+        roughness: 1,
+        castShadows: false
+      })
+      VisibilityComponent.createOrReplace(pip, { visible: !rig.fogHidden })
+      rig.insignia.push(pip)
+    }
+    rowY += 0.24
+  }
+}
+
+/** Approximate top of the model in bodyRoot-local space, so pips sit above any silhouette. */
+function getRigTopY(rig: UnitRig): number {
+  let top = 1.2
+  for (const part of rig.parts) {
+    const transform = Transform.getOrNull(part)
+    if (!transform) continue
+    top = Math.max(top, transform.position.y + transform.scale.y / 2)
+  }
+  return top
 }
 
 /** Unregisters the rig; optionally removes the part entities (children aren't removed with their root). */
@@ -1133,6 +1201,7 @@ export function disposeUnit(root: Entity, removeParts: boolean): void {
 
   if (removeParts) {
     for (const part of rig.parts) engine.removeEntity(part)
+    for (const pip of rig.insignia) engine.removeEntity(pip)
   }
   rigs.delete(root)
 }

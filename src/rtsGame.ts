@@ -66,7 +66,7 @@ import { isPointerOverHud } from './rts/hud'
 import { SelectionMarkerTarget, clearSelectionMarkers, updateSelectionMarkers } from './rts/selectionMarkers'
 import { buildEnvironmentEnclosure } from './rts/environment'
 import { buildTerrain } from './rts/terrain'
-import { buildUnitModel, disposeUnit, isProceduralUnit, setUnitAnimation, updateUnitCargo } from './rts/unitModels'
+import { buildUnitModel, disposeUnit, isProceduralUnit, setUnitAnimation, setUnitUpgradeInsignia, updateUnitCargo } from './rts/unitModels'
 import { BUILDING_MODEL_HEIGHTS, buildBuildingModel, disposeBuildingModel, isProceduralBuilding, setBuildingModelDamage } from './rts/buildingModels'
 import { RACES, UNIT_REQUIREMENTS, getBuildingDisplayName, getRace, getSoldierDefinition, getWorkerDefinition, pickRandomRace } from './rts/races'
 import { buildResourceModel, disposeResourceModel, playResourceDepletion, playResourceGatherPulse } from './rts/resourceModels'
@@ -987,6 +987,16 @@ function getGroupSelectionPrefix(): string {
   return `Selected ${parts.join(' + ')}. `
 }
 
+/** " | Weapons +1, Propulsion +2" - or empty when nothing is researched yet. */
+function getUpgradeSuffix(team: Team): string {
+  const parts: string[] = []
+  const damageLevel = getUpgradeLevel(team, 'damage')
+  const speedLevel = getUpgradeLevel(team, 'speed')
+  if (damageLevel > 0) parts.push(`${UPGRADE_INFO.damage.name} +${damageLevel}`)
+  if (speedLevel > 0) parts.push(`${UPGRADE_INFO.speed.name} +${speedLevel}`)
+  return parts.length > 0 ? ` | ${parts.join(', ')}` : ''
+}
+
 export function getSelectedSummary(): SelectedSummary {
   const selected = getSelected()
 
@@ -1023,7 +1033,7 @@ export function getSelectedSummary(): SelectedSummary {
       hp: soldier.hp,
       maxHp: soldier.maxHp,
       variant: soldier.variant,
-      detail: `${getGroupSelectionPrefix()}${heroLine}State: ${soldier.state}`
+      detail: `${getGroupSelectionPrefix()}${heroLine}State: ${soldier.state}${getUpgradeSuffix(getTeam(soldier))}`
     }
   }
 
@@ -1206,6 +1216,8 @@ function createSoldier(position: Vector3, team: Team = 'player', variant: Soldie
   soldier.stance = 'defensive'
   soldier.attackTimer = 0
   soldier.activeAnimation = 'idle'
+  // Fresh recruits wear whatever rank their team has already researched.
+  setUnitUpgradeInsignia(soldier.entity, getUpgradeLevel(team, 'damage'), getUpgradeLevel(team, 'speed'))
   return soldier
 }
 
@@ -1819,6 +1831,14 @@ const upgradeSystemDeps = {
   onUpgradeComplete: (team: Team, kind: 'damage' | 'speed', newLevel: number) => {
     if (team === 'player') {
       setStatus(`${UPGRADE_INFO[kind].name} level ${newLevel} research complete (${UPGRADE_INFO[kind].effect}).`)
+    }
+    // Pin the new rank on every fighter already in the field.
+    const damageLevel = getUpgradeLevel(team, 'damage')
+    const speedLevel = getUpgradeLevel(team, 'speed')
+    for (const soldier of soldiers) {
+      if (soldier.alive && getTeam(soldier) === team) {
+        setUnitUpgradeInsignia(soldier.entity, damageLevel, speedLevel)
+      }
     }
   }
 }
