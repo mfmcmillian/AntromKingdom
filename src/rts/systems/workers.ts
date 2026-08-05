@@ -1,7 +1,7 @@
 import { Transform } from '@dcl/sdk/ecs'
 import { Quaternion, type Vector3 } from '@dcl/sdk/math'
-import { CONFIG, RESOURCE_LABELS } from '../config'
-import { addResource, getResourceAmount, spendResources } from '../economy'
+import { CONFIG } from '../config'
+import { addResource, spendResources } from '../economy'
 import { distanceToPosition, moveTowardPosition } from '../math'
 import { gameState, getGatherMultiplier } from '../state'
 import { getRace } from '../races'
@@ -155,7 +155,7 @@ function updateWorkerGathering(worker: Worker, dt: number, deps: WorkerSystemDep
         worker.targetResourceId = undefined
         deps.setWorkerAnimation(worker, 'idle')
       }
-      if (getTeam(worker) === 'player') deps.setStatus(`${worker.name} delivered ${RESOURCE_LABELS[deliveredResource]}. Total: ${getResourceAmount(getTeam(worker), deliveredResource)}.`)
+      // No status message: deliveries happen constantly and the HUD resource counters already show the income.
     }
   } else if (!resource && ['movingToResource', 'gathering', 'returning'].includes(worker.state)) {
     worker.targetResourceId = undefined
