@@ -69,7 +69,7 @@ import { isPointerOverHud } from './rts/hud'
 import { SelectionMarkerTarget, clearSelectionMarkers, updateSelectionMarkers } from './rts/selectionMarkers'
 import { buildEnvironmentEnclosure } from './rts/environment'
 import { buildTerrain } from './rts/terrain'
-import { buildUnitModel, disposeUnit, isProceduralUnit, setUnitAnimation, setUnitUpgradeInsignia, updateUnitCargo } from './rts/unitModels'
+import { buildUnitModel, disposeUnit, getTeamColor, isProceduralUnit, setUnitAnimation, setUnitUpgradeInsignia, updateUnitCargo } from './rts/unitModels'
 import { BUILDING_MODEL_HEIGHTS, buildBuildingModel, disposeBuildingModel, isProceduralBuilding, setBuildingModelDamage } from './rts/buildingModels'
 import { RACES, UNIT_REQUIREMENTS, getBuildingDisplayName, getRace, getSoldierDefinition, getWorkerDefinition, pickRandomRace } from './rts/races'
 import { buildResourceModel, disposeResourceModel, playResourceDepletion, playResourceGatherPulse } from './rts/resourceModels'
@@ -1463,10 +1463,12 @@ const BEACON_HEIGHTS: Record<BuildableKind, number> = {
   turret: 5.5
 }
 
+// Ownership marker, not race identity: the architecture already says which
+// race built it, the beacon says whose side it fights for.
 function ensureBuildingBeacon(building: Building): void {
   if (building.beaconEntity || !isBuildableKind(building.kind)) return
 
-  const race = getRace(getTeam(building))
+  const teamColor = getTeamColor(getTeam(building))
   const position = Transform.get(building.entity).position
   const beacon = engine.addEntity()
   Transform.create(beacon, {
@@ -1475,8 +1477,8 @@ function ensureBuildingBeacon(building: Building): void {
   })
   MeshRenderer.setSphere(beacon)
   Material.setPbrMaterial(beacon, {
-    albedoColor: race.color,
-    emissiveColor: race.accent,
+    albedoColor: teamColor,
+    emissiveColor: teamColor,
     emissiveIntensity: 2.4,
     metallic: 0.2,
     roughness: 0.4,

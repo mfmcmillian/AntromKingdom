@@ -116,6 +116,11 @@ function getTeamGlow(team: Team): Color4 {
   return isPlayerAlly(team) ? ALLY_GLOW : TEAM_GLOW[team]
 }
 
+/** Ownership color for anything outside the unit builder (building beacons, markers). */
+export function getTeamColor(team: Team): Color4 {
+  return getTeamGlow(team)
+}
+
 const STILL: MotionProfile = { amplitude: 0.03, speed: 2, tilt: 0, spin: 0, lunge: 0 }
 
 type PartOptions = {
@@ -211,9 +216,29 @@ export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team:
 
   if (role === 'worker') addWorkerCargo(rig, addPart)
 
+  // Always-on ownership disc underfoot: race decides the silhouette, but this
+  // is what tells armies apart when two factions field the same race.
+  const ringSize = TEAM_RING_SIZE[role]
+  addPart(Vector3.create(0, 0.02, 0), Vector3.create(ringSize, 0.015, ringSize), Color4.create(glow.r, glow.g, glow.b, 0.32), {
+    cylinder: true,
+    emissive: glow,
+    emissiveIntensity: 1.5
+  })
+
   // Ground rings start hidden; only the showcase pedestal turns them on.
   applyGroundFxVisibility(rig)
   rigs.set(root, rig)
+}
+
+// Team disc diameter per role, scaled to each silhouette's footprint.
+const TEAM_RING_SIZE: Record<UnitRole, number> = {
+  worker: 0.95,
+  melee: 1.15,
+  ranged: 1.15,
+  caster: 1.25,
+  flyer: 1.25,
+  titan: 1.9,
+  hero: 2.2
 }
 
 function applyGroundFxVisibility(rig: UnitRig): void {
