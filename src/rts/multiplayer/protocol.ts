@@ -2,13 +2,12 @@ import type { Difficulty, GameMode, RaceId } from '../types'
 
 // Wire protocol for DecentraCraft multiplayer.
 //
-// Architecture: every client runs the full simulation (all four teams), and
-// only COMMANDS travel over the network. Each command is tagged with the seat
-// that issued it; each client translates the seat into its own local team
-// (your seat is always 'player' locally, everyone else fills enemy1..3) and
-// applies the command to its own sim. Computer seats are simulated by the
-// host client, whose AI decisions are broadcast as ordinary commands so all
-// sims stay in step at the command level.
+// Architecture: the DCL authoritative server owns the lobby and relays match
+// commands. Clients never write shared state directly - they send requests,
+// the server validates them (seat ownership, leader rights) and publishes the
+// result. Each command is tagged with the seat that issued it; each client
+// translates the seat into its own local team (your seat is always 'player'
+// locally, everyone else fills enemy1..3) and applies the command to its sim.
 
 /** Bump when the protocol changes shape; mismatched clients refuse to join. */
 export const PROTOCOL_VERSION = 1
@@ -36,14 +35,14 @@ export type LobbySeat = {
 /** The whole lobby, serialized as JSON into the synced lobby component. */
 export type LobbyConfig = {
   version: number
-  /** Wallet address of the current host (lowest address wins election). */
+  /** Lobby leader (earliest-seated human): configures computer seats, starts the match. */
   hostAddress: string
   phase: 'lobby' | 'starting' | 'inMatch'
   gameMode: GameMode
   seats: LobbySeat[]
-  /** Shared RNG seed rolled by the host at match start. */
+  /** Shared RNG seed rolled by the server at match start. */
   seed: number
-  /** Increments on every host write so stale writes can be discarded. */
+  /** Increments on every server write so clients spot changes cheaply. */
   revision: number
 }
 
@@ -122,47 +121,20 @@ export type MatchCommand =
   | StanceCommand
   | RallyCommand
 
-/** Envelope for every in-match message on the bus. */
-export type CommandEnvelope = {
-  protocol: number
-  /** Seat index (0..3) whose team this command drives. */
-  seat: number
-  /** Sender wallet address; receivers drop their own echoes. */
-  sender: string
-  /** Monotonic per-sender sequence for ordering/debugging. */
-  seq: number
-  command: MatchCommand
-}
-
-// --- Bus topics --------------------------------------------------------------
-
-export const BUS_TOPIC_COMMAND = 'dc-mp-cmd'
-export const BUS_TOPIC_MATCH_START = 'dc-mp-start'
-export const BUS_TOPIC_MATCH_ABORT = 'dc-mp-abort'
-export const BUS_TOPIC_LOBBY_REQUEST = 'dc-mp-lobby-req'
-
-// Non-host players never write the synced lobby directly (concurrent CRDT
-// writes would clobber each other). They send requests; the host validates
-// and publishes the new lobby state.
+// Lobby requests: clients send these to the authoritative server, which
+// validates them (sender identity comes from the transport, seat ownership
+// and leader rights are checked server-side) and publishes the new lobby.
 export type LobbyRequest =
-  | { type: 'claimSeat'; seat: number; address: string; name: string }
-  | { type: 'leaveSeat'; address: string }
-  | { type: 'setRace'; address: string; race: RaceId | 'random' }
-  | { type: 'setAlliance'; address: string; allianceId: number }
-  | { type: 'setReady'; address: string; ready: boolean }
-
-export type LobbyRequestEnvelope = {
-  protocol: number
-  sender: string
-  request: LobbyRequest
-}
-
-export type MatchStartMessage = {
-  protocol: number
-  sender: string
-  /** Full lobby snapshot frozen at start; every client builds the match from this. */
-  config: LobbyConfig
-}
+  | { type: 'claimSeat'; seat: number; name: string }
+  | { type: 'leaveSeat' }
+  | { type: 'setRace'; race: RaceId | 'random' }
+  | { type: 'setAlliance'; allianceId: number }
+  | { type: 'setReady'; ready: boolean }
+  // Leader-only from here down.
+  | { type: 'setSeat'; seat: number; patch: Partial<LobbySeat> }
+  | { type: 'setGameMode'; gameMode: GameMode }
+  | { type: 'startMatch' }
+  | { type: 'resetLobby' }
 
 export function createDefaultSeat(index: number): LobbySeat {
   return {

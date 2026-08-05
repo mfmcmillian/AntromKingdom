@@ -1,19 +1,17 @@
-import { MessageBus } from '@dcl/sdk/message-bus'
-import { BUS_TOPIC_COMMAND, PROTOCOL_VERSION, type CommandEnvelope, type MatchCommand } from './protocol'
+import { room } from './transport'
+import type { MatchCommand } from './protocol'
 import type { LocalMatchPlan } from './seatMap'
 import type { Team } from '../types'
 
-// In-match command relay. Local commands apply to the local sim immediately
-// AND go out on the bus tagged with our seat; remote commands come in tagged
-// with the sender's seat, get translated to a local team through the match
-// plan, and are handed to the game layer to apply. The host additionally
-// broadcasts its AI decisions for computer seats through the same pipe.
-
-const bus = new MessageBus()
+// In-match command relay (client side). Commands go to the authoritative
+// server, which validates seat ownership and rebroadcasts them to every
+// client in one canonical order. Local commands apply to the local sim
+// immediately; the server echo is skipped for the sender. Remote commands
+// are translated seat -> local team through the match plan and handed to the
+// game layer.
 
 let plan: LocalMatchPlan | undefined
 let myAddress = ''
-let seq = 0
 
 /** The game layer registers this to apply remote commands to its sim. */
 type CommandApplier = (team: Team, command: MatchCommand) => void
@@ -28,13 +26,17 @@ export function startCommandRelay(matchPlan: LocalMatchPlan, address: string, ap
   if (listening) return
   listening = true
 
-  bus.on(BUS_TOPIC_COMMAND, (data: CommandEnvelope) => {
-    if (data.protocol !== PROTOCOL_VERSION) return
-    if (data.sender.toLowerCase() === myAddress) return // our own echo
+  room.onMessage('commandRelayed', (data) => {
     if (!plan || !applier) return
+    if (data.sender.toLowerCase() === myAddress) return // we already applied it locally
     const team = plan.seatToTeam[data.seat]
-    if (!team || team === 'player') return // unknown seat or spoofed self-command
-    applier(team, data.command)
+    if (!team || team === 'player') return
+    try {
+      const command = JSON.parse(data.json) as MatchCommand
+      applier(team, command)
+    } catch {
+      // Malformed payload; server should have filtered this.
+    }
   })
 }
 
@@ -43,17 +45,10 @@ export function stopCommandRelay(): void {
   applier = undefined
 }
 
-/** Broadcast a command for a seat we control (our own, or an AI seat if host). */
+/** Broadcast a command for a seat we control (our own, or an AI seat if leader). */
 export function broadcastCommand(seatIndex: number, command: MatchCommand): void {
   if (!plan) return
-  const envelope: CommandEnvelope = {
-    protocol: PROTOCOL_VERSION,
-    seat: seatIndex,
-    sender: myAddress,
-    seq: seq++,
-    command
-  }
-  bus.emit(BUS_TOPIC_COMMAND, envelope)
+  room.send('matchCommand', { seat: seatIndex, json: JSON.stringify(command) })
 }
 
 /** Convenience: broadcast a command issued by the local player. */
