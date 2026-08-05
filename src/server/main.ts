@@ -82,6 +82,15 @@ export function startServer(): void {
     present.clear()
     for (const address of inScene) present.add(address)
 
+    // Every human participant left mid-match: reopen the lobby so the next
+    // visitors aren't locked out by a match nobody is playing.
+    if (lobby.phase === 'inMatch' && !lobby.seats.some((seat) => seat.kind === 'human')) {
+      console.log('[Server] all players left during a match; reopening the lobby')
+      lobby.phase = 'lobby'
+      for (const seat of lobby.seats) seat.ready = false
+      dirty = true
+    }
+
     if (ensureLeader()) dirty = true
     if (dirty) publishLobby()
   })
@@ -158,7 +167,10 @@ export function startServer(): void {
         return
       }
       case 'resetLobby': {
-        if (!isLeader) return
+        // Any seated participant may reopen the lobby, not just the leader:
+        // matches end client-side, and if only the host could reset, a host
+        // lingering on the end screen would lock everyone else out.
+        if (!isLeader && !mySeat) return
         lobby.phase = 'lobby'
         for (const seat of lobby.seats) seat.ready = false
         break

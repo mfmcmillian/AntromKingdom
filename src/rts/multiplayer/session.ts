@@ -160,8 +160,8 @@ export function hostStartMatch(): void {
   sendRequest({ type: 'startMatch' })
 }
 
-export function hostResetLobby(): void {
-  if (!isHost()) return
+/** Reopen the lobby after a match. The server accepts this from any seated participant. */
+export function requestLobbyReset(): void {
   sendRequest({ type: 'resetLobby' })
 }
 

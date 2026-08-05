@@ -19,6 +19,7 @@ import {
   getMultiplayerTeamName,
   isBuildingUnlocked,
   isMultiplayerHumanTeam,
+  isMultiplayerMatch,
   isUnitUnlocked,
   queueWorker,
   queueSoldier,
@@ -47,7 +48,7 @@ import {
   getMyAddress,
   getMySeatIndex,
   getPresentPlayerCount,
-  hostResetLobby,
+  requestLobbyReset,
   hostSetSeat,
   hostStartMatch,
   isHost,
@@ -2002,15 +2003,23 @@ function endGameOverlay() {
         {incomeGraph(entries)}
 
         <UiEntity uiTransform={{ width: '100%', height: 58, flexDirection: 'row', justifyContent: 'center', margin: { top: 26 } }}>
+          {/* A multiplayer rematch goes through the lobby (everyone re-readies);
+              only single-player can restart on the spot. */}
           <Button
-            value="PLAY AGAIN"
+            value={isMultiplayerMatch() ? 'BACK TO LOBBY' : 'PLAY AGAIN'}
             variant="primary"
             fontSize={24}
             uiTransform={{ width: 240, height: 58, margin: { right: 12 } }}
             uiBackground={{ color: UI.accent }}
             onMouseDown={() => {
               triggerScreenFade()
-              resetRtsGame()
+              if (isMultiplayerMatch()) {
+                requestLobbyReset()
+                titleStage = 'lobby'
+                returnToMainMenu()
+              } else {
+                resetRtsGame()
+              }
             }}
           />
           <Button
@@ -2022,7 +2031,7 @@ function endGameOverlay() {
             onMouseDown={() => {
               triggerScreenFade()
               titleStage = 'title'
-              hostResetLobby() // reopen the multiplayer lobby if we were hosting
+              if (isMultiplayerMatch()) requestLobbyReset() // reopen the lobby for everyone
               returnToMainMenu()
             }}
           />
