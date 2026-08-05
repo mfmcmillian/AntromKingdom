@@ -19,6 +19,8 @@ export type LocalMatchPlan = {
   activeEnemyTeams: EnemyTeam[]
   /** Teams driven by humans on this client's view; their AI must be disabled. */
   humanTeams: Team[]
+  /** Lobby display names for human-held teams (scoreboard labels). */
+  names: Partial<Record<Team, string>>
   gameMode: GameMode
   seed: number
 }
@@ -67,6 +69,7 @@ export function buildLocalMatchPlan(config: LobbyConfig, myAddress: string): Loc
   const difficulties = { enemy1: 'medium', enemy2: 'medium', enemy3: 'medium' } as Record<EnemyTeam, Difficulty>
   const alliances = { player: 0, enemy1: 1, enemy2: 2, enemy3: 3 } as Record<Team, number>
   const humanTeams: Team[] = []
+  const names: Partial<Record<Team, string>> = {}
 
   for (const { seat, index } of activeSeats) {
     const team = seatToTeam[index]
@@ -74,7 +77,10 @@ export function buildLocalMatchPlan(config: LobbyConfig, myAddress: string): Loc
     const rng = mulberry32(config.seed + index * 7919)
     races[team] = seat.race === 'random' ? RACES[Math.floor(rng() * RACES.length)] : seat.race
     alliances[team] = seat.allianceId
-    if (seat.kind === 'human') humanTeams.push(team)
+    if (seat.kind === 'human') {
+      humanTeams.push(team)
+      names[team] = seat.name ?? (seat.address ? `${seat.address.slice(0, 6)}..` : 'Player')
+    }
     if (team !== 'player') difficulties[team as EnemyTeam] = seat.difficulty
   }
 
@@ -87,6 +93,7 @@ export function buildLocalMatchPlan(config: LobbyConfig, myAddress: string): Loc
     alliances,
     activeEnemyTeams,
     humanTeams,
+    names,
     gameMode: config.gameMode,
     seed: config.seed
   }

@@ -16,7 +16,9 @@ import {
   getSelectedStance,
   getSelectedSummary,
   getSelectedUnitsInfo,
+  getMultiplayerTeamName,
   isBuildingUnlocked,
+  isMultiplayerHumanTeam,
   isUnitUnlocked,
   queueWorker,
   queueSoldier,
@@ -1941,9 +1943,11 @@ function getScoreboardEntries(): ScoreboardEntry[] {
     { team: 'player' as Team, label: 'YOU', race: gameState.playerRace, color: UI.accent },
     ...gameState.activeEnemyTeams.map((team, index) => {
       const ally = isPlayerAlly(team)
+      // Human opponents show their lobby name; computers keep the CPU/ALLY tag.
+      const playerName = getMultiplayerTeamName(team)
       return {
         team: team as Team,
-        label: `${ally ? 'ALLY' : 'CPU'} ${index + 1}`,
+        label: playerName ?? `${ally ? 'ALLY' : 'CPU'} ${index + 1}`,
         race: gameState.enemyRaces[team],
         color: ally ? ALLY_UI_COLOR : OPPONENT_SLOT_COLORS[index]
       }
@@ -2121,7 +2125,9 @@ function statsHeader(label: string, icon: string) {
 
 function statsRow(entry: ScoreboardEntry, stats: { unitsProduced: number; unitsKilled: number; resourcesGathered: number }, index: number) {
   const avatar = `images/icons/${UNIT_ICON_FILES.melee}${RACE_ICON_SUFFIX[entry.race]}.jpg`
-  const difficulty = entry.team === 'player' ? undefined : AI_DIFFICULTY[gameState.enemyDifficulties[entry.team as EnemyTeam]].label.toUpperCase()
+  // Difficulty is an AI concept: human teams (you and other players) never show one.
+  const isHumanTeam = entry.team === 'player' || isMultiplayerHumanTeam(entry.team)
+  const difficulty = isHumanTeam ? undefined : AI_DIFFICULTY[gameState.enemyDifficulties[entry.team as EnemyTeam]].label.toUpperCase()
   const subtitle = `${RACES[entry.race].name}${difficulty ? ` · ${difficulty}` : ''}`
 
   return (

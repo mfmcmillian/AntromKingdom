@@ -201,6 +201,16 @@ export function isMultiplayerMatch(): boolean {
   return multiplayerPlan !== undefined
 }
 
+/** Lobby display name for a team in a multiplayer match; undefined for computers and single-player. */
+export function getMultiplayerTeamName(team: Team): string | undefined {
+  return multiplayerPlan?.names[team]
+}
+
+/** True when this team is driven by another human, not an AI. */
+export function isMultiplayerHumanTeam(team: Team): boolean {
+  return multiplayerPlan?.humanTeams.includes(team) ?? false
+}
+
 /**
  * Entity ids must match across multiplayer clients so relayed commands can
  * reference units. Team entities scope to the owning seat (identical creation
