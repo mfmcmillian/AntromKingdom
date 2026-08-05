@@ -327,7 +327,7 @@ export const BUILDING_DEFINITIONS: Record<BuildableKind, BuildingDefinition> = {
     kind: 'turret',
     name: 'Turret',
     cost: { minerals: 100, gas: 25 },
-    hp: 220,
+    hp: 260,
     buildTime: 6,
     supplyAdds: 0,
     placementY: 0,
@@ -341,7 +341,8 @@ export const BUILDING_DEFINITIONS: Record<BuildableKind, BuildingDefinition> = {
 /** Automated defense tower combat stats (shared by all factions). */
 export const TURRET_STATS = {
   range: 10,
-  damage: 9,
+  // Sized so one tower roughly trades with 1.5x its cost in tier-1 attackers.
+  damage: 14,
   attackRate: 1,
   /** Height the bolt fires from, matching the tower head. */
   muzzleHeight: 3.6

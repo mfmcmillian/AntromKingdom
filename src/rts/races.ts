@@ -6,10 +6,13 @@ import type { BuildableKind, RaceId, RaceUnitStats, ResourceCost, SoldierVariant
 // models with their own stats. Every race fields six unit roles:
 //   worker / melee / ranged / caster (AoE splash) / flyer (fast hoverer) / titan (giant).
 //
-// Balance identity:
-//   human - baseline all-rounder.
-//   alien - expensive, durable, hard-hitting, slow to produce.
-//   bio   - cheap, fast, fragile, swarms out of quick production cycles.
+// Balance identity (cost-efficiency must order bio > human > alien at every
+// tier, raw per-unit power the opposite way; production times likewise):
+//   human - baseline all-rounder; crews repair structures 1.75x faster.
+//   alien - expensive, durable, hard-hitting, slow to produce; structures
+//           self-assemble at half worker speed once seeded.
+//   bio   - cheap, fast, fragile, swarms out of quick production cycles;
+//           every living unit regenerates 1 HP per second.
 
 const MELEE_RANGE = 1.8
 
@@ -63,7 +66,7 @@ export const RACES: Record<RaceId, RaceDefinition> = {
     tagline: 'Ancient tech. Devastating units; structures assemble themselves.',
     color: Color4.create(0.75, 0.6, 0.25, 1),
     accent: Color4.create(0.85, 0.65, 1, 1),
-    worker: { name: 'Seeker', hp: 30, cost: { minerals: 50 }, productionTime: 2.5, supply: 1 },
+    worker: { name: 'Seeker', hp: 35, cost: { minerals: 50 }, productionTime: 2.5, supply: 1 },
     melee: { name: 'Sentinel', hp: 125, damage: 16, moveSpeed: 2.8, attackRange: MELEE_RANGE, cost: { minerals: 125, gas: 50 }, productionTime: 3, supply: 1 },
     ranged: { name: 'Lancer', hp: 85, damage: 13, moveSpeed: 2.7, attackRange: 7, cost: { minerals: 100, gas: 75 }, productionTime: 3.2, supply: 1 },
     caster: { name: 'Riftweaver', hp: 70, damage: 18, moveSpeed: 2.6, attackRange: 8, attackRate: 1.9, splashRadius: 3.2, cost: { minerals: 125, gas: 125 }, productionTime: 4, supply: 2 },
@@ -87,8 +90,8 @@ export const RACES: Record<RaceId, RaceDefinition> = {
     tagline: 'Living horde. Cheap and fast; wounded units regenerate.',
     color: Color4.create(0.65, 0.25, 0.3, 1),
     accent: Color4.create(1, 0.45, 0.3, 1),
-    worker: { name: 'Grub', hp: 40, cost: { minerals: 50 }, productionTime: 1.5, supply: 1 },
-    melee: { name: 'Mauler', hp: 55, damage: 7, moveSpeed: 3.6, attackRange: MELEE_RANGE, cost: { minerals: 60, gas: 10 }, productionTime: 1.2, supply: 1 },
+    worker: { name: 'Grub', hp: 30, cost: { minerals: 50 }, productionTime: 1.5, supply: 1 },
+    melee: { name: 'Mauler', hp: 55, damage: 7, moveSpeed: 3.6, attackRange: MELEE_RANGE, cost: { minerals: 50 }, productionTime: 1.2, supply: 1 },
     ranged: { name: 'Spitter', hp: 45, damage: 6, moveSpeed: 3.2, attackRange: 5.5, cost: { minerals: 50, gas: 25 }, productionTime: 1.4, supply: 1 },
     caster: { name: 'Plague Weaver', hp: 50, damage: 10, moveSpeed: 3, attackRange: 6, attackRate: 1.5, splashRadius: 2.6, cost: { minerals: 80, gas: 60 }, productionTime: 2.5, supply: 2 },
     flyer: { name: 'Shrieker', hp: 70, damage: 9, moveSpeed: 4.5, attackRange: 5.5, attackRate: 0.8, cost: { minerals: 90, gas: 50 }, productionTime: 2.2, supply: 2 },
