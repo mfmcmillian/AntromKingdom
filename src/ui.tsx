@@ -1,5 +1,5 @@
 import ReactEcs, { Button, Label, ReactEcsRenderer, UiEntity } from '@dcl/sdk/react-ecs'
-import { InputModifier, engine } from '@dcl/sdk/ecs'
+import { InputModifier, UiCanvasInformation, engine } from '@dcl/sdk/ecs'
 import { Color4 } from '@dcl/sdk/math'
 import {
   assignControlGroup,
@@ -215,9 +215,28 @@ function updateMenuMovementLock(): void {
   }
 }
 
+// The whole HUD is laid out on a 1920x1080 virtual canvas.
+const VIRTUAL_WIDTH = 1920
+const VIRTUAL_HEIGHT = 1080
+
+// react-ecs 7.25 divides the UI scale factor by devicePixelRatio (a mobile
+// fix); this layout was tuned under the 7.23 formula (no dpr). Shrinking the
+// virtual canvas by the same ratio cancels the division exactly, so the UI
+// renders at the size it was designed for on any display scaling.
+let appliedDpr = 0
+
+function applyUiScaleCompensation(): void {
+  const canvas = UiCanvasInformation.getOrNull(engine.RootEntity)
+  const dpr = canvas?.devicePixelRatio || 1
+  if (dpr === appliedDpr) return
+  appliedDpr = dpr
+  ReactEcsRenderer.setUiRenderer(uiMenu, { virtualWidth: VIRTUAL_WIDTH / dpr, virtualHeight: VIRTUAL_HEIGHT / dpr })
+}
+
 export function setupUi() {
-  ReactEcsRenderer.setUiRenderer(uiMenu, { virtualWidth: 1920, virtualHeight: 1080 })
+  ReactEcsRenderer.setUiRenderer(uiMenu, { virtualWidth: VIRTUAL_WIDTH, virtualHeight: VIRTUAL_HEIGHT })
   engine.addSystem((dt: number) => {
+    applyUiScaleCompensation()
     if (gameState.matchStatus === 'notStarted') titleTime += dt
     screenFade = Math.max(0, screenFade - dt / FADE_SECONDS)
     updateMenuMovementLock()
