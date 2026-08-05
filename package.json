@@ -18,7 +18,8 @@
     "@gltf-transform/functions": "^4.4.2",
     "jimp": "^0.22.12",
     "meshoptimizer": "^1.2.0",
-    "pngjs": "^7.0.0"
+    "pngjs": "^7.0.0",
+    "sharp": "^0.35.3"
   },
   "engines": {
     "node": ">=16.0.0",

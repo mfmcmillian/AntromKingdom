@@ -58,7 +58,7 @@ export function showHeroShowcase(race: RaceId): void {
   MeshRenderer.setPlane(backdrop)
   // Unlit so the artwork reads evenly; dimmed a touch so the hero pops off it.
   Material.setBasicMaterial(backdrop, {
-    texture: Material.Texture.Common({ src: 'images/ui/title-bg-decentracraft.png' }),
+    texture: Material.Texture.Common({ src: 'images/ui/title-bg-decentracraft.jpg' }),
     diffuseColor: Color4.create(0.62, 0.62, 0.68, 1)
   })
 

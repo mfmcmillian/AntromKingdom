@@ -1358,7 +1358,7 @@ function startScreenOverlay() {
         width: '100%',
         height: '100%'
       }}
-      uiBackground={{ textureMode: 'stretch', texture: { src: 'images/ui/title-bg-decentracraft.png' } }}
+      uiBackground={{ textureMode: 'stretch', texture: { src: 'images/ui/title-bg-decentracraft.jpg' } }}
     >
       {titleSkyAmbience()}
 
@@ -1680,7 +1680,7 @@ function multiplayerLobbyOverlay() {
   return (
     <UiEntity
       uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%' }}
-      uiBackground={{ textureMode: 'stretch', texture: { src: 'images/ui/title-bg-decentracraft.png' } }}
+      uiBackground={{ textureMode: 'stretch', texture: { src: 'images/ui/title-bg-decentracraft.jpg' } }}
     >
       {titleSkyAmbience()}
       <UiEntity
