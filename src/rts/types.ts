@@ -86,6 +86,13 @@ export type Worker = Selectable & {
   carrying: number
   carryingResource?: ResourceKind
   activeAnimation: string
+  /** Lifetime enemy units this worker has finished off. */
+  kills?: number
+  /** Spore Plague damage-over-time (seconds remaining, damage rate, credit). */
+  poisonRemaining?: number
+  poisonDamagePerSecond?: number
+  poisonAttackerId?: string
+  poisonTick?: number
 }
 
 export type Soldier = Selectable & {
@@ -117,6 +124,17 @@ export type Soldier = Selectable & {
   autoEngaged?: boolean
   attackTimer: number
   activeAnimation: string
+  /** Lifetime enemy units this fighter has finished off. */
+  kills?: number
+  /** Caster signature ability cooldown (seconds until the next auto-cast). */
+  abilityTimer?: number
+  /** Time Fracture slow (seconds remaining at half move speed). */
+  slowRemaining?: number
+  /** Spore Plague damage-over-time (seconds remaining, damage rate, credit). */
+  poisonRemaining?: number
+  poisonDamagePerSecond?: number
+  poisonAttackerId?: string
+  poisonTick?: number
 }
 
 export type ResourceNode = Selectable & {

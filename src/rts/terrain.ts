@@ -17,7 +17,10 @@ const TILE_METERS = 16
 const GROUND_Y = 0.02
 // Ground decals must stay under the fog tiles (top ~0.18m) so unexplored cells
 // stay clean; each layer gets its own height to avoid z-fighting from overhead.
-const DECAL_Y = { patch: 0.05, basin: 0.07, track: 0.09, craterFloor: 0.11 }
+// Within a layer, anything that can overlap a sibling (the random tone patches,
+// the side tracks joining the main lane) also gets its own step - two coplanar
+// decals flicker no matter how the layers are ordered.
+const DECAL_Y = { patch: 0.04, patchStep: 0.004, basin: 0.08, sideTrack: 0.095, track: 0.105, craterFloor: 0.13 }
 
 // ---------------------------------------------------------------------------
 // Prop library (Meshy GLBs). footprint/height/minY are the measured bounds of
@@ -138,7 +141,8 @@ function createZoneDecals(): void {
     createGroundDecal(
       Vector3.create(12 + random() * (SCENE.size - 24), 0, 12 + random() * (SCENE.size - 24)),
       size,
-      DECAL_Y.patch,
+      // Random placement means patches overlap each other; each takes its own height.
+      DECAL_Y.patch + i * DECAL_Y.patchStep,
       random() * 360,
       patchTints[i % patchTints.length]
     )
@@ -162,9 +166,10 @@ function createZoneDecals(): void {
     Color4.create(0.9, 0.89, 0.92, 1),
     laneLength * 0.92
   )
-  // Side tracks from the lane out to the mirrored expansions.
-  createGroundDecal(Vector3.create(38, 0, 52), 4, DECAL_Y.track, 125, Color4.create(0.94, 0.93, 0.95, 1), 52)
-  createGroundDecal(Vector3.create(122, 0, 108), 4, DECAL_Y.track, 125, Color4.create(0.94, 0.93, 0.95, 1), 52)
+  // Side tracks from the lane out to the mirrored expansions. They sit a step
+  // below the main track so the junctions where they meet don't z-fight.
+  createGroundDecal(Vector3.create(38, 0, 52), 4, DECAL_Y.sideTrack, 125, Color4.create(0.94, 0.93, 0.95, 1), 52)
+  createGroundDecal(Vector3.create(122, 0, 108), 4, DECAL_Y.sideTrack, 125, Color4.create(0.94, 0.93, 0.95, 1), 52)
 }
 
 // ---------------------------------------------------------------------------

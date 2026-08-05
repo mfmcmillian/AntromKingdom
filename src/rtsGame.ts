@@ -1091,20 +1091,23 @@ export function getSelectedSummary(): SelectedSummary {
 
   if (selected.kind === 'worker') {
     const worker = selected as Worker
+    const killLine = selectedUnitCount <= 1 && (worker.kills ?? 0) > 0 ? ` · Kills: ${worker.kills}` : ''
     return {
       name: selectedUnitCount > 1 ? `${selectedUnitCount} Units` : worker.name,
       kind: worker.kind,
       team: getTeam(worker),
       hp: worker.hp,
       maxHp: worker.maxHp,
-      detail: `${getGroupSelectionPrefix()}State: ${worker.state}${worker.carrying > 0 ? `, carrying ${worker.carrying} ${worker.carryingResource}` : ''}`
+      detail: `${getGroupSelectionPrefix()}State: ${worker.state}${worker.carrying > 0 ? `, carrying ${worker.carrying} ${worker.carryingResource}` : ''}${killLine}`
     }
   }
 
   if (selected.kind === 'soldier') {
     const soldier = selected as Soldier
-    // A lone hero shows its signature trait so the perk is discoverable in-game.
+    // A lone hero or caster shows its signature perk so it's discoverable in-game.
     const heroLine = selectedUnitCount <= 1 && soldier.variant === 'hero' ? `${getRace(getTeam(soldier)).heroTrait} ` : ''
+    const casterLine = selectedUnitCount <= 1 && soldier.variant === 'caster' ? `${CASTER_ABILITY[getRace(getTeam(soldier)).id].describe} ` : ''
+    const killLine = selectedUnitCount <= 1 ? ` · Kills: ${soldier.kills ?? 0}` : ''
     return {
       name: selectedUnitCount > 1 ? `${selectedUnitCount} Units` : soldier.name,
       kind: soldier.kind,
@@ -1112,7 +1115,7 @@ export function getSelectedSummary(): SelectedSummary {
       hp: soldier.hp,
       maxHp: soldier.maxHp,
       variant: soldier.variant,
-      detail: `${getGroupSelectionPrefix()}${heroLine}State: ${soldier.state}`
+      detail: `${getGroupSelectionPrefix()}${heroLine}${casterLine}State: ${soldier.state}${killLine}`
     }
   }
 
@@ -2377,6 +2380,7 @@ function rtsTickSystem(dt: number): void {
   updateWorkersSystem(dt, workerSystemDeps)
   updateWorkerCargoVisuals()
   updateSoldiersSystem(dt, combatSystemDeps)
+  updateStatusEffects(dt)
   updateConstructionSites(dt)
   updateTurrets(dt)
   updateBioRegeneration(dt)
@@ -2883,6 +2887,12 @@ function damageCombatTarget(target: Building | Soldier | Worker, amount: number,
 
   applyCombatDamage(target, damage, attacker)
 
+  // Casters weave their signature ability into the attack cycle whenever it is
+  // off cooldown - no micro needed, the skill fires as part of normal combat.
+  if (attacker.kind === 'soldier' && attacker.variant === 'caster' && (attacker.abilityTimer ?? 0) <= 0) {
+    castCasterAbility(attacker, target, targetPosition)
+  }
+
   // Area damage: splash hits every enemy unit near the impact at reduced power.
   if (attacker.kind === 'soldier' && attacker.splashRadius > 0) {
     const splashDamage = Math.max(1, Math.round(damage * 0.6))
@@ -3016,6 +3026,109 @@ function creditUnitKill(attacker: Soldier | Worker | undefined, target: Soldier 
   if (!attacker || getTeam(attacker) === getTeam(target)) return
 
   gameState.matchStats[getTeam(attacker)].unitsKilled += 1
+  attacker.kills = (attacker.kills ?? 0) + 1
+}
+
+// ---------------------------------------------------------------------------
+// Caster signature abilities: one auto-cast skill per race, fired as part of
+// the normal attack whenever the cooldown is ready.
+//   Stormcaller (human) - Chain Lightning: the bolt arcs to extra targets.
+//   Riftweaver (alien)  - Time Fracture: nearby enemies move at half speed.
+//   Plague Weaver (bio) - Spore Plague: nearby enemies take poison over time.
+// ---------------------------------------------------------------------------
+
+const CASTER_ABILITY = {
+  human: { name: 'Chain Lightning', cooldown: 8, describe: 'Chain Lightning: every 8s the bolt arcs to 3 extra enemies.' },
+  alien: { name: 'Time Fracture', cooldown: 10, describe: 'Time Fracture: every 10s nearby enemies move at half speed for 3s.' },
+  bio: { name: 'Spore Plague', cooldown: 9, describe: 'Spore Plague: every 9s poisons nearby enemies for 4/s over 5s.' }
+} as const
+
+const CHAIN_LIGHTNING_ARC_RANGE = 7
+const CHAIN_LIGHTNING_MAX_ARCS = 3
+const TIME_FRACTURE_RADIUS = 5
+const TIME_FRACTURE_DURATION = 3
+const SPORE_PLAGUE_RADIUS = 5
+const SPORE_PLAGUE_DURATION = 5
+const SPORE_PLAGUE_DPS = 4
+
+/** Hostile units (not buildings) within `radius` of a point, nearest first. */
+function getHostileUnitsNear(position: Vector3, radius: number, attackerTeam: Team, excludeId: string): (Soldier | Worker)[] {
+  const hits: { unit: Soldier | Worker; distance: number }[] = []
+  for (const unit of [...soldiers, ...workers]) {
+    if (!unit.alive || unit.id === excludeId || !areHostile(getTeam(unit), attackerTeam)) continue
+    const distance = distanceToPoint(Transform.get(unit.entity).position, position)
+    if (distance <= radius) hits.push({ unit, distance })
+  }
+  return hits.sort((a, b) => a.distance - b.distance).map((hit) => hit.unit)
+}
+
+function castCasterAbility(caster: Soldier, target: Building | Soldier | Worker, targetPosition: Vector3): void {
+  const team = getTeam(caster)
+  const race = getRace(team).id
+  const ability = CASTER_ABILITY[race]
+  caster.abilityTimer = ability.cooldown
+  const accent = getRace(team).accent
+
+  if (race === 'human') {
+    // Chain Lightning: arc from the impact point to the nearest extra enemies.
+    const arcs = getHostileUnitsNear(targetPosition, CHAIN_LIGHTNING_ARC_RANGE, team, target.id).slice(0, CHAIN_LIGHTNING_MAX_ARCS)
+    const arcDamage = Math.max(1, Math.round(caster.damage * getDamageMultiplier(team) * 0.7))
+    for (const unit of arcs) {
+      const unitPosition = cloneVector(Transform.get(unit.entity).position)
+      fireProjectile(targetPosition, unitPosition, team)
+      spawnImpactFlash(unitPosition, accent)
+      if (unit.kind === 'soldier') damageSoldier(unit, arcDamage, caster)
+      else damageWorker(unit, arcDamage, caster)
+    }
+    return
+  }
+
+  if (race === 'alien') {
+    // Time Fracture: soldiers caught in the rift move at half speed.
+    spawnBlastRing(targetPosition, accent, TIME_FRACTURE_RADIUS)
+    for (const unit of getHostileUnitsNear(targetPosition, TIME_FRACTURE_RADIUS, team, '')) {
+      if (unit.kind === 'soldier') (unit as Soldier).slowRemaining = TIME_FRACTURE_DURATION
+    }
+    return
+  }
+
+  // Spore Plague: poison everything near the impact; refreshes on re-application.
+  spawnBlastRing(targetPosition, Color4.create(0.45, 0.9, 0.3, 1), SPORE_PLAGUE_RADIUS)
+  for (const unit of getHostileUnitsNear(targetPosition, SPORE_PLAGUE_RADIUS, team, '')) {
+    unit.poisonRemaining = SPORE_PLAGUE_DURATION
+    unit.poisonDamagePerSecond = SPORE_PLAGUE_DPS
+    unit.poisonAttackerId = caster.id
+    unit.poisonTick = unit.poisonTick ?? 0
+  }
+}
+
+/** Ticks ability cooldowns, slow durations, and poison damage-over-time. */
+function updateStatusEffects(dt: number): void {
+  for (const soldier of soldiers) {
+    if (!soldier.alive) continue
+    if (soldier.abilityTimer !== undefined && soldier.abilityTimer > 0) soldier.abilityTimer -= dt
+    if (soldier.slowRemaining !== undefined && soldier.slowRemaining > 0) soldier.slowRemaining -= dt
+    tickPoison(soldier, dt)
+  }
+  for (const worker of workers) {
+    if (worker.alive) tickPoison(worker, dt)
+  }
+}
+
+function tickPoison(unit: Soldier | Worker, dt: number): void {
+  if (!unit.poisonRemaining || unit.poisonRemaining <= 0) return
+
+  unit.poisonRemaining -= dt
+  unit.poisonTick = (unit.poisonTick ?? 0) + dt
+  if (unit.poisonTick < 1) return
+  unit.poisonTick -= 1
+
+  // Kill credit goes to the caster if they're still on the field.
+  const attacker = unit.poisonAttackerId ? getCombatTargetById(unit.poisonAttackerId) : undefined
+  const credit = attacker && (attacker.kind === 'soldier' || attacker.kind === 'worker') ? attacker : undefined
+  spawnImpactFlash(cloneVector(Transform.get(unit.entity).position), Color4.create(0.45, 0.9, 0.3, 1))
+  if (unit.kind === 'soldier') damageSoldier(unit, unit.poisonDamagePerSecond ?? 0, credit)
+  else damageWorker(unit, unit.poisonDamagePerSecond ?? 0, credit)
 }
 
 function clearAttackersTargeting(targetId: string): void {

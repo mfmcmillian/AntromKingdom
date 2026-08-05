@@ -242,9 +242,10 @@ function updateAttacking(soldier: Soldier, target: CombatTarget, dt: number, dep
   }
 }
 
-/** Propulsion research speeds up every fighter on the team. */
+/** Propulsion research speeds up every fighter on the team; Time Fracture halves it. */
 function getUpgradedMoveSpeed(soldier: Soldier): number {
-  return soldier.moveSpeed * getSpeedMultiplier(getTeam(soldier))
+  const slowFactor = (soldier.slowRemaining ?? 0) > 0 ? 0.5 : 1
+  return soldier.moveSpeed * getSpeedMultiplier(getTeam(soldier)) * slowFactor
 }
 
 function startAttacking(soldier: Soldier, deps: CombatSystemDeps): void {
