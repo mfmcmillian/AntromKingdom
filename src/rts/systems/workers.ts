@@ -225,16 +225,22 @@ function updateWorkerBuildMovement(worker: Worker, dt: number, deps: WorkerSyste
 function updateWorkerRepairMovement(worker: Worker, dt: number, deps: WorkerSystemDeps): void {
   if ((worker.state !== 'movingToRepair' && worker.state !== 'repairing') || !worker.repairTargetId) return
 
-  const site = deps.getBuildingById(worker.repairTargetId)
-  if (!site?.alive || !site.isComplete || site.hp >= site.maxHp) {
+  // Repair targets are buildings for every race, plus mech fighters for humans.
+  const target = deps.getCombatTargetById(worker.repairTargetId)
+  const isUnit = target?.kind === 'soldier'
+  if (!target?.alive || target.kind === 'worker' || (!isUnit && !(target as Building).isComplete) || target.hp >= target.maxHp) {
     stopRepairing(worker, deps)
     return
   }
+  const site = target as Building | Soldier
 
-  const workPosition = deps.getRepairWorkPosition(site, Transform.get(worker.entity).position)
+  // Units move, so the crew works with looser reach and chases when they drift.
+  const workPosition = isUnit ? Transform.get(site.entity).position : deps.getRepairWorkPosition(site as Building, Transform.get(worker.entity).position)
+  const reachDistance = isUnit ? 1.2 : 0.25
+  const driftDistance = isUnit ? 2.4 : 0.8
   if (worker.state === 'movingToRepair') {
     moveTowardPosition(worker.entity, workPosition, CONFIG.builderMoveSpeed, dt)
-    if (distanceToPosition(worker.entity, workPosition) <= 0.25) {
+    if (distanceToPosition(worker.entity, workPosition) <= reachDistance) {
       worker.state = 'repairing'
       worker.timer = 0
       deps.setWorkerAnimation(worker, 'talk')
@@ -243,7 +249,7 @@ function updateWorkerRepairMovement(worker: Worker, dt: number, deps: WorkerSyst
     return
   }
 
-  if (distanceToPosition(worker.entity, workPosition) > 0.8) {
+  if (distanceToPosition(worker.entity, workPosition) > driftDistance) {
     worker.state = 'movingToRepair'
     deps.setWorkerAnimation(worker, 'walk')
     return

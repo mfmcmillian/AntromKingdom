@@ -90,6 +90,7 @@ export type GatherCommand = {
 export type RepairCommand = {
   type: 'repair'
   workerIds: string[]
+  /** Repair target id: a building, or a mech fighter for human crews. */
   buildingId: string
 }
 

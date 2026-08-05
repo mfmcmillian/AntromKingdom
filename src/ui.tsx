@@ -32,6 +32,7 @@ import {
   applyRemoteCommand,
   startAttackMove,
   startPatrol,
+  startRepairOrder,
   startRtsMatch,
   startMultiplayerRtsMatch,
   startUpgradeResearch,
@@ -138,7 +139,8 @@ const ICON = {
     selectAll: 'images/icons/icon-action-selectall.jpg',
     attackMove: 'images/icons/icon-action-attackmove.jpg',
     patrol: 'images/icons/icon-action-patrol.jpg',
-    stance: 'images/icons/icon-action-stance.jpg'
+    stance: 'images/icons/icon-action-stance.jpg',
+    repair: 'images/icons/icon-action-repair.jpg'
   },
   endgame: {
     victory: 'images/icons/icon-endgame-victory.jpg',
@@ -292,6 +294,8 @@ export const uiMenu = () => {
 // Top HUD: resources (SC style: icon + count, top-right) and alerts.
 // ---------------------------------------------------------------------------
 
+let supplyTooltipHovered = false
+
 function resourceBar() {
   const playerEconomy = gameState.economies.player
   const supplyCapped = playerEconomy.supplyUsed >= playerEconomy.supplyCap
@@ -313,7 +317,65 @@ function resourceBar() {
       <Label value={formatMatchTime(gameState.matchTime)} fontSize={15} color={UI.dim} textAlign="middle-right" textWrap="nowrap" uiTransform={{ width: 66, height: '100%', margin: { right: 18 } }} />
       {resourceCounter(ICON.resource.minerals, playerEconomy.minerals.toString(), UI.text)}
       {resourceCounter(ICON.resource.gas, playerEconomy.gas.toString(), UI.text)}
-      {resourceCounter(ICON.resource.supply, `${playerEconomy.supplyUsed}/${playerEconomy.supplyCap}`, supplyCapped ? UI.red : UI.text)}
+      <UiEntity
+        uiTransform={{ flexDirection: 'row', alignItems: 'center', height: '100%' }}
+        onMouseEnter={() => {
+          supplyTooltipHovered = true
+        }}
+        onMouseLeave={() => {
+          supplyTooltipHovered = false
+        }}
+      >
+        {resourceCounter(ICON.resource.supply, `${playerEconomy.supplyUsed}/${playerEconomy.supplyCap}`, supplyCapped ? UI.red : UI.text)}
+      </UiEntity>
+      {supplyTooltipHovered ? supplyTooltip(playerEconomy.supplyUsed, playerEconomy.supplyCap, supplyCapped) : null}
+    </UiEntity>
+  )
+}
+
+/** Hover tooltip for the supply counter: what the numbers mean and how to raise the cap. */
+function supplyTooltip(used: number, cap: number, capped: boolean) {
+  const supplyHouseName = getBuildingDisplayName('supplyHouse', 'player')
+  const supplyHouseAdds = BUILDING_DEFINITIONS.supplyHouse.supplyAdds
+
+  return (
+    <UiEntity
+      uiTransform={{
+        positionType: 'absolute',
+        position: { top: 50, right: 0 },
+        width: 360,
+        flexDirection: 'column',
+        padding: { top: 10, bottom: 10, left: 14, right: 14 }
+      }}
+      uiBackground={{ color: Color4.create(0.02, 0.04, 0.07, 0.95) }}
+    >
+      <Label value="SUPPLY" fontSize={15} color={UI.gold} textAlign="middle-left" uiTransform={{ width: '100%', height: 20 }} />
+      <Label
+        value={`Army size: ${used} supply used of a ${cap} cap. Every unit you train takes supply.`}
+        fontSize={13}
+        color={UI.text}
+        textAlign="top-left"
+        textWrap="wrap"
+        uiTransform={{ width: '100%', height: 36, margin: { top: 4 } }}
+      />
+      <Label
+        value={`Build ${supplyHouseName}s (+${supplyHouseAdds} each) to raise the cap and field a bigger army.`}
+        fontSize={13}
+        color={UI.dim}
+        textAlign="top-left"
+        textWrap="wrap"
+        uiTransform={{ width: '100%', height: 36, margin: { top: 2 } }}
+      />
+      {capped ? (
+        <Label
+          value="Supply capped! You cannot train more units until you add supply."
+          fontSize={13}
+          color={UI.red}
+          textAlign="top-left"
+          textWrap="wrap"
+          uiTransform={{ width: '100%', height: 34, margin: { top: 2 } }}
+        />
+      ) : null}
     </UiEntity>
   )
 }
@@ -737,6 +799,16 @@ function getCommandSlots(selected: SelectedSummary): CommandSlot[] {
         onClick: () => startWorkerBuildingPlacement(kind)
       })
     }
+    slots.push({
+      id: 'repair',
+      icon: ICON.action.repair,
+      name: 'Repair',
+      description:
+        gameState.playerRace === 'human'
+          ? 'Click a damaged building or mech fighter after pressing. Costs crystal; Vanguard crews repair 75% faster.'
+          : 'Click a damaged building after pressing. Costs crystal while repairing.',
+      onClick: startRepairOrder
+    })
     slots.push(selectAllSlot(`all ${getWorkerDefinition('player').name}s`))
   }
 

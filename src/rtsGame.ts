@@ -382,6 +382,7 @@ export function startAttackMove(): void {
   }
 
   cancelPatrol()
+  cancelRepairOrder()
   attackMovePending = true
   attackMoveCooldown = BUILDING_PLACEMENT_CLICK_COOLDOWN
   setStatus('Attack-move: click the ground. Fighters engage everything on the way.')
@@ -390,6 +391,69 @@ export function startAttackMove(): void {
 function cancelAttackMove(): void {
   attackMovePending = false
   attackMoveCooldown = 0
+}
+
+// ---------------------------------------------------------------------------
+// Repair: click the button with workers selected, then click the target.
+// Buildings are repairable by every race; human crews can also weld their
+// mechanical fighters back together.
+// ---------------------------------------------------------------------------
+
+let repairPending = false
+let repairCooldown = 0
+
+export function startRepairOrder(): void {
+  if (!isMatchActive()) return
+
+  const repairers = getSelectedWorkers().filter((worker) => worker.alive && getTeam(worker) === 'player')
+  if (repairers.length === 0) {
+    setStatus('Select a worker first, then order the repair.')
+    return
+  }
+
+  cancelAttackMove()
+  cancelPatrol()
+  repairPending = true
+  repairCooldown = BUILDING_PLACEMENT_CLICK_COOLDOWN
+  setStatus(getRace('player').id === 'human' ? 'Repair: click a damaged building or mech fighter.' : 'Repair: click a damaged building.')
+}
+
+function cancelRepairOrder(): void {
+  repairPending = false
+  repairCooldown = 0
+}
+
+/** While a repair order is armed, a click on empty ground calls it off. */
+function updateRepairOrderInput(dt: number): void {
+  if (!repairPending) return
+
+  repairCooldown = Math.max(0, repairCooldown - dt)
+  if (repairCooldown > 0) return
+  if (!inputSystem.isTriggered(InputAction.IA_POINTER, PointerEventType.PET_DOWN)) return
+  if (isPointerOverHud()) return
+  // Clicks on selectables run through handleSelectableClick instead.
+  if (isPointerPressOnSelectable()) return
+
+  cancelRepairOrder()
+  orderClickConsumedUntilRelease = true
+  setStatus('Repair cancelled.')
+}
+
+function orderWorkersToRepair(repairers: Worker[], target: Building | Soldier): void {
+  const assigned: Worker[] = []
+  for (const worker of repairers) {
+    assignWorkerToRepair(worker, target, false)
+    if (worker.repairTargetId === target.id) assigned.push(worker)
+  }
+
+  if (assigned.length === 0) {
+    setStatus(`No idle workers available to repair ${target.name}.`)
+    return
+  }
+
+  playAcknowledge()
+  setStatus(`${assigned.length} worker${assigned.length === 1 ? '' : 's'} moving to repair ${target.name}.`)
+  if (isRelayActive()) broadcastMyCommand({ type: 'repair', workerIds: assigned.map((worker) => worker.id), buildingId: target.id })
 }
 
 // ---------------------------------------------------------------------------
@@ -411,6 +475,7 @@ export function startPatrol(): void {
   }
 
   cancelAttackMove()
+  cancelRepairOrder()
   patrolPending = true
   patrolCooldown = BUILDING_PLACEMENT_CLICK_COOLDOWN
   setStatus('Patrol: click the ground. Fighters walk the route and engage hostiles on the way.')
@@ -1643,6 +1708,19 @@ function handleSelectableClick(id: string): void {
     return
   }
 
+  // An armed repair order consumes this click: valid target = repair, anything else calls it off.
+  if (repairPending) {
+    cancelRepairOrder()
+    orderClickConsumedUntilRelease = true
+    const repairers = getSelectedWorkers().filter((worker) => worker.alive)
+    if (repairers.length > 0 && isPlayerRepairableTarget(clicked)) {
+      orderWorkersToRepair(repairers, clicked)
+    } else {
+      setStatus(getRace('player').id === 'human' ? 'Cannot repair that. Pick a damaged friendly building or mech fighter.' : 'Cannot repair that. Pick a damaged friendly building.')
+    }
+    return
+  }
+
   // Pending spawn-point / attack-move / patrol clicks are handled globally; don't also run selection commands.
   if (rallyPlacementKind !== 'none' || attackMovePending || patrolPending) return
 
@@ -1830,11 +1908,17 @@ function assignWorkerToAttack(worker: Worker, target: Building | Soldier | Worke
   setWorkerAnimation(worker, 'walk')
 }
 
-function assignWorkerToRepair(worker: Worker, building: Building, announce = true): void {
-  if (!worker.alive || !building.alive || !building.isComplete) return
-  if (getTeam(worker) !== getTeam(building)) return
-  if (building.hp >= building.maxHp) {
-    if (announce) setStatus(`${building.name} does not need repairs.`)
+function assignWorkerToRepair(worker: Worker, target: Building | Soldier, announce = true): void {
+  if (!worker.alive || !target.alive) return
+  if (target.kind !== 'soldier' && !(target as Building).isComplete) return
+  if (getTeam(worker) !== getTeam(target)) return
+  // Only human mech fighters can be field-repaired; other races' flesh heals otherwise.
+  if (target.kind === 'soldier' && getRace(getTeam(worker)).id !== 'human') {
+    if (announce) setStatus('Only mechanical fighters can be repaired.')
+    return
+  }
+  if (target.hp >= target.maxHp) {
+    if (announce) setStatus(`${target.name} does not need repairs.`)
     return
   }
   if (worker.state === 'movingToBuild' || worker.state === 'constructing' || worker.state === 'movingToRepair' || worker.state === 'repairing') {
@@ -1845,7 +1929,7 @@ function assignWorkerToRepair(worker: Worker, building: Building, announce = tru
   worker.state = 'movingToRepair'
   worker.targetResourceId = undefined
   worker.buildSiteId = undefined
-  worker.repairTargetId = building.id
+  worker.repairTargetId = target.id
   worker.attackTargetId = undefined
   worker.rallyPoint = undefined
   worker.timer = 0
@@ -1854,7 +1938,7 @@ function assignWorkerToRepair(worker: Worker, building: Building, announce = tru
   setWorkerAnimation(worker, 'walk')
   if (announce) {
     clearSelection()
-    setStatus(`${worker.name} moving to repair ${building.name}.`)
+    setStatus(`${worker.name} moving to repair ${target.name}.`)
   }
 }
 
@@ -2015,6 +2099,7 @@ const dragSelectDeps = {
     rallyPlacementKind !== 'none' ||
     attackMovePending ||
     patrolPending ||
+    repairPending ||
     orderClickConsumedUntilRelease ||
     gameState.matchStatus !== MATCH_ACTIVE,
   onBoxSelect: selectPlayerUnitsInRect,
@@ -2223,11 +2308,11 @@ export function applyRemoteCommand(team: Team, command: MatchCommand): void {
     }
 
     case 'repair': {
-      const building = selectables.get(command.buildingId) as Building | undefined
-      if (!building?.alive) break
+      const target = selectables.get(command.buildingId)
+      if (!target?.alive || target.kind === 'resource' || target.kind === 'worker') break
       for (const id of command.workerIds) {
         const unit = getRemoteUnit(id, team)
-        if (unit?.kind === 'worker') assignWorkerToRepair(unit as Worker, building, false)
+        if (unit?.kind === 'worker') assignWorkerToRepair(unit as Worker, target as Building | Soldier, false)
       }
       break
     }
@@ -2365,6 +2450,7 @@ function rtsTickSystem(dt: number): void {
   updateRallyPlacementInput(dt)
   updateAttackMoveInput(dt)
   updatePatrolInput(dt)
+  updateRepairOrderInput(dt)
   updateCancelInput()
   if (orderClickConsumedUntilRelease && !inputSystem.isPressed(InputAction.IA_POINTER)) {
     orderClickConsumedUntilRelease = false
@@ -2540,6 +2626,12 @@ function updateCancelInput(): void {
   if (rallyPlacementKind !== 'none') {
     cancelRallyPlacement()
     setStatus('Spawn point placement cancelled.')
+    return
+  }
+
+  if (repairPending) {
+    cancelRepairOrder()
+    setStatus('Repair cancelled.')
     return
   }
 
@@ -3266,6 +3358,15 @@ function getCommandableSoldiers(): Soldier[] {
 
 function isEnemyAttackTarget(selectable: Selectable): selectable is Building | Soldier | Worker {
   return selectable.kind !== 'resource' && isHostileToPlayer(getTeam(selectable))
+}
+
+/** Anything the armed repair order accepts: damaged friendly buildings, plus damaged mech fighters for humans. */
+function isPlayerRepairableTarget(selectable: Selectable): selectable is Building | Soldier {
+  if (isPlayerRepairTarget(selectable)) return true
+  if (selectable.kind !== 'soldier') return false
+  const soldier = selectable as Soldier
+
+  return getTeam(soldier) === 'player' && getRace('player').id === 'human' && soldier.hp < soldier.maxHp
 }
 
 function isPlayerRepairTarget(selectable: Selectable): selectable is Building {
