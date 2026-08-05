@@ -374,6 +374,7 @@ function infoPanel(selected: SelectedSummary) {
         ) : null}
 
         <Label value={selected.detail} fontSize={14} color={UI.dim} textAlign="middle-left" uiTransform={{ margin: { top: 8 } }} />
+        {selected.kind === 'soldier' ? upgradeBadgesRow(selected.team ?? 'player') : null}
         {selected.kind === 'forge' && !isEnemy ? (
           <Label
             value={`${UPGRADE_INFO.damage.name} Lv${getUpgradeLevel('player', 'damage')}  |  ${UPGRADE_INFO.speed.name} Lv${getUpgradeLevel('player', 'speed')}`}
@@ -386,6 +387,35 @@ function infoPanel(selected: SelectedSummary) {
       </UiEntity>
 
       {multi ? wireframeGrid(units) : productionQueuePanel(selected)}
+    </UiEntity>
+  )
+}
+
+/** SC-style upgrade icons under the unit details: the team's researched
+ * Weapons / Propulsion levels as icon badges with a level number. */
+function upgradeBadgesRow(team: Team) {
+  const upgrades = (['damage', 'speed'] as UpgradeKind[])
+    .map((kind) => ({ kind, level: getUpgradeLevel(team, kind) }))
+    .filter((upgrade) => upgrade.level > 0)
+  if (upgrades.length === 0) return null
+
+  return (
+    <UiEntity uiTransform={{ flexDirection: 'row', margin: { top: 8 } }}>
+      {upgrades.map((upgrade) => (
+        <UiEntity
+          key={`upg-${upgrade.kind}`}
+          uiTransform={{ width: 40, height: 40, padding: 2, margin: { right: 8 } }}
+          uiBackground={{ color: UI.slotFrame }}
+        >
+          <UiEntity uiTransform={{ width: '100%', height: '100%' }} uiBackground={{ textureMode: 'stretch', texture: { src: ICON.upgrade[upgrade.kind] } }} />
+          <UiEntity
+            uiTransform={{ positionType: 'absolute', position: { bottom: 1, right: 1 }, width: 16, height: 16, justifyContent: 'center', alignItems: 'center' }}
+            uiBackground={{ color: Color4.create(0, 0, 0, 0.75) }}
+          >
+            <Label value={`${upgrade.level}`} fontSize={12} color={UI.gold} textAlign="middle-center" />
+          </UiEntity>
+        </UiEntity>
+      ))}
     </UiEntity>
   )
 }

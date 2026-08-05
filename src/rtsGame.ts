@@ -987,16 +987,6 @@ function getGroupSelectionPrefix(): string {
   return `Selected ${parts.join(' + ')}. `
 }
 
-/** " | Weapons +1, Propulsion +2" - or empty when nothing is researched yet. */
-function getUpgradeSuffix(team: Team): string {
-  const parts: string[] = []
-  const damageLevel = getUpgradeLevel(team, 'damage')
-  const speedLevel = getUpgradeLevel(team, 'speed')
-  if (damageLevel > 0) parts.push(`${UPGRADE_INFO.damage.name} +${damageLevel}`)
-  if (speedLevel > 0) parts.push(`${UPGRADE_INFO.speed.name} +${speedLevel}`)
-  return parts.length > 0 ? ` | ${parts.join(', ')}` : ''
-}
-
 export function getSelectedSummary(): SelectedSummary {
   const selected = getSelected()
 
@@ -1033,7 +1023,7 @@ export function getSelectedSummary(): SelectedSummary {
       hp: soldier.hp,
       maxHp: soldier.maxHp,
       variant: soldier.variant,
-      detail: `${getGroupSelectionPrefix()}${heroLine}State: ${soldier.state}${getUpgradeSuffix(getTeam(soldier))}`
+      detail: `${getGroupSelectionPrefix()}${heroLine}State: ${soldier.state}`
     }
   }
 
