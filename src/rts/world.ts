@@ -9,9 +9,24 @@ export const workerProductionOrders: WorkerProductionOrder[] = []
 export const soldierProductionOrders: UnitProductionOrder[] = []
 
 let nextId = 1
+const scopedCounters = new Map<string, number>()
 
 export function createEntityId(kind: string): string {
   return `${kind}-${nextId++}`
+}
+
+/**
+ * Multiplayer ids: one counter per (scope, kind) instead of a global counter.
+ * Clients create entities in different orders (each builds its own base first),
+ * so a global counter would mint different ids for the same unit. Scoping by
+ * owning seat keeps every team's sequence identical on all clients, which is
+ * what lets relayed commands reference units by id.
+ */
+export function createScopedEntityId(scope: string, kind: string): string {
+  const key = `${scope}/${kind}`
+  const count = (scopedCounters.get(key) ?? 0) + 1
+  scopedCounters.set(key, count)
+  return `${scope}-${kind}-${count}`
 }
 
 export function resetWorld(): void {
@@ -23,6 +38,7 @@ export function resetWorld(): void {
   workerProductionOrders.length = 0
   soldierProductionOrders.length = 0
   nextId = 1
+  scopedCounters.clear()
 }
 
 export function getTeam(selectable: Selectable): Team {

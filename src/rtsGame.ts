@@ -61,6 +61,8 @@ import { createEnemyAi, updateEnemyAi as updateEnemyAiSystem, type EnemyAi } fro
 import { updateSoldierProduction as updateSoldierProductionSystem, updateWorkerProduction as updateWorkerProductionSystem } from './rts/systems/production'
 import { updateWorkers as updateWorkersSystem } from './rts/systems/workers'
 import { mulberry32, type LocalMatchPlan } from './rts/multiplayer/seatMap'
+import { broadcastMyCommand, isRelayActive, stopCommandRelay } from './rts/multiplayer/commandRelay'
+import type { MatchCommand } from './rts/multiplayer/protocol'
 import { updateDragSelect } from './rts/dragSelect'
 import { initFogOfWar, resetFogOfWar } from './rts/fogOfWar'
 import { isPointerOverHud } from './rts/hud'
@@ -91,6 +93,7 @@ import { createBuildingDamageVfx, removeBuildingDamageVfx, updateBuildingDamageV
 import {
   buildings,
   createEntityId,
+  createScopedEntityId,
   getAvailableWorkersForTeam,
   getTeam,
   getTeamSoldierCount,
@@ -177,6 +180,7 @@ export function initRtsGame(): void {
 
 export function startRtsMatch(): void {
   multiplayerPlan = undefined
+  stopCommandRelay()
   launchMatch()
 }
 
@@ -193,6 +197,19 @@ export function startMultiplayerRtsMatch(plan: LocalMatchPlan): void {
 
 export function isMultiplayerMatch(): boolean {
   return multiplayerPlan !== undefined
+}
+
+/**
+ * Entity ids must match across multiplayer clients so relayed commands can
+ * reference units. Team entities scope to the owning seat (identical creation
+ * sequence per team everywhere); map resources spawn in one seeded order and
+ * share a fixed scope. Single-player keeps the plain global counter.
+ */
+function mintEntityId(kind: string, team: Team | undefined): string {
+  if (!multiplayerPlan) return createEntityId(kind)
+
+  const seat = team !== undefined ? multiplayerPlan.teamToSeat[team] : undefined
+  return createScopedEntityId(seat !== undefined ? `s${seat}` : 'map', kind)
 }
 
 function launchMatch(): void {
@@ -220,6 +237,7 @@ export function endRtsMatch(): void {
  */
 export function returnToMainMenu(): void {
   multiplayerPlan = undefined
+  stopCommandRelay()
   resetRtsGame()
   gameState.matchStatus = MATCH_NOT_STARTED
   gameState.matchResult = 'none'
@@ -254,6 +272,7 @@ export function queueWorker(): void {
 
   workerProductionOrders.push({ templeId: temple.id, timer: 0, productionTime: workerDef.productionTime, team: 'player' })
   gameState.economies.player.workerQueue += 1
+  if (isRelayActive()) broadcastMyCommand({ type: 'train', buildingId: temple.id, unit: 'worker' })
   setStatus(`${workerDef.name} queued at the ${templeName}.`)
 }
 
@@ -332,6 +351,7 @@ function updateRallyPlacementInput(dt: number): void {
     barracksRallyPoints.set(rallyPlacementBuildingId, rallyPoint)
     setStatus(`Barracks spawn set to ${formatPosition(rallyPoint)}.`)
   }
+  if (isRelayActive()) broadcastMyCommand({ type: 'rally', buildingId: rallyPlacementBuildingId, x: rallyPoint.x, z: rallyPoint.z })
   cancelRallyPlacement()
 }
 
@@ -437,6 +457,7 @@ function updatePatrolInput(dt: number): void {
     setSoldierAnimation(soldier, 'walk')
   }
 
+  if (isRelayActive()) broadcastMyCommand({ type: 'patrol', unitIds: patrollers.map((soldier) => soldier.id), x: ground.x, z: ground.z })
   showMoveMarker(ground)
   playAcknowledge()
   setStatus(`${patrollers.length} fighter${patrollers.length === 1 ? '' : 's'} patrolling.`)
@@ -476,6 +497,7 @@ function updateAttackMoveInput(dt: number): void {
     setSoldierAnimation(soldier, 'walk')
   }
 
+  if (isRelayActive()) broadcastMyCommand({ type: 'attackMove', unitIds: attackers.map((soldier) => soldier.id), x: ground.x, z: ground.z })
   showMoveMarker(ground)
   playAcknowledge()
   setStatus(`${attackers.length} fighter${attackers.length === 1 ? '' : 's'} attack-moving.`)
@@ -515,6 +537,7 @@ export function cycleSelectedStance(): void {
       setSoldierAnimation(soldier, 'idle')
     }
   }
+  if (isRelayActive()) broadcastMyCommand({ type: 'stance', unitIds: selectedSoldiers.map((soldier) => soldier.id), stance: next })
   setStatus(`Stance set to ${STANCE_LABELS[next]} (${selectedSoldiers.length} fighter${selectedSoldiers.length === 1 ? '' : 's'}).`)
 }
 
@@ -656,6 +679,7 @@ export function queueSoldier(variant: SoldierVariant = 'melee'): void {
 
   soldierProductionOrders.push({ barracksId: trainer.id, timer: 0, productionTime: soldierDef.productionTime, team: 'player', variant })
   gameState.economies.player.soldierQueue += 1
+  if (isRelayActive()) broadcastMyCommand({ type: 'train', buildingId: trainer.id, unit: variant })
   setStatus(`${soldierDef.name} queued at the ${trainerName}.`)
 }
 
@@ -690,6 +714,7 @@ export function startUpgradeResearch(kind: 'damage' | 'speed'): void {
   }
 
   startUpgradeResearchOrder('player', kind, forge.id)
+  if (isRelayActive()) broadcastMyCommand({ type: 'research', buildingId: forge.id, upgrade: kind })
   setStatus(`Researching ${info.name} level ${getUpgradeLevel('player', kind) + 1} (${info.effect}).`)
 }
 
@@ -1321,7 +1346,7 @@ function getSoldierColliderScale(variant: SoldierVariant): Vector3 {
 
 /** Units are procedurally built per race (no GLBs), so this replaces createSelectableModel for them. */
 function createProceduralUnitSelectable(kind: 'worker' | 'soldier', name: string, position: Vector3, team: Team, colliderScale: Vector3, variant?: SoldierVariant): Selectable {
-  const id = createEntityId(kind)
+  const id = mintEntityId(kind, team)
   const entity = engine.addEntity()
   Transform.create(entity, { position: cloneVector(position) })
   buildUnitModel(entity, getRace(team).id, kind === 'worker' ? 'worker' : variant ?? 'melee', team)
@@ -1340,7 +1365,7 @@ function createProceduralUnitSelectable(kind: 'worker' | 'soldier', name: string
 
 function createResourceNode(resource: ResourceKind, name: string, position: Vector3): ResourceNode {
   const definition = RESOURCE_DEFINITIONS[resource]
-  const id = createEntityId('resource')
+  const id = mintEntityId('resource', undefined)
   const entity = engine.addEntity()
   Transform.create(entity, { position: cloneVector(position) })
   buildResourceModel(entity, resource)
@@ -1488,7 +1513,7 @@ function getBuildingColor(kind: Building['kind'], definition?: BuildingDefinitio
  * growth and death handling scale/hide the root, which carries the parts.
  */
 function createProceduralBuildingSelectable(kind: BuildableKind, name: string, position: Vector3, team: Team, definition: BuildingDefinition, rotationY: number): Selectable {
-  const id = createEntityId(kind)
+  const id = mintEntityId(kind, team)
   const entity = engine.addEntity()
   Transform.create(entity, {
     position: Vector3.create(position.x, 0, position.z),
@@ -1511,7 +1536,7 @@ function createProceduralBuildingSelectable(kind: BuildableKind, name: string, p
 }
 
 function createSelectableBox(kind: SelectableKind, name: string, box: BoxConfig, team: Team = 'player'): Selectable {
-  const id = createEntityId(kind)
+  const id = mintEntityId(kind, team)
   const entity = createBoxEntity(box)
   const selectable: Selectable = { id, kind, name, entity, alive: true, team }
 
@@ -1521,7 +1546,7 @@ function createSelectableBox(kind: SelectableKind, name: string, box: BoxConfig,
 }
 
 function createSelectableModel(kind: SelectableKind, name: string, model: ModelConfig, registerOnCreate = true, team: Team = 'player'): Selectable {
-  const id = createEntityId(kind)
+  const id = mintEntityId(kind, team)
   const entity = createModelEntity(model)
   const selectable: Selectable = { id, kind, name, entity, alive: true, team }
 
@@ -1620,11 +1645,13 @@ function handleSelectableClick(id: string): void {
 
   if (selectedWorkers.length > 0 && clicked.kind === 'resource') {
     assignWorkersToResource(selectedWorkers, clicked as ResourceNode)
+    if (isRelayActive()) broadcastMyCommand({ type: 'gather', workerIds: selectedWorkers.map((worker) => worker.id), nodeId: clicked.id })
     return
   }
 
   if (selectedWorkers.length > 0 && isPlayerRepairTarget(clicked)) {
     assignWorkerToRepair(selectedWorkers[0], clicked)
+    if (isRelayActive()) broadcastMyCommand({ type: 'repair', workerIds: [selectedWorkers[0].id], buildingId: clicked.id })
     return
   }
 
@@ -1643,7 +1670,16 @@ function handleSelectableClick(id: string): void {
         setStatus(`${attackWorkers.length} worker${attackWorkers.length === 1 ? '' : 's'} attacking ${clicked.name}. They are weak fighters!`)
       }
     }
-    if (attackSoldiers.length + attackWorkers.length > 0) return
+    if (attackSoldiers.length + attackWorkers.length > 0) {
+      if (isRelayActive()) {
+        broadcastMyCommand({
+          type: 'attackTarget',
+          unitIds: [...attackSoldiers.map((soldier) => soldier.id), ...attackWorkers.map((worker) => worker.id)],
+          targetId: clicked.id
+        })
+      }
+      return
+    }
   }
 
   selectObject(clicked)
@@ -1666,7 +1702,7 @@ function clearSelection(): void {
 function assignWorkerToResource(worker: Worker, resource: ResourceNode, announce = true): void {
   if (!worker.alive || !resource.alive || resource.amount <= 0) return
   if (worker.state === 'movingToBuild' || worker.state === 'constructing' || worker.state === 'movingToRepair' || worker.state === 'repairing') {
-    setStatus(`${worker.name} is busy.`)
+    if (announce) setStatus(`${worker.name} is busy.`)
     return
   }
 
@@ -1759,15 +1795,15 @@ function assignWorkerToAttack(worker: Worker, target: Building | Soldier | Worke
   setWorkerAnimation(worker, 'walk')
 }
 
-function assignWorkerToRepair(worker: Worker, building: Building): void {
+function assignWorkerToRepair(worker: Worker, building: Building, announce = true): void {
   if (!worker.alive || !building.alive || !building.isComplete) return
   if (getTeam(worker) !== getTeam(building)) return
   if (building.hp >= building.maxHp) {
-    setStatus(`${building.name} does not need repairs.`)
+    if (announce) setStatus(`${building.name} does not need repairs.`)
     return
   }
   if (worker.state === 'movingToBuild' || worker.state === 'constructing' || worker.state === 'movingToRepair' || worker.state === 'repairing') {
-    setStatus(`${worker.name} is busy.`)
+    if (announce) setStatus(`${worker.name} is busy.`)
     return
   }
 
@@ -1781,8 +1817,10 @@ function assignWorkerToRepair(worker: Worker, building: Building): void {
   worker.carrying = 0
   worker.carryingResource = undefined
   setWorkerAnimation(worker, 'walk')
-  clearSelection()
-  setStatus(`${worker.name} moving to repair ${building.name}.`)
+  if (announce) {
+    clearSelection()
+    setStatus(`${worker.name} moving to repair ${building.name}.`)
+  }
 }
 
 function assignCommandableSoldiersToAttack(target: Building | Soldier | Worker): void {
@@ -1833,6 +1871,9 @@ function confirmBuildingPlacement(hitPosition?: Vector3): void {
 
   const buildPosition = Vector3.create(position.x, definition.placementY, position.z)
   const site = createConstructionSite(definition.kind, buildPosition, builder.id, currentBuildingPreviewRotationY, builder.team ?? 'player')
+  if (isRelayActive()) {
+    broadcastMyCommand({ type: 'build', kind: definition.kind, x: buildPosition.x, z: buildPosition.z, workerId: builder.id, rot: currentBuildingPreviewRotationY })
+  }
 
   builder.state = 'movingToBuild'
   builder.targetResourceId = undefined
@@ -1983,9 +2024,223 @@ function moveSelectedUnitsTo(point: { x: number; z: number }): void {
     sendSoldierToRally(movableSoldiers[i], Vector3.create(slotPosition.x, 0.25, slotPosition.z))
   }
 
+  if (isRelayActive()) {
+    // Workers first, soldiers after: the remote applier assigns formation slots
+    // in list order, so this order must match the loops above.
+    broadcastMyCommand({
+      type: 'move',
+      unitIds: [...movableWorkers.map((worker) => worker.id), ...movableSoldiers.map((soldier) => soldier.id)],
+      x: point.x,
+      z: point.z
+    })
+  }
   showMoveMarker(point)
   playAcknowledge()
   setStatus(`${unitCount} unit${unitCount === 1 ? '' : 's'} moving.`)
+}
+
+// ---------------------------------------------------------------------------
+// Multiplayer command sync: remote players' orders arrive through the server
+// relay tagged with their seat, get translated to a local enemy team, and are
+// replayed here with the same primitives the local player uses. Costs are
+// force-spent (clamped at zero) instead of validated - the sender already
+// validated against their own economy, and rejecting on small drift would
+// desync the sims much worse than a slightly negative wallet.
+// ---------------------------------------------------------------------------
+
+function forceSpendResources(team: Team, cost: ResourceCost): void {
+  const economy = gameState.economies[team]
+  economy.minerals = Math.max(0, economy.minerals - (cost.minerals ?? 0))
+  economy.gas = Math.max(0, economy.gas - (cost.gas ?? 0))
+}
+
+function getRemoteUnit(id: string, team: Team): Worker | Soldier | undefined {
+  const unit = selectables.get(id)
+  if (!unit || !unit.alive || getTeam(unit) !== team) return undefined
+  return unit.kind === 'worker' || unit.kind === 'soldier' ? (unit as Worker | Soldier) : undefined
+}
+
+export function applyRemoteCommand(team: Team, command: MatchCommand): void {
+  if (gameState.matchStatus !== MATCH_ACTIVE) return
+
+  switch (command.type) {
+    case 'move': {
+      const destination = Vector3.create(command.x, 0.25, command.z)
+      let soldierSlot = 0
+      for (const id of command.unitIds) {
+        const unit = getRemoteUnit(id, team)
+        if (!unit) continue
+        if (unit.kind === 'worker') {
+          const worker = unit as Worker
+          if (worker.state === 'movingToBuild' || worker.state === 'constructing' || worker.state === 'movingToRepair' || worker.state === 'repairing') continue
+          sendWorkerToRally(worker, destination)
+        } else {
+          const slotPosition = getFormationPosition(destination, soldierSlot++, SOLDIER_MOVE_FORMATION_RADIUS)
+          sendSoldierToRally(unit as Soldier, Vector3.create(slotPosition.x, 0.25, slotPosition.z))
+        }
+      }
+      break
+    }
+
+    case 'attackMove': {
+      const destination = Vector3.create(command.x, 0.25, command.z)
+      let slot = 0
+      for (const id of command.unitIds) {
+        const unit = getRemoteUnit(id, team)
+        if (unit?.kind !== 'soldier') continue
+        const soldier = unit as Soldier
+        const slotPosition = getFormationPosition(destination, slot++, SOLDIER_MOVE_FORMATION_RADIUS)
+        soldier.state = 'attackMoving'
+        soldier.targetId = undefined
+        soldier.attackPosition = undefined
+        soldier.rallyPoint = undefined
+        soldier.autoEngaged = false
+        soldier.patrolPointA = undefined
+        soldier.patrolPointB = undefined
+        soldier.attackMovePoint = Vector3.create(slotPosition.x, 0.25, slotPosition.z)
+        setSoldierAnimation(soldier, 'walk')
+      }
+      break
+    }
+
+    case 'patrol': {
+      const destination = Vector3.create(command.x, 0.25, command.z)
+      let slot = 0
+      for (const id of command.unitIds) {
+        const unit = getRemoteUnit(id, team)
+        if (unit?.kind !== 'soldier') continue
+        const soldier = unit as Soldier
+        const here = Transform.get(soldier.entity).position
+        const slotPosition = getFormationPosition(destination, slot++, SOLDIER_MOVE_FORMATION_RADIUS)
+        soldier.state = 'patrolling'
+        soldier.targetId = undefined
+        soldier.attackPosition = undefined
+        soldier.rallyPoint = undefined
+        soldier.attackMovePoint = undefined
+        soldier.autoEngaged = false
+        soldier.patrolPointA = Vector3.create(here.x, 0.25, here.z)
+        soldier.patrolPointB = Vector3.create(slotPosition.x, 0.25, slotPosition.z)
+        soldier.patrolToB = true
+        setSoldierAnimation(soldier, 'walk')
+      }
+      break
+    }
+
+    case 'attackTarget': {
+      const target = selectables.get(command.targetId)
+      if (!target || !target.alive || target.kind === 'resource') break
+      let slot = 0
+      for (const id of command.unitIds) {
+        const unit = getRemoteUnit(id, team)
+        if (!unit) continue
+        if (unit.kind === 'soldier') assignSoldierToAttack(unit as Soldier, target as Building | Soldier | Worker, slot++, false)
+        else assignWorkerToAttack(unit as Worker, target as Building | Soldier | Worker)
+      }
+      break
+    }
+
+    case 'train': {
+      const trainer = selectables.get(command.buildingId) as Building | undefined
+      if (!trainer?.alive || !trainer.isComplete || getTeam(trainer) !== team) break
+      if (command.unit === 'worker') {
+        const workerDef = getWorkerDefinition(team)
+        forceSpendResources(team, workerDef.cost)
+        workerProductionOrders.push({ templeId: trainer.id, timer: 0, productionTime: workerDef.productionTime, team })
+        gameState.economies[team].workerQueue += 1
+      } else {
+        const soldierDef = getSoldierDefinition(team, command.unit)
+        forceSpendResources(team, soldierDef.cost)
+        soldierProductionOrders.push({ barracksId: trainer.id, timer: 0, productionTime: soldierDef.productionTime, team, variant: command.unit })
+        gameState.economies[team].soldierQueue += 1
+      }
+      break
+    }
+
+    case 'build': {
+      const definition = BUILDING_DEFINITIONS[command.kind as BuildableKind]
+      const builder = getRemoteUnit(command.workerId, team)
+      if (!definition || builder?.kind !== 'worker') break
+      const worker = builder as Worker
+      forceSpendResources(team, definition.cost)
+      const buildPosition = Vector3.create(command.x, definition.placementY, command.z)
+      const site = createConstructionSite(definition.kind, buildPosition, worker.id, command.rot ?? 0, team)
+      worker.state = 'movingToBuild'
+      worker.targetResourceId = undefined
+      worker.buildSiteId = site.id
+      worker.repairTargetId = undefined
+      worker.attackTargetId = undefined
+      worker.rallyPoint = undefined
+      worker.timer = 0
+      worker.carrying = 0
+      worker.carryingResource = undefined
+      setWorkerAnimation(worker, 'walk')
+      break
+    }
+
+    case 'gather': {
+      const node = selectables.get(command.nodeId)
+      if (node?.kind !== 'resource') break
+      for (const id of command.workerIds) {
+        const unit = getRemoteUnit(id, team)
+        if (unit?.kind === 'worker') assignWorkerToResource(unit as Worker, node as ResourceNode, false)
+      }
+      break
+    }
+
+    case 'repair': {
+      const building = selectables.get(command.buildingId) as Building | undefined
+      if (!building?.alive) break
+      for (const id of command.workerIds) {
+        const unit = getRemoteUnit(id, team)
+        if (unit?.kind === 'worker') assignWorkerToRepair(unit as Worker, building, false)
+      }
+      break
+    }
+
+    case 'research': {
+      const forge = selectables.get(command.buildingId) as Building | undefined
+      if (!forge?.alive || getTeam(forge) !== team) break
+      if (isUpgradeInProgress(team, command.upgrade)) break
+      const cost = getNextUpgradeCost(team, command.upgrade)
+      if (!cost) break
+      forceSpendResources(team, cost)
+      startUpgradeResearchOrder(team, command.upgrade, forge.id)
+      break
+    }
+
+    case 'stance': {
+      for (const id of command.unitIds) {
+        const unit = getRemoteUnit(id, team)
+        if (unit?.kind !== 'soldier') continue
+        const soldier = unit as Soldier
+        soldier.stance = command.stance
+        soldier.guardPoint = cloneVector(Transform.get(soldier.entity).position)
+        if (command.stance === 'hold' && (soldier.state === 'movingToAttack' || soldier.state === 'attackMoving' || soldier.state === 'movingToRally')) {
+          soldier.state = 'idle'
+          soldier.targetId = undefined
+          soldier.attackPosition = undefined
+          soldier.attackMovePoint = undefined
+          soldier.rallyPoint = undefined
+          setSoldierAnimation(soldier, 'idle')
+        }
+      }
+      break
+    }
+
+    case 'rally': {
+      const building = selectables.get(command.buildingId) as Building | undefined
+      if (!building?.alive || getTeam(building) !== team) break
+      const point = Vector3.create(command.x, 0.25, command.z)
+      if (building.kind === 'temple') templeRallyPoints.set(building.id, point)
+      else barracksRallyPoints.set(building.id, point)
+      break
+    }
+
+    case 'stop':
+    case 'hold':
+      // Reserved order types; no dedicated local UI issues these yet.
+      break
+  }
 }
 
 let autoGatherTimer = 0

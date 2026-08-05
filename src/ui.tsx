@@ -29,6 +29,7 @@ import {
   setBarracksSpawnPoint,
   setWorkerSpawnPoint,
   STANCE_LABELS,
+  applyRemoteCommand,
   startAttackMove,
   startPatrol,
   startRtsMatch,
@@ -252,10 +253,8 @@ export function setupUi() {
     hideHeroShowcase()
     titleStage = 'title'
     startMultiplayerRtsMatch(plan)
-    startCommandRelay(plan, getMyAddress(), (team, command) => {
-      // Phase 3 (command sync) applies remote orders here.
-      console.log(`[mp] command for ${team}:`, command.type)
-    })
+    // Remote players' orders (relayed by the server) replay on our sim here.
+    startCommandRelay(plan, getMyAddress(), applyRemoteCommand)
   })
 }
 

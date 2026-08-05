@@ -68,7 +68,7 @@ export type AttackTargetCommand = {
 export type TrainCommand = {
   type: 'train'
   buildingId: string
-  unit: 'worker' | 'melee' | 'ranged' | 'caster' | 'flyer' | 'titan'
+  unit: 'worker' | 'melee' | 'ranged' | 'caster' | 'flyer' | 'titan' | 'hero'
 }
 
 export type BuildCommand = {
@@ -77,6 +77,8 @@ export type BuildCommand = {
   x: number
   z: number
   workerId: string
+  /** Placement rotation in degrees (player can rotate the ghost with E). */
+  rot?: number
 }
 
 export type GatherCommand = {
