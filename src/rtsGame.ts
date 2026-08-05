@@ -1,6 +1,8 @@
 import {
   Animator,
   AudioSource,
+  AvatarModifierArea,
+  AvatarModifierType,
   ColliderLayer,
   Entity,
   GltfContainer,
@@ -1208,7 +1210,26 @@ export function getSelectedSummary(): SelectedSummary {
 function createStaticScene(): void {
   buildTerrain()
   buildEnvironmentEnclosure()
+  hideAvatarsEverywhere()
   rallyMarker = createRallyMarker()
+}
+
+/**
+ * This is an RTS: the camera is a detached top-down rig and every player is a
+ * commander, not a body on the field. One modifier area covering the whole map
+ * hides all Decentraland avatars (yours included) so nobody's avatar stands
+ * around photobombing a base.
+ */
+function hideAvatarsEverywhere(): void {
+  const hider = engine.addEntity()
+  Transform.create(hider, {
+    position: Vector3.create(SCENE.center, 40, SCENE.center)
+  })
+  AvatarModifierArea.create(hider, {
+    area: Vector3.create(SCENE.size + 40, 120, SCENE.size + 40),
+    modifiers: [AvatarModifierType.AMT_HIDE_AVATARS],
+    excludeIds: []
+  })
 }
 
 /**
