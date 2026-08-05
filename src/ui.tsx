@@ -1550,11 +1550,13 @@ function matchSetupOverlay() {
         />
       </UiEntity>
 
-      {/* Left panel: game mode + computer roster. */}
+      {/* Opponents panel: centered where the 3D hero used to spin, clear of the
+          explorer's own minimap/chat overlays on the left edge. */}
       <UiEntity
         uiTransform={{
           positionType: 'absolute',
-          position: { top: 200, left: 70 },
+          position: { top: 200, left: '50%' },
+          margin: { left: -270 },
           width: 540,
           height: 600,
           flexDirection: 'column',
