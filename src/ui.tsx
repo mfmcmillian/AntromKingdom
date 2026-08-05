@@ -45,7 +45,7 @@ import { CONSOLE_HEIGHT } from './rts/hud'
 import { DIFFICULTY_IDS, AI_DIFFICULTY } from './rts/config'
 import { isPlayerAlly } from './rts/state'
 import { hideHeroShowcase, showHeroShowcase } from './rts/heroShowcase'
-import type { BuildableKind, GameMode, RaceId, ResourceCost, SelectedSummary, SoldierVariant, Team, UpgradeKind } from './rts/types'
+import type { BuildableKind, EnemyTeam, GameMode, RaceId, ResourceCost, SelectedSummary, SoldierVariant, Team, UpgradeKind } from './rts/types'
 
 const UI = {
   console: Color4.create(0.03, 0.04, 0.06, 0.94),
@@ -117,6 +117,13 @@ const ICON = {
     attackMove: 'images/icons/icon-action-attackmove.png',
     patrol: 'images/icons/icon-action-patrol.png',
     stance: 'images/icons/icon-action-stance.png'
+  },
+  endgame: {
+    victory: 'images/icons/icon-endgame-victory.png',
+    defeat: 'images/icons/icon-endgame-defeat.png',
+    units: 'images/icons/icon-stat-units.png',
+    kills: 'images/icons/icon-stat-kills.png',
+    resources: 'images/icons/icon-stat-resources.png'
   }
 }
 
@@ -1534,8 +1541,27 @@ function heroStatsPanel() {
   )
 }
 
+/** Every faction shown on the end screen: display label, race (for the avatar) and line color. */
+type ScoreboardEntry = { team: Team; label: string; race: RaceId; color: Color4 }
+
+function getScoreboardEntries(): ScoreboardEntry[] {
+  return [
+    { team: 'player' as Team, label: 'YOU', race: gameState.playerRace, color: UI.accent },
+    ...gameState.activeEnemyTeams.map((team, index) => {
+      const ally = isPlayerAlly(team)
+      return {
+        team: team as Team,
+        label: `${ally ? 'ALLY' : 'CPU'} ${index + 1}`,
+        race: gameState.enemyRaces[team],
+        color: ally ? ALLY_UI_COLOR : OPPONENT_SLOT_COLORS[index]
+      }
+    })
+  ]
+}
+
 function endGameOverlay() {
   const didWin = gameState.matchResult === 'win'
+  const entries = getScoreboardEntries()
 
   return (
     <UiEntity
@@ -1547,39 +1573,39 @@ function endGameOverlay() {
         justifyContent: 'center',
         alignItems: 'center'
       }}
-      uiBackground={{ color: Color4.create(0, 0, 0, 0.72) }}
+      uiBackground={{ color: Color4.create(0, 0, 0, 0.78) }}
     >
       <UiEntity
         uiTransform={{
           width: 980,
           // Grows with one stats row per computer opponent, plus the income graph.
-          height: 690 + gameState.activeEnemyTeams.length * 72,
+          height: 758 + gameState.activeEnemyTeams.length * 72,
           flexDirection: 'column',
           alignItems: 'center',
-          padding: { top: 32, bottom: 28, left: 34, right: 34 }
+          padding: { top: 26, bottom: 26, left: 34, right: 34 }
         }}
         uiBackground={{ color: UI.panelStrong }}
       >
-        <Label value={didWin ? 'YOU WIN' : 'YOU LOSE'} fontSize={54} color={didWin ? UI.green : UI.red} textAlign="middle-center" />
-        <Label value={`Match Time: ${formatMatchTime(gameState.matchTime)}`} fontSize={22} color={UI.gold} textAlign="middle-center" />
+        {/* Result-colored accent stripe along the top edge. */}
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: 4 }} uiBackground={{ color: didWin ? UI.gold : UI.red }} />
 
-        <UiEntity uiTransform={{ width: '100%', height: 56, flexDirection: 'row', margin: { top: 28 } }} uiBackground={{ color: UI.card }}>
-          {statsHeader('ARMY')}
-          {statsHeader('UNITS MADE')}
-          {statsHeader('KILLS')}
-          {statsHeader('RESOURCES')}
+        <UiEntity uiTransform={{ width: 96, height: 96, padding: 2 }} uiBackground={{ color: UI.slotFrame }}>
+          <UiEntity uiTransform={{ width: '100%', height: '100%' }} uiBackground={{ textureMode: 'stretch', texture: { src: didWin ? ICON.endgame.victory : ICON.endgame.defeat } }} />
         </UiEntity>
-        {statsRow(`PLAYER (${RACES[gameState.playerRace].name})`, gameState.matchStats.player.unitsProduced, gameState.matchStats.player.unitsKilled, gameState.matchStats.player.resourcesGathered, UI.accent)}
-        {gameState.activeEnemyTeams.map((team, index) => {
-          const stats = gameState.matchStats[team]
-          const ally = isPlayerAlly(team)
-          const label = `${ally ? 'ALLY' : 'CPU'} ${index + 1} (${RACES[gameState.enemyRaces[team]].name} · ${AI_DIFFICULTY[gameState.enemyDifficulties[team]].label.toUpperCase()})`
-          return statsRow(label, stats.unitsProduced, stats.unitsKilled, stats.resourcesGathered, ally ? ALLY_UI_COLOR : OPPONENT_SLOT_COLORS[index])
-        })}
+        <Label value={didWin ? 'VICTORY' : 'DEFEAT'} fontSize={52} color={didWin ? UI.green : UI.red} textAlign="middle-center" uiTransform={{ width: '100%', height: 62, margin: { top: 6 } }} />
+        <Label value={`MATCH TIME  ${formatMatchTime(gameState.matchTime)}`} fontSize={17} color={UI.gold} textAlign="middle-center" uiTransform={{ width: '100%', height: 22 }} />
 
-        {incomeGraph()}
+        <UiEntity uiTransform={{ width: '100%', height: 50, flexDirection: 'row', alignItems: 'center', margin: { top: 22 } }} uiBackground={{ color: UI.card }}>
+          <Label value="ARMY" fontSize={15} color={UI.dim} textAlign="middle-left" uiTransform={{ width: 312, height: '100%', padding: { left: 18 } }} />
+          {statsHeader('UNITS MADE', ICON.endgame.units)}
+          {statsHeader('KILLS', ICON.endgame.kills)}
+          {statsHeader('RESOURCES', ICON.endgame.resources)}
+        </UiEntity>
+        {entries.map((entry, index) => statsRow(entry, gameState.matchStats[entry.team], index))}
 
-        <UiEntity uiTransform={{ width: '100%', height: 58, flexDirection: 'row', justifyContent: 'center', margin: { top: 34 } }}>
+        {incomeGraph(entries)}
+
+        <UiEntity uiTransform={{ width: '100%', height: 58, flexDirection: 'row', justifyContent: 'center', margin: { top: 26 } }}>
           <Button
             value="PLAY AGAIN"
             variant="primary"
@@ -1615,42 +1641,57 @@ function endGameOverlay() {
 // ---------------------------------------------------------------------------
 
 const GRAPH_WIDTH = 880
-const GRAPH_HEIGHT = 140
-/** Cap plotted points per team so long matches don't flood the UI with entities. */
-const GRAPH_MAX_POINTS = 40
+const GRAPH_HEIGHT = 150
+/** Horizontal pixel step between plotted dots; dots are sized to touch so each series reads as a line. */
+const GRAPH_PIXEL_STEP = 7
+const GRAPH_DOT_SIZE = 6
+const GRAPH_GRID_COLOR = Color4.create(1, 1, 1, 0.07)
 
-function incomeGraph() {
-  const teams: { team: Team; color: Color4 }[] = [
-    { team: 'player', color: UI.accent },
-    ...gameState.activeEnemyTeams.map((team, index) => ({
-      team: team as Team,
-      color: isPlayerAlly(team) ? ALLY_UI_COLOR : OPPONENT_SLOT_COLORS[index]
-    }))
-  ]
+function incomeGraph(entries: ScoreboardEntry[]) {
+  const maxSamples = Math.max(...entries.map(({ team }) => gameState.incomeHistory[team].length))
+  const maxValue = Math.max(1, ...entries.map(({ team }) => gameState.incomeHistory[team][gameState.incomeHistory[team].length - 1] ?? 0))
 
-  const maxSamples = Math.max(...teams.map(({ team }) => gameState.incomeHistory[team].length))
-  const maxValue = Math.max(1, ...teams.map(({ team }) => gameState.incomeHistory[team][gameState.incomeHistory[team].length - 1] ?? 0))
-  const stride = Math.max(1, Math.ceil(maxSamples / GRAPH_MAX_POINTS))
+  const plotWidth = GRAPH_WIDTH - 14
+  const plotHeight = GRAPH_HEIGHT - 14
 
   return (
-    <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', alignItems: 'center', margin: { top: 18 } }}>
-      <Label value="RESOURCES GATHERED OVER TIME" fontSize={14} color={UI.dim} textAlign="middle-center" uiTransform={{ width: '100%', height: 18 }} />
+    <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', alignItems: 'center', margin: { top: 20 } }}>
+      <UiEntity uiTransform={{ width: GRAPH_WIDTH, height: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Label value="RESOURCES GATHERED OVER TIME" fontSize={14} color={UI.dim} textAlign="middle-left" textWrap="nowrap" />
+        <Label value={formatNumber(maxValue)} fontSize={13} color={UI.dim} textAlign="middle-right" textWrap="nowrap" />
+      </UiEntity>
       <UiEntity uiTransform={{ width: GRAPH_WIDTH, height: GRAPH_HEIGHT, margin: { top: 6 } }} uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.95) }}>
+        {/* Quarter gridlines plus a baseline give the plot scale at a glance. */}
+        {[0.25, 0.5, 0.75].map((fraction) => (
+          <UiEntity
+            key={`grid-${fraction}`}
+            uiTransform={{ positionType: 'absolute', position: { left: 0, top: 7 + fraction * plotHeight }, width: '100%', height: 1 }}
+            uiBackground={{ color: GRAPH_GRID_COLOR }}
+          />
+        ))}
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { left: 0, bottom: 6 }, width: '100%', height: 1 }} uiBackground={{ color: Color4.create(1, 1, 1, 0.16) }} />
+
         {maxSamples < 2 ? (
           <Label value="Match too short to graph." fontSize={14} color={UI.dim} textAlign="middle-center" uiTransform={{ width: '100%', height: '100%' }} />
         ) : (
-          teams.map(({ team, color }) => {
+          entries.map(({ team, color }) => {
             const samples = gameState.incomeHistory[team]
+            if (samples.length < 2) return null
+
+            // Interpolate between samples at a fixed pixel step so each series
+            // renders as a continuous line instead of scattered points.
+            const seriesWidth = ((samples.length - 1) / (maxSamples - 1)) * plotWidth
             const dots = []
-            for (let i = 0; i < samples.length; i += stride) {
-              // Always keep the final sample so every line ends at its true total.
-              const index = i + stride >= samples.length ? samples.length - 1 : i
-              const x = 3 + (index / Math.max(1, maxSamples - 1)) * (GRAPH_WIDTH - 11)
-              const y = 3 + (1 - samples[index] / maxValue) * (GRAPH_HEIGHT - 11)
+            for (let x = 0; x <= seriesWidth; x += GRAPH_PIXEL_STEP) {
+              const u = (x / plotWidth) * (maxSamples - 1)
+              const i0 = Math.min(samples.length - 1, Math.floor(u))
+              const i1 = Math.min(samples.length - 1, i0 + 1)
+              const value = samples[i0] + (samples[i1] - samples[i0]) * (u - i0)
+              const y = 7 + (1 - value / maxValue) * plotHeight
               dots.push(
                 <UiEntity
-                  key={`income-${team}-${index}`}
-                  uiTransform={{ positionType: 'absolute', position: { left: x, top: y }, width: 5, height: 5 }}
+                  key={`income-${team}-${x}`}
+                  uiTransform={{ positionType: 'absolute', position: { left: 7 + x - GRAPH_DOT_SIZE / 2, top: y - GRAPH_DOT_SIZE / 2 }, width: GRAPH_DOT_SIZE, height: GRAPH_DOT_SIZE }}
                   uiBackground={{ color }}
                 />
               )
@@ -1663,23 +1704,59 @@ function incomeGraph() {
           })
         )}
       </UiEntity>
+      {/* Legend: color chip + faction label per series. */}
+      <UiEntity uiTransform={{ width: GRAPH_WIDTH, height: 22, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', margin: { top: 8 } }}>
+        {entries.map((entry) => (
+          <UiEntity key={`legend-${entry.team}`} uiTransform={{ flexDirection: 'row', alignItems: 'center', margin: { left: 14, right: 14 } }}>
+            <UiEntity uiTransform={{ width: 12, height: 12, margin: { right: 7 } }} uiBackground={{ color: entry.color }} />
+            <Label value={entry.label} fontSize={13} color={UI.dim} textAlign="middle-left" textWrap="nowrap" />
+          </UiEntity>
+        ))}
+      </UiEntity>
     </UiEntity>
   )
 }
 
-function statsHeader(label: string) {
-  return <Label value={label} fontSize={15} color={UI.dim} textAlign="middle-center" uiTransform={{ width: 225, height: '100%' }} />
-}
-
-function statsRow(team: string, unitsProduced: number, unitsKilled: number, resourcesGathered: number, color: Color4) {
+function statsHeader(label: string, icon: string) {
   return (
-    <UiEntity uiTransform={{ width: '100%', height: 64, flexDirection: 'row', margin: { top: 8 } }} uiBackground={{ color: UI.cardSoft }}>
-      <Label value={team} fontSize={team.length > 20 ? 15 : 21} color={color} textAlign="middle-center" uiTransform={{ width: 225, height: '100%' }} />
-      <Label value={unitsProduced.toString()} fontSize={20} color={UI.text} textAlign="middle-center" uiTransform={{ width: 225, height: '100%' }} />
-      <Label value={unitsKilled.toString()} fontSize={20} color={UI.text} textAlign="middle-center" uiTransform={{ width: 225, height: '100%' }} />
-      <Label value={resourcesGathered.toString()} fontSize={20} color={UI.text} textAlign="middle-center" uiTransform={{ width: 225, height: '100%' }} />
+    <UiEntity uiTransform={{ width: 200, height: '100%', flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}>
+      <UiEntity uiTransform={{ width: 26, height: 26, margin: { right: 8 } }} uiBackground={{ textureMode: 'stretch', texture: { src: icon } }} />
+      <Label value={label} fontSize={15} color={UI.dim} textAlign="middle-left" textWrap="nowrap" />
     </UiEntity>
   )
+}
+
+function statsRow(entry: ScoreboardEntry, stats: { unitsProduced: number; unitsKilled: number; resourcesGathered: number }, index: number) {
+  const avatar = `images/icons/${UNIT_ICON_FILES.melee}${RACE_ICON_SUFFIX[entry.race]}.png`
+  const difficulty = entry.team === 'player' ? undefined : AI_DIFFICULTY[gameState.enemyDifficulties[entry.team as EnemyTeam]].label.toUpperCase()
+  const subtitle = `${RACES[entry.race].name}${difficulty ? ` · ${difficulty}` : ''}`
+
+  return (
+    <UiEntity
+      key={`score-${entry.team}`}
+      uiTransform={{ width: '100%', height: 64, flexDirection: 'row', alignItems: 'center', margin: { top: 8 } }}
+      uiBackground={{ color: index % 2 === 0 ? UI.cardSoft : UI.card }}
+    >
+      {/* Team color stripe on the leading edge. */}
+      <UiEntity uiTransform={{ width: 4, height: '100%' }} uiBackground={{ color: entry.color }} />
+      <UiEntity uiTransform={{ width: 308, height: '100%', flexDirection: 'row', alignItems: 'center', padding: { left: 12 } }}>
+        <UiEntity uiTransform={{ width: 46, height: 46, padding: 2, margin: { right: 12 } }} uiBackground={{ color: UI.slotFrame }}>
+          <UiEntity uiTransform={{ width: '100%', height: '100%' }} uiBackground={{ textureMode: 'stretch', texture: { src: avatar } }} />
+        </UiEntity>
+        <UiEntity uiTransform={{ flexDirection: 'column', width: 220 }}>
+          <Label value={entry.label} fontSize={19} color={entry.color} textAlign="middle-left" textWrap="nowrap" uiTransform={{ width: '100%', height: 24 }} />
+          <Label value={subtitle} fontSize={13} color={UI.dim} textAlign="middle-left" textWrap="nowrap" uiTransform={{ width: '100%', height: 18 }} />
+        </UiEntity>
+      </UiEntity>
+      <Label value={formatNumber(stats.unitsProduced)} fontSize={21} color={UI.text} textAlign="middle-center" uiTransform={{ width: 200, height: '100%' }} />
+      <Label value={formatNumber(stats.unitsKilled)} fontSize={21} color={UI.text} textAlign="middle-center" uiTransform={{ width: 200, height: '100%' }} />
+      <Label value={formatNumber(stats.resourcesGathered)} fontSize={21} color={UI.text} textAlign="middle-center" uiTransform={{ width: 200, height: '100%' }} />
+    </UiEntity>
+  )
+}
+
+function formatNumber(value: number): string {
+  return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 }
 
 function formatMatchTime(seconds: number): string {
