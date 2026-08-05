@@ -1,7 +1,7 @@
 import { MainCamera, Material, MeshRenderer, Transform, VirtualCamera, engine, type Entity } from '@dcl/sdk/ecs'
 import { Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { SCENE } from './config'
-import { buildUnitModel, disposeUnit } from './unitModels'
+import { buildUnitModel, disposeUnit, setUnitAnimation, setUnitBodyTilt, setUnitGroundFxVisible } from './unitModels'
 import type { RaceId } from './types'
 
 // 3D hero showcase for the match-setup screen. The stage floats in empty air
@@ -65,6 +65,14 @@ export function showHeroShowcase(race: RaceId): void {
   modelRoot = engine.addEntity()
   Transform.create(modelRoot, { parent: showcaseRoot, rotation: Quaternion.fromEulerDegrees(0, 180, 0) })
   buildUnitModel(modelRoot, race, 'hero', 'player')
+  // Battle-ready pose: loop the attack motion (lunge, weapon swing) while
+  // the turntable spins - but stand upright; the combat lean-in looks odd
+  // on a pedestal.
+  setUnitAnimation(modelRoot, 'attack')
+  setUnitBodyTilt(modelRoot, 0)
+  // The pulsing ground ring doubles as the display pedestal here (it stays
+  // hidden on the actual map).
+  setUnitGroundFxVisible(modelRoot, true)
   activeRace = race
 
   MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: virtualCam })

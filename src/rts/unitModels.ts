@@ -54,9 +54,28 @@ interface UnitRig {
   insignia: Entity[]
   /** Animated particle effects (hero auras, embers, orbiting motes). */
   fx: UnitFx[]
+  /** Limb pivots keyframed over the attack cycle (step-then-swing choreography). */
+  attackTracks?: AttackTrack[]
+  /** When set, replaces the profile's body tilt (showcase turntable wants him upright). */
+  tiltOverride?: number
+  /** Ground rings/discs under hero feet - hidden on the map, shown as a showcase pedestal. */
+  groundFx: Entity[]
+  groundFxVisible: boolean
   state: UnitAnimState
   time: number
   profiles: Record<UnitAnimState, MotionProfile>
+}
+
+/**
+ * One choreographed limb: a pivot entity plus keyframes of
+ * [phase, xDeg, yDeg, zDeg]. Phase runs 0..1 over the attack cycle and the
+ * sampled angles are added on top of the pivot's rest orientation. Outside
+ * the attack state the pivot sits at rest.
+ */
+type AttackTrack = {
+  entity: Entity
+  rest: Vector3
+  keys: [number, number, number, number][]
 }
 
 const rigs = new Map<Entity, UnitRig>()
@@ -112,6 +131,18 @@ type PartOptions = {
 
 type PartAdder = (position: Vector3, scale: Vector3, color: Color4, options?: PartOptions) => Entity
 
+/** Shared PBR setup for every unit part. */
+function applyPartMaterial(part: Entity, color: Color4, options: PartOptions): void {
+  Material.setPbrMaterial(part, {
+    albedoColor: color,
+    emissiveColor: options.emissive ?? Color4.Black(),
+    emissiveIntensity: options.emissiveIntensity ?? 0,
+    metallic: options.metallic ?? 0.6,
+    roughness: options.roughness ?? 0.4,
+    castShadows: false
+  })
+}
+
 export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team: Team): void {
   const bodyRoot = engine.addEntity()
   Transform.create(bodyRoot, { parent: root })
@@ -126,6 +157,8 @@ export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team:
     parts: [bodyRoot],
     insignia: [],
     fx: [],
+    groundFx: [],
+    groundFxVisible: false,
     state: 'idle',
     time: Math.random() * 10,
     profiles: { idle: STILL, walk: STILL, talk: STILL, attack: STILL, impact: STILL }
@@ -143,14 +176,7 @@ export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team:
     else if (options.cylinder) MeshRenderer.setCylinder(part)
     else if (options.sphere) MeshRenderer.setSphere(part)
     else MeshRenderer.setBox(part)
-    Material.setPbrMaterial(part, {
-      albedoColor: color,
-      emissiveColor: options.emissive ?? Color4.Black(),
-      emissiveIntensity: options.emissiveIntensity ?? 0,
-      metallic: options.metallic ?? 0.6,
-      roughness: options.roughness ?? 0.4,
-      castShadows: false
-    })
+    applyPartMaterial(part, color, options)
     rig.parts.push(part)
     return part
   }
@@ -185,7 +211,23 @@ export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team:
 
   if (role === 'worker') addWorkerCargo(rig, addPart)
 
+  // Ground rings start hidden; only the showcase pedestal turns them on.
+  applyGroundFxVisibility(rig)
   rigs.set(root, rig)
+}
+
+function applyGroundFxVisibility(rig: UnitRig): void {
+  for (const entity of rig.groundFx) {
+    VisibilityComponent.createOrReplace(entity, { visible: rig.groundFxVisible && !rig.fogHidden })
+  }
+}
+
+/** Shows/hides the pulsing ground ring under hero models (showcase pedestal only). */
+export function setUnitGroundFxVisible(root: Entity, visible: boolean): void {
+  const rig = rigs.get(root)
+  if (!rig) return
+  rig.groundFxVisible = visible
+  applyGroundFxVisibility(rig)
 }
 
 /** Boxy mining robot with a hover base and a spinning drill arm. */
@@ -1023,6 +1065,27 @@ function applyHeroScale(rig: UnitRig, scale = 1.3): void {
   Transform.getMutable(rig.bodyRoot).scale = Vector3.create(scale, scale, scale)
 }
 
+/** An empty animation joint parented to the body root; limbs hung from it rotate as one. */
+function heroPivot(rig: UnitRig, position: Vector3): Entity {
+  const pivot = engine.addEntity()
+  Transform.create(pivot, { parent: rig.bodyRoot, position })
+  rig.parts.push(pivot)
+  return pivot
+}
+
+/** Same as addPart but hangs the piece off an animation pivot instead of the body root. */
+function heroChildPart(rig: UnitRig, parent: Entity, position: Vector3, scale: Vector3, color: Color4, options: PartOptions = {}): Entity {
+  const part = engine.addEntity()
+  Transform.create(part, { parent, position, scale, rotation: options.rotation ?? Quaternion.Identity() })
+  if (options.cone) MeshRenderer.setCylinder(part, 0.5, 0.03)
+  else if (options.cylinder) MeshRenderer.setCylinder(part)
+  else if (options.sphere) MeshRenderer.setSphere(part)
+  else MeshRenderer.setBox(part)
+  applyPartMaterial(part, color, options)
+  rig.parts.push(part)
+  return part
+}
+
 /**
  * Warmaster Kael: a bespoke armored warlord - layered gold-trimmed plate, a
  * crimson command cape, a back-mounted battle standard and an energy
@@ -1033,11 +1096,19 @@ function applyHeroScale(rig: UnitRig, scale = 1.3): void {
 function buildHumanHero(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
   const gild = { metallic: 0.95, roughness: 0.15 }
 
-  // --- Legs: armored boots, greaves and gilded knee guards. ---------------
+  const childPart = (parent: Entity, position: Vector3, scale: Vector3, color: Color4, options: PartOptions = {}): Entity =>
+    heroChildPart(rig, parent, position, scale, color, options)
+  const makePivot = (position: Vector3): Entity => heroPivot(rig, position)
+
+  // --- Legs: boots, greaves and knee guards hung from hip pivots so the ---
+  // attack cycle can take a real step. legPivots[0] = left, [1] = right.
+  const legPivots: Entity[] = []
   for (const side of [-1, 1]) {
-    addPart(Vector3.create(side * 0.22, 0.09, 0.03), Vector3.create(0.26, 0.18, 0.42), METAL_DARK)
-    addPart(Vector3.create(side * 0.22, 0.42, 0), Vector3.create(0.2, 0.52, 0.24), METAL_LIGHT)
-    addPart(Vector3.create(side * 0.22, 0.7, 0.06), Vector3.create(0.2, 0.16, 0.22), HERO_GOLD, { ...gild, rotation: Quaternion.fromEulerDegrees(-12, 0, 0) })
+    const hip = makePivot(Vector3.create(side * 0.22, 0.85, 0))
+    legPivots.push(hip)
+    childPart(hip, Vector3.create(0, -0.76, 0.03), Vector3.create(0.26, 0.18, 0.42), METAL_DARK)
+    childPart(hip, Vector3.create(0, -0.43, 0), Vector3.create(0.2, 0.52, 0.24), METAL_LIGHT)
+    childPart(hip, Vector3.create(0, -0.15, 0.06), Vector3.create(0.2, 0.16, 0.22), HERO_GOLD, { ...gild, rotation: Quaternion.fromEulerDegrees(-12, 0, 0) })
   }
 
   // --- Hips: pelvis block, command belt and hanging tasset plates. --------
@@ -1068,20 +1139,52 @@ function buildHumanHero(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
     addPart(Vector3.create(side * 0.56, 1.78, 0), Vector3.create(0.05, 0.05, 0.42), glow, { emissive: glow, emissiveIntensity: 2.4, rotation: Quaternion.fromEulerDegrees(0, 0, side * -12) })
   }
 
-  // --- Arms: left fist clenched, right hand gripping the greatsword. ------
-  for (const side of [-1, 1]) {
-    addPart(Vector3.create(side * 0.5, 1.36, 0.02), Vector3.create(0.15, 0.32, 0.17), METAL_DARK)
-    addPart(Vector3.create(side * 0.54, 1.06, 0.06), Vector3.create(0.18, 0.3, 0.2), METAL_LIGHT)
-    addPart(Vector3.create(side * 0.54, 0.94, 0.1), Vector3.create(0.16, 0.12, 0.16), HERO_GOLD, gild)
-  }
+  // --- Left arm: fixed at his side, fist clenched. -------------------------
+  addPart(Vector3.create(-0.5, 1.36, 0.02), Vector3.create(0.15, 0.32, 0.17), METAL_DARK)
+  addPart(Vector3.create(-0.54, 1.06, 0.06), Vector3.create(0.18, 0.3, 0.2), METAL_LIGHT)
+  addPart(Vector3.create(-0.54, 0.94, 0.1), Vector3.create(0.16, 0.12, 0.16), HERO_GOLD, gild)
 
-  // --- Greatsword: gold crossguard, steel blade, white-hot energy core. ---
-  addPart(Vector3.create(0.62, 0.86, 0.12), Vector3.create(0.055, 0.26, 0.055), METAL_DARK, { cylinder: true })
-  addPart(Vector3.create(0.62, 0.72, 0.12), Vector3.create(0.09, 0.09, 0.09), HERO_GOLD, { ...gild, sphere: true })
-  addPart(Vector3.create(0.62, 1.02, 0.12), Vector3.create(0.32, 0.07, 0.12), HERO_GOLD, gild)
-  addPart(Vector3.create(0.62, 1.62, 0.12), Vector3.create(0.1, 1.14, 0.05), BLADE_STEEL, { metallic: 0.85, roughness: 0.25 })
-  addPart(Vector3.create(0.62, 1.62, 0.12), Vector3.create(0.045, 1.08, 0.06), glow, { emissive: glow, emissiveIntensity: 5 })
-  addPart(Vector3.create(0.62, 2.28, 0.12), Vector3.create(0.09, 0.22, 0.05), glow, { cone: true, emissive: glow, emissiveIntensity: 5 })
+  // --- Right arm + greatsword: one limb hanging from a shoulder pivot. The
+  // attack track winds the whole arm back, then chops it through the front.
+  const shoulder = makePivot(Vector3.create(0.5, 1.62, 0))
+  childPart(shoulder, Vector3.create(0, -0.26, 0.02), Vector3.create(0.15, 0.32, 0.17), METAL_DARK)
+  childPart(shoulder, Vector3.create(0.04, -0.56, 0.06), Vector3.create(0.18, 0.3, 0.2), METAL_LIGHT)
+  childPart(shoulder, Vector3.create(0.04, -0.68, 0.1), Vector3.create(0.16, 0.12, 0.16), HERO_GOLD, gild)
+
+  // Sword seated in the fist, leaning slightly forward and outward at rest.
+  const swordRoot = engine.addEntity()
+  Transform.create(swordRoot, {
+    parent: shoulder,
+    position: Vector3.create(0.06, -0.62, 0.1),
+    rotation: Quaternion.fromEulerDegrees(14, 0, -9)
+  })
+  rig.parts.push(swordRoot)
+
+  childPart(swordRoot, Vector3.create(0, 0, 0), Vector3.create(0.055, 0.3, 0.055), METAL_DARK, { cylinder: true })
+  childPart(swordRoot, Vector3.create(0, -0.17, 0), Vector3.create(0.09, 0.09, 0.09), HERO_GOLD, { ...gild, sphere: true })
+  childPart(swordRoot, Vector3.create(0, 0.16, 0), Vector3.create(0.32, 0.07, 0.12), HERO_GOLD, gild)
+  childPart(swordRoot, Vector3.create(0, 0.76, 0), Vector3.create(0.1, 1.14, 0.05), BLADE_STEEL, { metallic: 0.85, roughness: 0.25 })
+  childPart(swordRoot, Vector3.create(0, 0.76, 0), Vector3.create(0.045, 1.1, 0.06), glow, { emissive: glow, emissiveIntensity: 5 })
+  childPart(swordRoot, Vector3.create(0, 1.42, 0), Vector3.create(0.09, 0.22, 0.05), glow, { cone: true, emissive: glow, emissiveIntensity: 5 })
+
+  // --- Attack choreography: forward-only cleave. ----------------------------
+  // Every cycle STARTS with the blade already cocked overhead (no visible
+  // backswing) and chops immediately; the slow tail of the cycle just raises
+  // the sword back up ready for the next blow. Shoulder and wrist X-rotations
+  // share a world axis, so blade pitch = shoulder + wrist + 14 (rest lean).
+  //   0.00       ready: arm slightly raised, blade dead vertical (never
+  //              behind his head - keeps the loop free of any backswing)
+  //   0.00-0.16  the cleave: arm whips forward-down, wrist snaps through -
+  //              the blade sweeps ~100 degrees forward and lands pointing
+  //              at the target (~+100); the stride plants here too
+  //   0.16-0.50  follow-through hold at full extension
+  //   0.50-0.95  slow recovery: sword rises straight back up to vertical
+  rig.attackTracks = [
+    { entity: legPivots[0], rest: Vector3.Zero(), keys: [[0, 0, 0, 0], [0.12, -36, 0, 0], [0.5, -30, 0, 0], [0.9, 0, 0, 0], [1, 0, 0, 0]] },
+    { entity: legPivots[1], rest: Vector3.Zero(), keys: [[0, 0, 0, 0], [0.12, 20, 0, 0], [0.5, 16, 0, 0], [0.9, 0, 0, 0], [1, 0, 0, 0]] },
+    { entity: shoulder, rest: Vector3.Zero(), keys: [[0, 10, 0, -6], [0.16, -60, 0, 10], [0.3, -48, 0, 6], [0.5, -48, 0, 6], [0.95, 10, 0, -6], [1, 10, 0, -6]] },
+    { entity: swordRoot, rest: Vector3.create(14, 0, -9), keys: [[0, -24, 0, 2], [0.16, 146, 0, -4], [0.3, 120, 0, 0], [0.5, 120, 0, 0], [0.95, -24, 0, 2], [1, -24, 0, 2]] }
+  ]
 
   // --- Head: commander helm, glowing T-visor, cheek guards, gold crest. ---
   addPart(Vector3.create(0, 1.72, 0), Vector3.create(0.12, 0.1, 0.12), METAL_DARK, { cylinder: true })
@@ -1109,10 +1212,11 @@ function buildHumanHero(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
 
   // --- Particle FX -------------------------------------------------------
   // Battle Standard aura: a pulsing ground ring in the team color.
-  const auraRing = addPart(Vector3.create(0, 0.04, 0), Vector3.create(1.5, 0.025, 1.5), Color4.create(glow.r, glow.g, glow.b, 0.4), { cylinder: true, emissive: glow, emissiveIntensity: 1.6 })
+  const auraRing = addPart(Vector3.create(0, 0.04, 0), Vector3.create(1.5, 0.025, 1.5), Color4.create(glow.r, glow.g, glow.b, 0.22), { cylinder: true, emissive: glow, emissiveIntensity: 1.0 })
   rig.fx.push({ entity: auraRing, mode: 'pulse', anchor: Vector3.create(0, 0.04, 0), radius: 0, height: 0, speed: 2.4, phase: 0, size: 1.5 })
-  const auraCore = addPart(Vector3.create(0, 0.07, 0), Vector3.create(0.9, 0.02, 0.9), Color4.create(glow.r, glow.g, glow.b, 0.25), { cylinder: true, emissive: glow, emissiveIntensity: 1.2 })
+  const auraCore = addPart(Vector3.create(0, 0.07, 0), Vector3.create(0.9, 0.02, 0.9), Color4.create(glow.r, glow.g, glow.b, 0.12), { cylinder: true, emissive: glow, emissiveIntensity: 0.6 })
   rig.fx.push({ entity: auraCore, mode: 'pulse', anchor: Vector3.create(0, 0.07, 0), radius: 0, height: 0, speed: 2.4, phase: Math.PI, size: 0.9 })
+  rig.groundFx.push(auraRing, auraCore)
 
   // Energy motes circling the reactor core.
   for (let i = 0; i < 3; i++) {
@@ -1130,44 +1234,253 @@ function buildHumanHero(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
     idle: { amplitude: 0.025, speed: 1.6, tilt: 0, spin: 0, lunge: 0 },
     walk: { amplitude: 0.055, speed: 5, tilt: 5, spin: 0, lunge: 0 },
     talk: { amplitude: 0.03, speed: 7, tilt: 3, spin: 0, lunge: 0 },
-    attack: { amplitude: 0.04, speed: 10, tilt: -6, spin: 0, lunge: 0.22 },
+    // Speed 7 = a ~0.9s step-windup-chop cycle; the lunge peak lands on the stride.
+    // Positive tilt = leaning into the strike (negative would rock him back on his heels).
+    attack: { amplitude: 0.04, speed: 7, tilt: 7, spin: 0, lunge: 0.22 },
     impact: { amplitude: 0.06, speed: 16, tilt: -8, spin: 0, lunge: 0 }
   }
 
   applyHeroScale(rig, 1.35)
 }
 
-/** Riftlord Auren: an Avatar shell crowned by a floating rift halo. */
+/**
+ * Riftlord Auren: a levitating psionic archon dragging a torn-open rift
+ * behind him. No legs - a void shroud with floating gold rings and a glowing
+ * tip. Four arms (two casting orbs, one raised orb hand, one commanding a
+ * double-bladed rift glaive), crystal energy wings that flare when he
+ * strikes, a triple halo that tilts with the attack, and a vertical void
+ * tear crackling at his back. FX: two counter-rotating belts of void shards,
+ * embers off the halo and portal, and a pulsing rift ring underfoot
+ * (showcase only).
+ */
 function buildAlienHero(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
-  buildAlienAvatar(rig, addPart, glow)
+  const gild = { metallic: 0.9, roughness: 0.2 }
+  const flipped = Quaternion.fromEulerDegrees(180, 0, 0)
 
-  // Floating halo hovering above the crown, with a bright inner rift.
-  addPart(Vector3.create(0, 3.75, 0), Vector3.create(1.15, 0.06, 1.15), ALIEN_CRYSTAL, { cylinder: true, emissive: ALIEN_CRYSTAL, emissiveIntensity: 3 })
-  addPart(Vector3.create(0, 3.75, 0), Vector3.create(0.7, 0.1, 0.7), ALIEN_DARK, { cylinder: true })
-  // Ward crystals riding the pauldrons.
+  // --- Void tear: a torn rift floating at his back. -------------------------
+  addPart(Vector3.create(0, 2.05, -0.62), Vector3.create(1.0, 1.7, 0.1), ALIEN_CRYSTAL, { sphere: true, emissive: glow, emissiveIntensity: 2.6 })
+  addPart(Vector3.create(0, 2.05, -0.58), Vector3.create(0.64, 1.2, 0.09), ALIEN_DARK, { sphere: true, emissive: ALIEN_DARK, emissiveIntensity: 0.4 })
+
+  // --- Hover shroud: point-down robe cone, glowing tip, floating gold rings.
+  addPart(Vector3.create(0, 1.0, 0), Vector3.create(0.95, 1.1, 0.95), ALIEN_DARK, { cone: true, rotation: flipped })
+  addPart(Vector3.create(0, 0.46, 0), Vector3.create(0.28, 0.5, 0.28), ALIEN_CRYSTAL, { cone: true, rotation: flipped, emissive: glow, emissiveIntensity: 2.6 })
+  const ringA = addPart(Vector3.create(0, 1.32, 0), Vector3.create(0.58, 0.05, 0.58), ALIEN_GOLD, { cylinder: true, ...gild })
+  rig.fx.push({ entity: ringA, mode: 'pulse', anchor: Vector3.create(0, 1.32, 0), radius: 0, height: 0, speed: 1.9, phase: 0, size: 0.58 })
+  const ringB = addPart(Vector3.create(0, 0.92, 0), Vector3.create(0.74, 0.045, 0.74), ALIEN_GOLD, { cylinder: true, ...gild })
+  rig.fx.push({ entity: ringB, mode: 'pulse', anchor: Vector3.create(0, 0.92, 0), radius: 0, height: 0, speed: 1.9, phase: Math.PI, size: 0.74 })
+  addPart(Vector3.create(0, 1.52, 0), Vector3.create(0.64, 0.12, 0.64), ALIEN_GOLD, { cylinder: true, ...gild })
+
+  // --- Torso: slender chest, blazing psi core, gold collar. -----------------
+  addPart(Vector3.create(0, 1.82, 0), Vector3.create(0.52, 0.55, 0.38), ALIEN_DARK)
+  addPart(Vector3.create(0, 2.0, 0.16), Vector3.create(0.18, 0.18, 0.12), glow, { sphere: true, emissive: glow, emissiveIntensity: 5 })
+  addPart(Vector3.create(0, 2.14, 0), Vector3.create(0.6, 0.1, 0.44), ALIEN_GOLD, gild)
+
+  // --- Pauldrons with detached ward crystals hovering above. ----------------
   for (const side of [-1, 1]) {
-    addPart(Vector3.create(side * 1.05, 2.85, 0), Vector3.create(0.14, 0.55, 0.14), ALIEN_CRYSTAL, { cone: true, emissive: ALIEN_CRYSTAL, emissiveIntensity: 2.2 })
+    addPart(Vector3.create(side * 0.42, 2.2, 0), Vector3.create(0.3, 0.14, 0.36), ALIEN_GOLD, { ...gild, rotation: Quaternion.fromEulerDegrees(0, 0, side * -18) })
+    addPart(Vector3.create(side * 0.52, 2.54, 0), Vector3.create(0.1, 0.38, 0.1), ALIEN_CRYSTAL, { cone: true, emissive: ALIEN_CRYSTAL, emissiveIntensity: 2.6 })
   }
 
-  applyHeroScale(rig)
+  // --- Crystal energy wings: fans of shards on flare pivots. ----------------
+  const wingPivots: Entity[] = []
+  for (const side of [-1, 1]) {
+    const wing = heroPivot(rig, Vector3.create(side * 0.4, 2.05, -0.28))
+    wingPivots.push(wing)
+    for (let i = 0; i < 3; i++) {
+      heroChildPart(
+        rig,
+        wing,
+        Vector3.create(side * (0.16 + 0.2 * i), 0.3 + 0.16 * i, -0.04),
+        Vector3.create(0.08, 0.52 + 0.14 * i, 0.08),
+        ALIEN_CRYSTAL,
+        { cone: true, emissive: ALIEN_CRYSTAL, emissiveIntensity: 2.8, rotation: Quaternion.fromEulerDegrees(0, 0, side * -(16 + 15 * i)) }
+      )
+    }
+  }
+
+  // --- Four arms: raised orb hand, glaive hand, and two lower casting arms. -
+  addPart(Vector3.create(-0.5, 1.9, 0.04), Vector3.create(0.13, 0.5, 0.15), ALIEN_DARK, { rotation: Quaternion.fromEulerDegrees(0, 0, 16) })
+  addPart(Vector3.create(-0.62, 1.54, 0.1), Vector3.create(0.14, 0.14, 0.14), ALIEN_CRYSTAL, { sphere: true, emissive: glow, emissiveIntensity: 3.6 })
+  addPart(Vector3.create(0.48, 1.88, 0.02), Vector3.create(0.13, 0.5, 0.15), ALIEN_DARK)
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.34, 1.56, 0.16), Vector3.create(0.1, 0.38, 0.12), ALIEN_DARK, { rotation: Quaternion.fromEulerDegrees(-14, 0, side * 10) })
+    addPart(Vector3.create(side * 0.4, 1.3, 0.24), Vector3.create(0.09, 0.09, 0.09), ALIEN_CRYSTAL, { sphere: true, emissive: glow, emissiveIntensity: 3 })
+  }
+
+  // --- Head: sleek helm, burning eye slit, three-pronged gold crown. --------
+  addPart(Vector3.create(0, 2.4, 0), Vector3.create(0.24, 0.3, 0.28), ALIEN_DARK)
+  addPart(Vector3.create(0, 2.44, 0.15), Vector3.create(0.15, 0.045, 0.04), glow, { emissive: glow, emissiveIntensity: 5 })
+  addPart(Vector3.create(0, 2.72, -0.02), Vector3.create(0.07, 0.42, 0.07), ALIEN_GOLD, { cone: true, ...gild })
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.13, 2.62, -0.02), Vector3.create(0.06, 0.3, 0.06), ALIEN_GOLD, { cone: true, ...gild, rotation: Quaternion.fromEulerDegrees(0, 0, side * 16) })
+  }
+
+  // --- Triple rift halo on a tilting pivot (pulse fx spins the outer ring). -
+  const haloPivot = heroPivot(rig, Vector3.create(0, 3.1, 0))
+  const haloOuter = heroChildPart(rig, haloPivot, Vector3.create(0, 0, 0), Vector3.create(1.15, 0.05, 1.15), ALIEN_CRYSTAL, { cylinder: true, emissive: ALIEN_CRYSTAL, emissiveIntensity: 2.8 })
+  rig.fx.push({ entity: haloOuter, mode: 'pulse', anchor: Vector3.create(0, 0, 0), radius: 0, height: 0, speed: 1.7, phase: 0, size: 1.15 })
+  heroChildPart(rig, haloPivot, Vector3.create(0, 0.09, 0), Vector3.create(0.72, 0.06, 0.72), ALIEN_GOLD, { cylinder: true, ...gild })
+  heroChildPart(rig, haloPivot, Vector3.create(0, 0.16, 0), Vector3.create(0.4, 0.07, 0.4), ALIEN_DARK, { cylinder: true })
+
+  // --- Double-bladed rift glaive floating at the right hand. ----------------
+  const glaivePivot = heroPivot(rig, Vector3.create(0.56, 1.92, 0.06))
+  heroChildPart(rig, glaivePivot, Vector3.create(0.04, -0.3, 0.04), Vector3.create(0.05, 2.2, 0.05), ALIEN_GOLD, { cylinder: true, ...gild })
+  heroChildPart(rig, glaivePivot, Vector3.create(0.04, 0.92, 0.04), Vector3.create(0.14, 0.64, 0.05), ALIEN_CRYSTAL, { emissive: glow, emissiveIntensity: 5 })
+  heroChildPart(rig, glaivePivot, Vector3.create(0.04, 1.4, 0.04), Vector3.create(0.11, 0.34, 0.05), ALIEN_CRYSTAL, { cone: true, emissive: glow, emissiveIntensity: 5 })
+  heroChildPart(rig, glaivePivot, Vector3.create(0.04, -1.32, 0.04), Vector3.create(0.11, 0.42, 0.05), ALIEN_CRYSTAL, { emissive: glow, emissiveIntensity: 4 })
+  heroChildPart(rig, glaivePivot, Vector3.create(0.04, -1.62, 0.04), Vector3.create(0.09, 0.26, 0.05), ALIEN_CRYSTAL, { cone: true, emissive: glow, emissiveIntensity: 4, rotation: flipped })
+
+  // --- Particle FX -----------------------------------------------------------
+  // Rift ring underfoot (showcase pedestal only).
+  const riftRing = addPart(Vector3.create(0, 0.04, 0), Vector3.create(1.4, 0.02, 1.4), Color4.create(glow.r, glow.g, glow.b, 0.2), { cylinder: true, emissive: glow, emissiveIntensity: 0.9 })
+  rig.fx.push({ entity: riftRing, mode: 'pulse', anchor: Vector3.create(0, 0.04, 0), radius: 0, height: 0, speed: 2.2, phase: 0, size: 1.4 })
+  rig.groundFx.push(riftRing)
+
+  // Two belts of void shards: a slow wide belt around the shroud and a
+  // faster, higher belt streaking around the halo.
+  for (let i = 0; i < 4; i++) {
+    const shard = addPart(Vector3.create(0, 1.2, 0), Vector3.create(0.07, 0.26, 0.07), ALIEN_CRYSTAL, { emissive: ALIEN_CRYSTAL, emissiveIntensity: 2.8 })
+    rig.fx.push({ entity: shard, mode: 'orbit', anchor: Vector3.create(0, 1.2, 0), radius: 0.85, height: 0.22, speed: 1.3, phase: (i / 4) * Math.PI * 2, size: 0.07 })
+  }
+  for (let i = 0; i < 3; i++) {
+    const shard = addPart(Vector3.create(0, 2.6, 0), Vector3.create(0.06, 0.2, 0.06), ALIEN_CRYSTAL, { emissive: ALIEN_CRYSTAL, emissiveIntensity: 3.2 })
+    rig.fx.push({ entity: shard, mode: 'orbit', anchor: Vector3.create(0, 2.6, 0), radius: 1.05, height: 0.14, speed: 2.3, phase: (i / 3) * Math.PI * 2 + 1, size: 0.06 })
+  }
+
+  // Embers rising off the halo and streaming up the void tear.
+  for (let i = 0; i < 3; i++) {
+    const mote = addPart(Vector3.create(0, 3.15, 0), Vector3.create(0.05, 0.05, 0.05), ALIEN_CRYSTAL, { sphere: true, emissive: ALIEN_CRYSTAL, emissiveIntensity: 3.4 })
+    rig.fx.push({ entity: mote, mode: 'ember', anchor: Vector3.create(0, 3.15, 0), radius: 0.3, height: 0.6, speed: 0.42, phase: i / 3, size: 0.05 })
+  }
+  for (let i = 0; i < 4; i++) {
+    const spark = addPart(Vector3.create(0, 1.4, -0.6), Vector3.create(0.045, 0.045, 0.045), glow, { emissive: glow, emissiveIntensity: 3.6 })
+    rig.fx.push({ entity: spark, mode: 'ember', anchor: Vector3.create(0, 1.4, -0.6), radius: 0.4, height: 1.3, speed: 0.5, phase: i / 4, size: 0.045 })
+  }
+
+  // --- Attack: the glaive windmills - two full forward rotations, easing ---
+  // in and out of the spin, while both wings snap open and the halo tips
+  // forward. 720 degrees lands the glaive exactly back at its vertical rest.
+  rig.attackTracks = [
+    { entity: glaivePivot, rest: Vector3.Zero(), keys: [[0, 0, 0, 0], [0.6, 720, 0, 0], [1, 720, 0, 0]] },
+    { entity: wingPivots[0], rest: Vector3.Zero(), keys: [[0, 0, 0, 0], [0.14, 0, 0, 24], [0.5, 0, 0, 18], [0.95, 0, 0, 0], [1, 0, 0, 0]] },
+    { entity: wingPivots[1], rest: Vector3.Zero(), keys: [[0, 0, 0, 0], [0.14, 0, 0, -24], [0.5, 0, 0, -18], [0.95, 0, 0, 0], [1, 0, 0, 0]] },
+    { entity: haloPivot, rest: Vector3.Zero(), keys: [[0, 0, 0, 0], [0.14, 26, 0, 0], [0.55, 18, 0, 0], [0.95, 0, 0, 0], [1, 0, 0, 0]] }
+  ]
+
+  rig.baseHeight = 0.3
+  rig.profiles = {
+    idle: { amplitude: 0.09, speed: 1.5, tilt: 0, spin: 0, lunge: 0 },
+    walk: { amplitude: 0.11, speed: 3.2, tilt: 6, spin: 0, lunge: 0 },
+    talk: { amplitude: 0.06, speed: 6, tilt: 3, spin: 0, lunge: 0 },
+    attack: { amplitude: 0.07, speed: 7, tilt: 5, spin: 0, lunge: 0.26 },
+    impact: { amplitude: 0.09, speed: 15, tilt: -7, spin: 0, lunge: 0 }
+  }
+
+  applyHeroScale(rig, 1.25)
 }
 
-/** Broodmother Szel: a Behemoth frame with a tusk crown and glowing egg sacs. */
+/**
+ * Broodmother Szel: a hulking brood queen. Four chitin legs under a raised
+ * thorax, a swollen abdomen dragging behind under overlapping carapace
+ * shells, pulsing egg sacs, a tusk-crowned head with four burning eyes, and
+ * two raised mantis scythes that slash forward in an alternating one-two
+ * when she attacks. FX: pulsing egg sacs, spores drifting off the abdomen
+ * and a brood ring underfoot.
+ */
 function buildBioHero(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
-  buildBioBehemoth(rig, addPart, glow)
+  const meat = { roughness: 0.95, metallic: 0.05 }
 
-  // Crown of great tusks flanking the shell spikes.
+  // --- Legs: four splayed chitin legs; the front pair stomps on the kill. --
+  const frontLegPivots: Entity[] = []
   for (const side of [-1, 1]) {
-    addPart(Vector3.create(side * 0.55, 2.5, -0.25), Vector3.create(0.13, 0.85, 0.13), BIO_BONE, {
-      cone: true,
-      rotation: Quaternion.fromEulerDegrees(0, 0, side * 28)
-    })
+    // Front leg on an animation pivot.
+    const hip = heroPivot(rig, Vector3.create(side * 0.5, 0.75, 0.35))
+    frontLegPivots.push(hip)
+    heroChildPart(rig, hip, Vector3.create(side * 0.12, -0.32, 0.02), Vector3.create(0.16, 0.55, 0.16), BIO_CARAPACE, { ...meat, rotation: Quaternion.fromEulerDegrees(0, 0, side * 22) })
+    heroChildPart(rig, hip, Vector3.create(side * 0.24, -0.66, 0.02), Vector3.create(0.11, 0.3, 0.11), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(180, 0, side * 10) })
+    // Rear leg welded to the body.
+    addPart(Vector3.create(side * 0.62, 0.42, -0.35), Vector3.create(0.16, 0.55, 0.16), BIO_CARAPACE, { ...meat, rotation: Quaternion.fromEulerDegrees(0, 0, side * 30) })
+    addPart(Vector3.create(side * 0.78, 0.1, -0.35), Vector3.create(0.11, 0.28, 0.11), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(180, 0, side * 14) })
   }
-  // Egg sacs on the haunches, glowing with the next brood.
-  addPart(Vector3.create(-0.5, 1.5, -0.85), Vector3.create(0.42, 0.42, 0.42), BIO_FLESH, { sphere: true, emissive: glow, emissiveIntensity: 0.9, roughness: 0.9 })
-  addPart(Vector3.create(0.45, 1.4, -0.9), Vector3.create(0.34, 0.34, 0.34), BIO_FLESH, { sphere: true, emissive: glow, emissiveIntensity: 0.9, roughness: 0.9 })
 
-  applyHeroScale(rig)
+  // --- Body: raised thorax up front, swollen abdomen dragging behind. ------
+  addPart(Vector3.create(0, 1.0, 0.3), Vector3.create(0.75, 0.62, 0.7), BIO_FLESH, meat)
+  addPart(Vector3.create(0, 1.18, 0.58), Vector3.create(0.5, 0.42, 0.22), BIO_CARAPACE, meat)
+  addPart(Vector3.create(0, 0.92, -0.6), Vector3.create(1.05, 0.8, 1.15), BIO_FLESH, { sphere: true, ...meat })
+
+  // Overlapping carapace shells armoring the abdomen, each ridged with bone.
+  const shells: [Vector3, Vector3, number][] = [
+    [Vector3.create(0, 1.32, -0.3), Vector3.create(0.85, 0.16, 0.55), -8],
+    [Vector3.create(0, 1.26, -0.72), Vector3.create(0.75, 0.15, 0.5), -22],
+    [Vector3.create(0, 1.06, -1.08), Vector3.create(0.6, 0.14, 0.45), -38]
+  ]
+  for (const [position, scale, pitch] of shells) {
+    addPart(position, scale, BIO_CARAPACE, { ...meat, rotation: Quaternion.fromEulerDegrees(pitch, 0, 0) })
+    addPart(Vector3.create(position.x, position.y + 0.14, position.z), Vector3.create(0.09, 0.3, 0.09), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(pitch, 0, 0) })
+  }
+
+  // Egg sacs glowing with the next brood (pulse fx breathes them).
+  const sacSpots: [Vector3, number][] = [
+    [Vector3.create(-0.6, 0.62, -0.78), 0.5],
+    [Vector3.create(0.56, 0.58, -0.86), 0.42],
+    [Vector3.create(0, 0.55, -1.18), 0.48]
+  ]
+  for (let i = 0; i < sacSpots.length; i++) {
+    const [spot, size] = sacSpots[i]
+    const sac = addPart(spot, Vector3.create(size, size, size), BIO_FLESH, { sphere: true, ...meat, emissive: glow, emissiveIntensity: 1.1 })
+    rig.fx.push({ entity: sac, mode: 'pulse', anchor: spot, radius: 0, height: 0, speed: 1.6, phase: (i / 3) * Math.PI * 2, size })
+  }
+
+  // --- Head: low-slung, four burning eyes, bone mandibles, tusk crown. -----
+  addPart(Vector3.create(0, 1.12, 0.88), Vector3.create(0.42, 0.36, 0.4), BIO_CARAPACE, meat)
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.1, 1.2, 1.08), Vector3.create(0.055, 0.055, 0.03), glow, { sphere: true, emissive: glow, emissiveIntensity: 4.5 })
+    addPart(Vector3.create(side * 0.17, 1.12, 1.07), Vector3.create(0.045, 0.045, 0.03), glow, { sphere: true, emissive: glow, emissiveIntensity: 4.5 })
+    addPart(Vector3.create(side * 0.14, 0.96, 1.05), Vector3.create(0.07, 0.26, 0.07), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(150, 0, side * -16) })
+    addPart(Vector3.create(side * 0.3, 1.42, 0.8), Vector3.create(0.11, 0.6, 0.11), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(-12, 0, side * 26) })
+  }
+
+  // --- Scythe forelimbs: raised mantis arms that slash down and forward. ---
+  const scythePivots: Entity[] = []
+  for (const side of [-1, 1]) {
+    const shoulderJoint = heroPivot(rig, Vector3.create(side * 0.52, 1.32, 0.52))
+    scythePivots.push(shoulderJoint)
+    heroChildPart(rig, shoulderJoint, Vector3.create(side * 0.06, -0.05, 0.28), Vector3.create(0.14, 0.65, 0.14), BIO_CARAPACE, { ...meat, rotation: Quaternion.fromEulerDegrees(58, 0, side * 8) })
+    heroChildPart(rig, shoulderJoint, Vector3.create(side * 0.1, 0.32, 0.62), Vector3.create(0.1, 0.85, 0.1), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(38, 0, side * 4) })
+    heroChildPart(rig, shoulderJoint, Vector3.create(side * 0.11, 0.55, 0.78), Vector3.create(0.05, 0.05, 0.05), glow, { sphere: true, emissive: glow, emissiveIntensity: 3 })
+  }
+
+  // --- Particle FX ---------------------------------------------------------
+  const broodRing = addPart(Vector3.create(0, 0.04, 0), Vector3.create(1.6, 0.02, 1.6), Color4.create(glow.r, glow.g, glow.b, 0.2), { cylinder: true, emissive: glow, emissiveIntensity: 0.9 })
+  rig.fx.push({ entity: broodRing, mode: 'pulse', anchor: Vector3.create(0, 0.04, 0), radius: 0, height: 0, speed: 2, phase: 0, size: 1.6 })
+  rig.groundFx.push(broodRing)
+
+  // Spores drifting up off the abdomen.
+  for (let i = 0; i < 4; i++) {
+    const spore = addPart(Vector3.create(0, 1.3, -0.7), Vector3.create(0.05, 0.05, 0.05), glow, { sphere: true, emissive: glow, emissiveIntensity: 2.8 })
+    rig.fx.push({ entity: spore, mode: 'ember', anchor: Vector3.create(0, 1.3, -0.7), radius: 0.45, height: 0.75, speed: 0.35, phase: i / 4, size: 0.05 })
+  }
+
+  // --- Attack: alternating forward-only scythe slashes. --------------------
+  // Right scythe rips down-forward on the first beat, left follows half a
+  // beat later, front legs stomp with the hits, then both arms rise slowly
+  // back to the mantis guard - nothing ever swings behind her.
+  rig.attackTracks = [
+    { entity: scythePivots[1], rest: Vector3.Zero(), keys: [[0, 0, 0, 0], [0.12, 78, 0, -6], [0.3, 72, 0, -4], [0.5, 72, 0, -4], [0.95, 0, 0, 0], [1, 0, 0, 0]] },
+    { entity: scythePivots[0], rest: Vector3.Zero(), keys: [[0, 0, 0, 0], [0.16, 0, 0, 0], [0.3, 78, 0, 6], [0.48, 70, 0, 4], [0.62, 70, 0, 4], [0.95, 0, 0, 0], [1, 0, 0, 0]] },
+    { entity: frontLegPivots[0], rest: Vector3.Zero(), keys: [[0, 0, 0, 0], [0.12, -14, 0, 0], [0.5, -10, 0, 0], [0.9, 0, 0, 0], [1, 0, 0, 0]] },
+    { entity: frontLegPivots[1], rest: Vector3.Zero(), keys: [[0, 0, 0, 0], [0.3, -14, 0, 0], [0.6, -10, 0, 0], [0.9, 0, 0, 0], [1, 0, 0, 0]] }
+  ]
+
+  rig.profiles = {
+    idle: { amplitude: 0.035, speed: 1.4, tilt: 0, spin: 0, lunge: 0 },
+    walk: { amplitude: 0.07, speed: 4.5, tilt: 4, spin: 0, lunge: 0 },
+    talk: { amplitude: 0.04, speed: 6, tilt: 2, spin: 0, lunge: 0 },
+    attack: { amplitude: 0.05, speed: 7, tilt: 6, spin: 0, lunge: 0.26 },
+    impact: { amplitude: 0.07, speed: 14, tilt: -6, spin: 0, lunge: 0 }
+  }
+
+  applyHeroScale(rig, 1.35)
 }
 
 /** Cargo strapped to a worker's back: faceted mineral crystals or a banded gas barrel. */
@@ -1209,16 +1522,29 @@ export function isProceduralUnit(root: Entity): boolean {
   return rigs.has(root)
 }
 
+/** Forces a fixed body tilt regardless of animation state (pass undefined to restore). */
+export function setUnitBodyTilt(root: Entity, tilt: number | undefined): void {
+  const rig = rigs.get(root)
+  if (rig) rig.tiltOverride = tilt
+}
+
 /** Maps animation clip names onto the rig's procedural motion profiles. */
 export function setUnitAnimation(root: Entity, clipName: string): void {
   const rig = rigs.get(root)
   if (!rig) return
 
-  if (clipName === 'walk') rig.state = 'walk'
-  else if (clipName === 'talk') rig.state = 'talk'
-  else if (clipName === 'attack') rig.state = 'attack'
-  else if (clipName === 'impact') rig.state = 'impact'
-  else rig.state = 'idle'
+  let next: UnitAnimState = 'idle'
+  if (clipName === 'walk') next = 'walk'
+  else if (clipName === 'talk') next = 'talk'
+  else if (clipName === 'attack') next = 'attack'
+  else if (clipName === 'impact') next = 'impact'
+
+  if (rig.state !== next) {
+    rig.state = next
+    // Restart the clock so choreographed cycles (step-then-swing) begin on
+    // their first beat instead of joining mid-swing.
+    rig.time = 0
+  }
 }
 
 /** Shows the mineral crystal or gas barrel on a worker's back while it hauls cargo. Idempotent per kind. */
@@ -1249,8 +1575,9 @@ export function setUnitVisible(root: Entity, visible: boolean): void {
 
   rig.fogHidden = !visible
   const cargoParts = new Set([...rig.mineralCargo, ...rig.gasCargo])
+  const groundParts = new Set(rig.groundFx)
   for (const part of rig.parts) {
-    if (cargoParts.has(part)) continue
+    if (cargoParts.has(part) || groundParts.has(part)) continue
     VisibilityComponent.createOrReplace(part, { visible })
   }
   for (const pip of rig.insignia) {
@@ -1258,6 +1585,8 @@ export function setUnitVisible(root: Entity, visible: boolean): void {
   }
   // Cargo pieces stay hidden unless the worker is actually carrying that resource.
   applyCargoVisibility(rig)
+  // Ground rings stay hidden on the map regardless of fog.
+  applyGroundFxVisibility(rig)
 }
 
 // Upgrade rank pips: orange diamonds for Weapons levels, cyan for Propulsion.
@@ -1342,7 +1671,7 @@ function unitAnimationSystem(dt: number): void {
     const bodyTransform = Transform.getMutable(rig.bodyRoot)
     const lungeOffset = profile.lunge === 0 ? 0 : profile.lunge * Math.max(0, Math.sin(rig.time * profile.speed))
     bodyTransform.position = Vector3.create(0, rig.baseHeight + profile.amplitude * Math.sin(rig.time * profile.speed) + profile.amplitude, lungeOffset)
-    bodyTransform.rotation = Quaternion.fromEulerDegrees(profile.tilt, 0, 0)
+    bodyTransform.rotation = Quaternion.fromEulerDegrees(rig.tiltOverride ?? profile.tilt, 0, 0)
 
     if (profile.spin > 0 && rig.spinner) {
       const spinnerTransform = Transform.getMutable(rig.spinner)
@@ -1353,7 +1682,43 @@ function unitAnimationSystem(dt: number): void {
     for (const fx of rig.fx) {
       animateFx(fx, rig.time)
     }
+
+    // Attack choreography: sample each limb's keyframe track over the cycle
+    // (one cycle = one full sine period of the profile, same clock the lunge
+    // uses), so the step and the sword swing land on consistent beats.
+    if (rig.attackTracks) {
+      const attacking = rig.state === 'attack'
+      const phase = attacking ? ((rig.time * profile.speed) / (Math.PI * 2)) % 1 : 0
+      for (const track of rig.attackTracks) {
+        let x = track.rest.x
+        let y = track.rest.y
+        let z = track.rest.z
+        if (attacking) {
+          const [ex, ey, ez] = sampleTrack(track.keys, phase)
+          x += ex
+          y += ey
+          z += ez
+        }
+        Transform.getMutable(track.entity).rotation = Quaternion.fromEulerDegrees(x, y, z)
+      }
+    }
   }
+}
+
+/** Linear scan over sorted keyframes with smoothstep easing between neighbours. */
+function sampleTrack(keys: [number, number, number, number][], phase: number): [number, number, number] {
+  for (let i = 0; i < keys.length - 1; i++) {
+    const k0 = keys[i]
+    const k1 = keys[i + 1]
+    if (phase >= k0[0] && phase <= k1[0]) {
+      const span = k1[0] - k0[0]
+      const t = span === 0 ? 0 : (phase - k0[0]) / span
+      const s = t * t * (3 - 2 * t)
+      return [k0[1] + (k1[1] - k0[1]) * s, k0[2] + (k1[2] - k0[2]) * s, k0[3] + (k1[3] - k0[3]) * s]
+    }
+  }
+  const last = keys[keys.length - 1]
+  return [last[1], last[2], last[3]]
 }
 
 function animateFx(fx: UnitFx, time: number): void {
