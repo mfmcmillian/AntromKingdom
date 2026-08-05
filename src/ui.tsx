@@ -115,37 +115,37 @@ function raceIdFor(team: Team | undefined): RaceId {
 }
 
 function buildingIcon(kind: BuildableKind, team?: Team): string {
-  return `images/icons/${BUILDING_ICON_FILES[kind]}${RACE_ICON_SUFFIX[raceIdFor(team)]}.png`
+  return `images/icons/${BUILDING_ICON_FILES[kind]}${RACE_ICON_SUFFIX[raceIdFor(team)]}.jpg`
 }
 
 function unitIcon(unit: SoldierVariant | 'worker', team?: Team): string {
-  return `images/icons/${UNIT_ICON_FILES[unit]}${RACE_ICON_SUFFIX[raceIdFor(team)]}.png`
+  return `images/icons/${UNIT_ICON_FILES[unit]}${RACE_ICON_SUFFIX[raceIdFor(team)]}.jpg`
 }
 
 const ICON = {
   upgrade: {
-    damage: 'images/icons/icon-upgrade-damage.png',
-    speed: 'images/icons/icon-upgrade-speed.png'
+    damage: 'images/icons/icon-upgrade-damage.jpg',
+    speed: 'images/icons/icon-upgrade-speed.jpg'
   } as Record<UpgradeKind, string>,
   resource: {
-    minerals: 'images/icons/icon-res-minerals.png',
-    gas: 'images/icons/icon-res-gas.png',
-    supply: 'images/icons/icon-res-supply.png'
+    minerals: 'images/icons/icon-res-minerals.jpg',
+    gas: 'images/icons/icon-res-gas.jpg',
+    supply: 'images/icons/icon-res-supply.jpg'
   },
   action: {
-    rally: 'images/icons/icon-action-rally.png',
-    cancel: 'images/icons/icon-action-cancel.png',
-    selectAll: 'images/icons/icon-action-selectall.png',
-    attackMove: 'images/icons/icon-action-attackmove.png',
-    patrol: 'images/icons/icon-action-patrol.png',
-    stance: 'images/icons/icon-action-stance.png'
+    rally: 'images/icons/icon-action-rally.jpg',
+    cancel: 'images/icons/icon-action-cancel.jpg',
+    selectAll: 'images/icons/icon-action-selectall.jpg',
+    attackMove: 'images/icons/icon-action-attackmove.jpg',
+    patrol: 'images/icons/icon-action-patrol.jpg',
+    stance: 'images/icons/icon-action-stance.jpg'
   },
   endgame: {
-    victory: 'images/icons/icon-endgame-victory.png',
-    defeat: 'images/icons/icon-endgame-defeat.png',
-    units: 'images/icons/icon-stat-units.png',
-    kills: 'images/icons/icon-stat-kills.png',
-    resources: 'images/icons/icon-stat-resources.png'
+    victory: 'images/icons/icon-endgame-victory.jpg',
+    defeat: 'images/icons/icon-endgame-defeat.jpg',
+    units: 'images/icons/icon-stat-units.jpg',
+    kills: 'images/icons/icon-stat-kills.jpg',
+    resources: 'images/icons/icon-stat-resources.jpg'
   }
 }
 
@@ -1117,7 +1117,7 @@ function settingsOverlay() {
 function raceCard(raceId: RaceId) {
   const race = RACES[raceId]
   const isSelected = gameState.playerRace === raceId
-  const portrait = `images/icons/${UNIT_ICON_FILES.melee}${RACE_ICON_SUFFIX[raceId]}.png`
+  const portrait = `images/icons/${UNIT_ICON_FILES.melee}${RACE_ICON_SUFFIX[raceId]}.jpg`
 
   return (
     <UiEntity
@@ -1793,7 +1793,7 @@ function heroStatRow(label: string, value: string) {
 function heroStatsPanel() {
   const race = RACES[gameState.playerRace]
   const hero = race.hero
-  const portrait = `images/icons/icon-unit-hero${RACE_ICON_SUFFIX[gameState.playerRace]}.png`
+  const portrait = `images/icons/icon-unit-hero${RACE_ICON_SUFFIX[gameState.playerRace]}.jpg`
 
   return (
     <UiEntity
@@ -2035,7 +2035,7 @@ function statsHeader(label: string, icon: string) {
 }
 
 function statsRow(entry: ScoreboardEntry, stats: { unitsProduced: number; unitsKilled: number; resourcesGathered: number }, index: number) {
-  const avatar = `images/icons/${UNIT_ICON_FILES.melee}${RACE_ICON_SUFFIX[entry.race]}.png`
+  const avatar = `images/icons/${UNIT_ICON_FILES.melee}${RACE_ICON_SUFFIX[entry.race]}.jpg`
   const difficulty = entry.team === 'player' ? undefined : AI_DIFFICULTY[gameState.enemyDifficulties[entry.team as EnemyTeam]].label.toUpperCase()
   const subtitle = `${RACES[entry.race].name}${difficulty ? ` · ${difficulty}` : ''}`
 
