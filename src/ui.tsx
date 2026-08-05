@@ -1746,7 +1746,8 @@ function multiplayerLobbyOverlay() {
   const mySeat = getMySeatIndex()
   const iAmHost = isHost()
   const hostSeat = lobby.seats.find((seat) => seat.kind === 'human' && seat.address?.toLowerCase() === lobby.hostAddress.toLowerCase())
-  const hostLabel = lobby.hostAddress === '' ? 'electing host...' : iAmHost ? 'you are the host' : `host: ${hostSeat?.name ?? 'in world'}`
+  // No host until someone sits down: the server crowns the first seated player.
+  const hostLabel = lobby.hostAddress === '' ? 'first player to join a seat becomes host' : iAmHost ? 'you are the host' : `host: ${hostSeat?.name ?? 'in world'}`
   const canStart = canStartMultiplayerMatch()
 
   return (
@@ -1845,7 +1846,19 @@ function multiplayerLobbyOverlay() {
             </UiEntity>
           </UiEntity>
         ) : (
-          <Label value="Waiting for the host to start the match..." fontSize={15} color={UI.dim} textAlign="middle-center" uiTransform={{ width: 340, height: 60 }} />
+          <Label
+            value={
+              mySeat < 0
+                ? 'Join a seat to play. The first player seated becomes the host.'
+                : lobby.seats[mySeat].ready
+                  ? 'Waiting for the host to start the match...'
+                  : 'Press READY UP so the host can start the match.'
+            }
+            fontSize={15}
+            color={UI.dim}
+            textAlign="middle-center"
+            uiTransform={{ width: 380, height: 60 }}
+          />
         )}
       </UiEntity>
     </UiEntity>
