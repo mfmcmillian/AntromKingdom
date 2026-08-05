@@ -1682,7 +1682,37 @@ function handleSelectableClick(id: string): void {
     }
   }
 
+  // Double-clicking one of your own units grabs every unit of that type,
+  // classic RTS style: all workers, or all fighters of the same variant.
+  const now = Date.now()
+  const isDoubleClick = clicked.id === lastClickedSelectableId && now - lastClickedSelectableTime <= DOUBLE_CLICK_MS
+  lastClickedSelectableId = clicked.id
+  lastClickedSelectableTime = now
+
+  if (isDoubleClick && getTeam(clicked) === 'player' && (clicked.kind === 'worker' || clicked.kind === 'soldier')) {
+    selectAllOfSameType(clicked as Worker | Soldier)
+    return
+  }
+
   selectObject(clicked)
+}
+
+const DOUBLE_CLICK_MS = 400
+let lastClickedSelectableId = ''
+let lastClickedSelectableTime = 0
+
+function selectAllOfSameType(unit: Worker | Soldier): void {
+  if (unit.kind === 'worker') {
+    const allWorkers = workers.filter((worker) => worker.alive && getTeam(worker) === 'player')
+    setUnitSelection(allWorkers)
+    setStatus(`Selected all ${getWorkerDefinition('player').name}s (${allWorkers.length}).`)
+    return
+  }
+
+  const variant = (unit as Soldier).variant
+  const matches = soldiers.filter((soldier) => soldier.alive && getTeam(soldier) === 'player' && soldier.variant === variant)
+  setUnitSelection(matches)
+  setStatus(`Selected all ${getSoldierDefinition('player', variant).name}s (${matches.length}).`)
 }
 
 function selectObject(selectable: Selectable): void {
