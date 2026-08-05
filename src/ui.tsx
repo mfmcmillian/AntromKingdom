@@ -70,7 +70,7 @@ import { isTopDownViewActive, toggleTopDownView } from './rts/topDownCamera'
 import { CONSOLE_HEIGHT } from './rts/hud'
 import { DIFFICULTY_IDS, AI_DIFFICULTY } from './rts/config'
 import { isPlayerAlly } from './rts/state'
-import { hideHeroShowcase, showHeroShowcase } from './rts/heroShowcase'
+import { hideHeroShowcase } from './rts/heroShowcase'
 import type { BuildableKind, EnemyTeam, GameMode, RaceId, ResourceCost, SelectedSummary, SoldierVariant, Team, UpgradeKind } from './rts/types'
 
 const UI = {
@@ -1512,15 +1512,13 @@ function startScreenOverlay() {
 
 // ---------------------------------------------------------------------------
 // Match setup screen: computers and game mode on the left, hero stats on the
-// right, and the middle left transparent so the actual 3D hero model shows
-// through - staged on a locked VirtualCamera shot (see rts/heroShowcase.ts).
+// right, over the title background. The 3D hero showcase (VirtualCamera +
+// world-staged model) is disabled for now: Genesis City clips world entities
+// to scene bounds, which breaks the staged shot that worked in Worlds.
 // ---------------------------------------------------------------------------
 
 function matchSetupOverlay() {
   const race = RACES[gameState.playerRace]
-
-  // Idempotent world-side call: builds the model once per race, swaps on change.
-  showHeroShowcase(gameState.playerRace)
 
   return (
     <UiEntity
@@ -1530,7 +1528,13 @@ function matchSetupOverlay() {
         width: '100%',
         height: '100%'
       }}
+      uiBackground={{ textureMode: 'stretch', texture: { src: 'images/ui/title-bg-decentracraft.jpg' } }}
     >
+      {titleSkyAmbience()}
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%' }}
+        uiBackground={{ color: Color4.create(0, 0, 0, 0.55) }}
+      />
       {/* Centered header on its own translucent band so it reads over the sky. */}
       <UiEntity
         uiTransform={{ positionType: 'absolute', position: { top: 44, left: 0 }, width: '100%', flexDirection: 'column', alignItems: 'center' }}
@@ -1577,7 +1581,7 @@ function matchSetupOverlay() {
         ) : null}
       </UiEntity>
 
-      {/* Right panel: hero name, trait and stat sheet (the model itself spins mid-screen). */}
+      {/* Right panel: hero name, trait and stat sheet. */}
       {heroStatsPanel()}
 
       {/* Bottom bar: back to race select, or launch the match. */}
