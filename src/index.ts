@@ -1,4 +1,8 @@
 import { isServer } from '@dcl/sdk/network'
+// Synced components and room messages must register during initial module
+// evaluation - the engine seals component definitions before main() runs.
+// The transport module therefore loads statically on both server and client.
+import './rts/multiplayer/transport'
 
 export async function main() {
   if (isServer()) {
