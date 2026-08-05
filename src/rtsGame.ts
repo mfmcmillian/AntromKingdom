@@ -21,9 +21,9 @@ import {
   ASSETS,
   BUILDING_DEFINITIONS,
   COLORS,
-  COMPUTER_SEATS,
   CONFIG,
   GRID,
+  MAP_ANCHORS,
   MODEL_TRANSFORMS,
   POSITIONS,
   RESOURCE_DEFINITIONS,
@@ -60,7 +60,7 @@ import { updateSoldiers as updateSoldiersSystem } from './rts/systems/combat'
 import { createEnemyAi, updateEnemyAi as updateEnemyAiSystem, type EnemyAi } from './rts/systems/enemyAi'
 import { updateSoldierProduction as updateSoldierProductionSystem, updateWorkerProduction as updateWorkerProductionSystem } from './rts/systems/production'
 import { updateWorkers as updateWorkersSystem } from './rts/systems/workers'
-import type { LocalMatchPlan } from './rts/multiplayer/seatMap'
+import { mulberry32, type LocalMatchPlan } from './rts/multiplayer/seatMap'
 import { updateDragSelect } from './rts/dragSelect'
 import { initFogOfWar, resetFogOfWar } from './rts/fogOfWar'
 import { isPointerOverHud } from './rts/hud'
@@ -86,7 +86,7 @@ import {
   updateUpgradeResearch,
   UPGRADE_INFO
 } from './rts/upgrades'
-import { disableTopDownView, enableTopDownView, getCameraFocus, isTopDownViewActive } from './rts/topDownCamera'
+import { disableTopDownView, enableTopDownView, getCameraFocus, isTopDownViewActive, setCameraFocus } from './rts/topDownCamera'
 import { createBuildingDamageVfx, removeBuildingDamageVfx, updateBuildingDamageVfx } from './rts/vfx'
 import {
   buildings,
@@ -878,6 +878,11 @@ export function resetRtsGame(): void {
 
   createStartingBase()
   enableTopDownView()
+  // Multiplayer: open the camera over your own corner, wherever your seat is.
+  if (multiplayerPlan) {
+    const anchor = getTeamAnchor('player')
+    setCameraFocus(anchor.temple.x, anchor.temple.z)
+  }
   startAmbientMusic()
 }
 
@@ -895,9 +900,10 @@ function applyOpponentSetup(): void {
   const opponents = gameState.opponents.slice(0, ENEMY_TEAMS.length)
   gameState.activeEnemyTeams = ENEMY_TEAMS.slice(0, Math.max(1, opponents.length))
 
-  // Seats are ordered far-to-near from the player: hostiles take the far ones
-  // first, allies claim the near ones so they actually cover the player's flank.
-  const openSeats = COMPUTER_SEATS.map((_, index) => index)
+  // Anchors are ordered far-to-near from the player (anchor 0 is the player's
+  // own SW corner): hostiles take the far ones first, allies claim the near
+  // ones so they actually cover the player's flank.
+  const openAnchors = [1, 2, 3]
 
   for (let i = 0; i < gameState.activeEnemyTeams.length; i++) {
     const team = gameState.activeEnemyTeams[i]
@@ -908,7 +914,7 @@ function applyOpponentSetup(): void {
     gameState.enemyDifficulties[team] = setup.difficulty
     // FFA: everyone for themselves. Team mode: allies join the player's id 0.
     gameState.alliances[team] = gameState.gameMode === 'ffa' ? i + 1 : isAlly ? 0 : 1
-    gameState.enemySeatIndex[team] = isAlly ? openSeats.pop()! : openSeats.shift()!
+    gameState.enemySeatIndex[team] = isAlly ? openAnchors.pop()! : openAnchors.shift()!
   }
 
   // A match needs someone to fight: if every computer was marked ally, the
@@ -916,7 +922,7 @@ function applyOpponentSetup(): void {
   if (!gameState.activeEnemyTeams.some((team) => isHostileToPlayer(team))) {
     const lastTeam = gameState.activeEnemyTeams[gameState.activeEnemyTeams.length - 1]
     gameState.alliances[lastTeam] = 1
-    gameState.enemySeatIndex[lastTeam] = 0
+    gameState.enemySeatIndex[lastTeam] = 1
   }
 
   enemyAis = gameState.activeEnemyTeams.map((team) => createEnemyAi(team, gameState.enemyDifficulties[team]))
@@ -940,11 +946,10 @@ function applyMultiplayerSetup(plan: LocalMatchPlan): void {
     gameState.alliances[team] = plan.alliances[team]
   }
 
-  // Same seating rule as single-player: allies flank the player, hostiles far.
-  const openSeats = COMPUTER_SEATS.map((_, index) => index)
+  // Multiplayer bases anchor to LOBBY seats so the shared world is identical
+  // on every client: seat 2's base is at anchor 2 for everyone.
   for (const team of plan.activeEnemyTeams) {
-    const isAlly = !areHostile('player', team)
-    gameState.enemySeatIndex[team] = isAlly ? openSeats.pop()! : openSeats.shift()!
+    gameState.enemySeatIndex[team] = plan.teamToSeat[team] ?? 1
   }
 
   enemyAis = plan.activeEnemyTeams
@@ -1113,26 +1118,58 @@ function createStaticScene(): void {
   rallyMarker = createRallyMarker()
 }
 
+/**
+ * Where a team's main base sits. Single-player keeps the classic layout
+ * (player SW, computers on their picked seats). Multiplayer anchors every
+ * team to its LOBBY seat index so the shared world is identical for all
+ * players - your base is wherever your seat is, not always the SW corner.
+ */
+function getTeamAnchor(team: Team): { temple: Vector3; rotationY: number } {
+  if (team === 'player') {
+    return MAP_ANCHORS[multiplayerPlan ? multiplayerPlan.mySeatIndex : 0]
+  }
+  return MAP_ANCHORS[gameState.enemySeatIndex[team]]
+}
+
 function createStartingBase(): void {
-  buildings.push(createBuilding('temple', getBuildingDisplayName('temple', 'player'), POSITIONS.base, CONFIG.templeHp, 'complete', 0, 'player'))
+  const playerAnchor = getTeamAnchor('player')
+  // The hand-placed SW start is kept verbatim for the classic layout.
+  const playerAtClassicStart = playerAnchor === MAP_ANCHORS[0]
+
+  buildings.push(createBuilding('temple', getBuildingDisplayName('temple', 'player'), playerAnchor.temple, CONFIG.templeHp, 'complete', playerAnchor.rotationY, 'player'))
 
   spawnResourceFields()
 
-  for (const position of POSITIONS.workers) {
-    const worker = createWorker(position, 'player')
-    workers.push(worker)
-    gameState.economies.player.supplyUsed += 1
-    gameState.matchStats.player.unitsProduced += 1
-    // Auto-split: starting workers head straight for the crystal line.
-    const startingDeposit = getNearestResourceOfKind(position, 'minerals')
-    if (startingDeposit) assignWorkerToResource(worker, startingDeposit, false)
+  if (playerAtClassicStart) {
+    for (const position of POSITIONS.workers) {
+      const worker = createWorker(position, 'player')
+      workers.push(worker)
+      gameState.economies.player.supplyUsed += 1
+      gameState.matchStats.player.unitsProduced += 1
+      // Auto-split: starting workers head straight for the crystal line.
+      const startingDeposit = getNearestResourceOfKind(position, 'minerals')
+      if (startingDeposit) assignWorkerToResource(worker, startingDeposit, false)
+    }
+    // Every faction opens with its unique hero standing guard by the main base.
+    spawnStartingHero('player', Vector3.create(playerAnchor.temple.x + 3.5, 0.25, playerAnchor.temple.z + 8.5))
+  } else {
+    // Seated elsewhere (multiplayer): spawn like the computer bases do.
+    const towardCenter = playerAnchor.temple.x < SCENE.center ? 5 : -5
+    for (let i = 0; i < POSITIONS.workers.length; i++) {
+      const offset = getFormationPosition(Vector3.create(playerAnchor.temple.x, 0.25, playerAnchor.temple.z + towardCenter), i, 1)
+      const worker = createWorker(offset, 'player')
+      workers.push(worker)
+      gameState.economies.player.supplyUsed += 1
+      gameState.matchStats.player.unitsProduced += 1
+      const startingDeposit = getNearestResourceOfKind(offset, 'minerals')
+      if (startingDeposit) assignWorkerToResource(worker, startingDeposit, false)
+    }
+    const towardCenterZ = playerAnchor.temple.z < SCENE.center ? 8 : -8
+    spawnStartingHero('player', Vector3.create(playerAnchor.temple.x + towardCenter, 0.25, playerAnchor.temple.z + towardCenterZ))
   }
 
-  // Every faction opens with its unique hero standing guard by the main base.
-  spawnStartingHero('player', Vector3.create(POSITIONS.base.x + 3.5, 0.25, POSITIONS.base.z + 8.5))
-
   for (const team of gameState.activeEnemyTeams) {
-    const seat = COMPUTER_SEATS[gameState.enemySeatIndex[team]]
+    const seat = getTeamAnchor(team)
     buildings.push(createBuilding('temple', `${teamNamePrefix(team)}${getBuildingDisplayName('temple', team)}`, seat.temple, CONFIG.templeHp, 'complete', seat.rotationY, team))
 
     // Workers spawn toward the map center so they don't clip the border highlands.
@@ -1172,11 +1209,15 @@ function teamNamePrefix(team: Team): string {
  * meters and vary in richness, so scouting routes differ between matches.
  */
 function getResourceFieldsForMatch(): ResourceField[] {
+  // Multiplayer rolls the layout off the shared lobby seed so every client
+  // generates the exact same resource map; single-player stays truly random.
+  const random = multiplayerPlan ? mulberry32(multiplayerPlan.seed ^ 0x5eed) : Math.random
+
   return RESOURCE_FIELDS.map((field, index) => {
     if (index < 6) return field
 
-    const jitter = () => (Math.random() - 0.5) * 10
-    const countShift = field.count > 1 ? (Math.random() < 0.3 ? -1 : Math.random() > 0.7 ? 1 : 0) : 0
+    const jitter = () => (random() - 0.5) * 10
+    const countShift = field.count > 1 ? (random() < 0.3 ? -1 : random() > 0.7 ? 1 : 0) : 0
     return {
       ...field,
       center: Vector3.create(clamp(field.center.x + jitter(), 10, SCENE.size - 10), field.center.y, clamp(field.center.z + jitter(), 10, SCENE.size - 10)),

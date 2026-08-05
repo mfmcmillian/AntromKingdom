@@ -203,6 +203,16 @@ export const COMPUTER_SEATS: { temple: Vector3; rotationY: number }[] = [
   { temple: Vector3.create(23, 5, 46), rotationY: 160 }
 ]
 
+/**
+ * All four base anchors for multiplayer, indexed by lobby seat: seat 0 is the
+ * classic SW player start, seats 1..3 mirror COMPUTER_SEATS. Every client
+ * places each lobby seat at the same anchor, so the shared world lines up.
+ */
+export const MAP_ANCHORS: { temple: Vector3; rotationY: number }[] = [
+  { temple: Vector3.create(8.54, 5, 3.48), rotationY: 0 },
+  ...COMPUTER_SEATS
+]
+
 export const POSITIONS = {
   base: Vector3.create(8.54, 5, 3.48),
   enemyTemple: Vector3.create(142.89, 5, 136.75),

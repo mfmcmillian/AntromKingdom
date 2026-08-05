@@ -1,6 +1,6 @@
 import { Transform } from '@dcl/sdk/ecs'
 import { Vector3 } from '@dcl/sdk/math'
-import { AI_DIFFICULTY, BUILDING_DEFINITIONS, COMPUTER_SEATS, type DifficultySettings } from '../config'
+import { AI_DIFFICULTY, BUILDING_DEFINITIONS, MAP_ANCHORS, type DifficultySettings } from '../config'
 import { canQueueUnit, getResourceAmount, getSupplyCap, getSupplyUsed, hasResources, spendResources } from '../economy'
 import { distanceToPoint } from '../math'
 import { getSoldierDefinition, getWorkerDefinition } from '../races'
@@ -47,7 +47,7 @@ export type EnemyAi = {
 
 export function createEnemyAi(team: EnemyTeam, difficulty: Difficulty): EnemyAi {
   const settings = AI_DIFFICULTY[difficulty]
-  const seat = COMPUTER_SEATS[gameState.enemySeatIndex[team]]
+  const seat = MAP_ANCHORS[gameState.enemySeatIndex[team]]
   return {
     team,
     difficulty,

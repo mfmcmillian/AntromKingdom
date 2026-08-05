@@ -53,9 +53,10 @@ export const gameState = {
   // Alliance ids: teams sharing an id never fight each other. Team mode puts
   // allied computers on id 0 with the player; FFA gives every faction its own id.
   alliances: { player: 0, enemy1: 1, enemy2: 2, enemy3: 3 } as Record<Team, number>,
-  // Which map seat each active computer starts on (index into COMPUTER_SEATS);
-  // allies get seats near the player, hostiles the far side.
-  enemySeatIndex: { enemy1: 0, enemy2: 1, enemy3: 2 } as Record<EnemyTeam, number>,
+  // Which map anchor each active enemy team starts on (index into MAP_ANCHORS,
+  // where anchor 0 is the classic SW player start). Single-player: allies get
+  // anchors near the player, hostiles the far side. Multiplayer: lobby seats.
+  enemySeatIndex: { enemy1: 1, enemy2: 2, enemy3: 3 } as Record<EnemyTeam, number>,
   economies: {
     player: createEconomy(),
     enemy1: createEconomy(),
