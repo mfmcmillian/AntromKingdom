@@ -39,7 +39,7 @@ import { getDragScreenRect } from './rts/dragSelect'
 import { minimapPanel } from './rts/minimap'
 import { BUILDING_DEFINITIONS } from './rts/config'
 import { RACES, RACE_IDS, getBuildingDisplayName, getRace, getSoldierDefinition, getWorkerDefinition } from './rts/races'
-import { UPGRADE_INFO, UPGRADE_MAX_LEVEL, getNextUpgradeCost, getUpgradeLevel, isUpgradeInProgress } from './rts/upgrades'
+import { UPGRADE_INFO, UPGRADE_MAX_LEVEL, getNextUpgradeCost, getUpgradeLevel, getUpgradeProgress, isUpgradeInProgress } from './rts/upgrades'
 import { isTopDownViewActive, toggleTopDownView } from './rts/topDownCamera'
 import { CONSOLE_HEIGHT } from './rts/hud'
 import { DIFFICULTY_IDS, AI_DIFFICULTY } from './rts/config'
@@ -386,7 +386,43 @@ function infoPanel(selected: SelectedSummary) {
         ) : null}
       </UiEntity>
 
-      {multi ? wireframeGrid(units) : productionQueuePanel(selected)}
+      {multi ? wireframeGrid(units) : selected.kind === 'forge' ? researchQueuePanel(selected) : productionQueuePanel(selected)}
+    </UiEntity>
+  )
+}
+
+/** Research readout for the forge, mirroring the unit production panel:
+ * upgrade icon, progress bar, and the level being researched. */
+function researchQueuePanel(selected: SelectedSummary) {
+  if (selected.team !== undefined && selected.team !== 'player') return null
+
+  const active = (['damage', 'speed'] as UpgradeKind[])
+    .map((kind) => ({ kind, progress: getUpgradeProgress('player', kind) }))
+    .filter((entry) => entry.progress !== undefined)
+  if (active.length === 0) return null
+
+  return (
+    <UiEntity uiTransform={{ flexDirection: 'column', width: 300, height: '100%', padding: { top: 30 } }}>
+      <Label value="RESEARCH" fontSize={13} color={UI.dim} textAlign="middle-left" uiTransform={{ margin: { bottom: 8 } }} />
+      {active.map((entry) => (
+        <UiEntity key={`research-${entry.kind}`} uiTransform={{ flexDirection: 'row', alignItems: 'center', margin: { bottom: 8 } }}>
+          <UiEntity uiTransform={{ width: 56, height: 56, padding: 2, margin: { right: 12 } }} uiBackground={{ color: UI.slotFrame }}>
+            <UiEntity uiTransform={{ width: '100%', height: '100%' }} uiBackground={{ textureMode: 'stretch', texture: { src: ICON.upgrade[entry.kind] } }} />
+          </UiEntity>
+          <UiEntity uiTransform={{ flexDirection: 'column', width: 200 }}>
+            <UiEntity uiTransform={{ width: 200, height: 12, padding: 2 }} uiBackground={{ color: UI.panelStrong }}>
+              <UiEntity uiTransform={{ width: Math.max(2, 196 * (entry.progress ?? 0)), height: '100%' }} uiBackground={{ color: UI.accent }} />
+            </UiEntity>
+            <Label
+              value={`${UPGRADE_INFO[entry.kind].name} Lv${getUpgradeLevel('player', entry.kind) + 1}`}
+              fontSize={14}
+              color={UI.text}
+              textAlign="middle-left"
+              uiTransform={{ margin: { top: 6 } }}
+            />
+          </UiEntity>
+        </UiEntity>
+      ))}
     </UiEntity>
   )
 }
