@@ -32,9 +32,30 @@ import {
   startAttackMove,
   startPatrol,
   startRtsMatch,
+  startMultiplayerRtsMatch,
   startUpgradeResearch,
   startWorkerBuildingPlacement
 } from './rtsGame'
+import {
+  canStartMatch as canStartMultiplayerMatch,
+  claimSeat,
+  getLobby,
+  getMyAddress,
+  getMySeatIndex,
+  getPresentPlayerCount,
+  hostResetLobby,
+  hostSetSeat,
+  hostStartMatch,
+  isHost,
+  leaveSeat,
+  onMatchStart,
+  setMyAlliance,
+  setMyRace,
+  setMyReady
+} from './rts/multiplayer/session'
+import { buildLocalMatchPlan } from './rts/multiplayer/seatMap'
+import { startCommandRelay } from './rts/multiplayer/commandRelay'
+import type { LobbySeat } from './rts/multiplayer/protocol'
 import { getDragScreenRect } from './rts/dragSelect'
 import { minimapPanel } from './rts/minimap'
 import { BUILDING_DEFINITIONS } from './rts/config'
@@ -154,8 +175,9 @@ let hoveredSlot: CommandSlot | undefined
 /** Clock driving the title screen ambience (shooting stars, twinkles). */
 let titleTime = 0
 
-// Pre-match menu flow: title screen (race pick) -> match setup (opponents + hero).
-let titleStage: 'title' | 'setup' = 'title'
+// Pre-match menu flow: title screen (race pick) -> match setup (opponents + hero),
+// or title -> multiplayer lobby when playing against other people.
+let titleStage: 'title' | 'setup' | 'lobby' = 'title'
 
 // Screen-transition fade: snaps to black on every screen change, holds a beat
 // while the next screen stages itself (camera moves, showcase builds), then
@@ -200,6 +222,22 @@ export function setupUi() {
     screenFade = Math.max(0, screenFade - dt / FADE_SECONDS)
     updateMenuMovementLock()
   })
+
+  // Host pressed start in the multiplayer lobby: every seated client builds
+  // its own seat-to-team view of the frozen lobby and launches the match.
+  onMatchStart((config) => {
+    const plan = buildLocalMatchPlan(config, getMyAddress())
+    if (!plan) return // no seat: stay in the lobby as a spectator
+    if (gameState.matchStatus === 'active') return
+    triggerScreenFade()
+    hideHeroShowcase()
+    titleStage = 'title'
+    startMultiplayerRtsMatch(plan)
+    startCommandRelay(plan, getMyAddress(), (team, command) => {
+      // Phase 3 (command sync) applies remote orders here.
+      console.log(`[mp] command for ${team}:`, command.type)
+    })
+  })
 }
 
 export const uiMenu = () => {
@@ -217,7 +255,13 @@ export const uiMenu = () => {
       {minimapPanel()}
       {dragSelectionRect()}
 
-      {gameState.matchStatus === 'notStarted' ? (titleStage === 'title' ? startScreenOverlay() : matchSetupOverlay()) : null}
+      {gameState.matchStatus === 'notStarted'
+        ? titleStage === 'title'
+          ? startScreenOverlay()
+          : titleStage === 'setup'
+            ? matchSetupOverlay()
+            : multiplayerLobbyOverlay()
+        : null}
       {gameState.matchStatus === 'ended' ? endGameOverlay() : null}
       {!showSettingsMenu ? menuButton() : null}
       {showSettingsMenu ? settingsOverlay() : null}
@@ -1343,7 +1387,7 @@ function startScreenOverlay() {
 
         <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center' }}>
           <UiEntity
-            uiTransform={{ width: 300, height: 62, justifyContent: 'center', alignItems: 'center', padding: 3 }}
+            uiTransform={{ width: 300, height: 62, margin: { right: 12 }, justifyContent: 'center', alignItems: 'center', padding: 3 }}
             uiBackground={{ color: Color4.create(0.35, 0.65, 1, 1) }}
           onMouseDown={() => {
             triggerScreenFade()
@@ -1352,6 +1396,18 @@ function startScreenOverlay() {
         >
           <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.06, 0.14, 0.28, 1) }}>
               <Label value="CONTINUE" fontSize={22} color={Color4.create(0.85, 0.93, 1, 1)} textAlign="middle-center" />
+            </UiEntity>
+          </UiEntity>
+          <UiEntity
+            uiTransform={{ width: 300, height: 62, margin: { left: 12 }, justifyContent: 'center', alignItems: 'center', padding: 3 }}
+            uiBackground={{ color: Color4.create(0.95, 0.75, 0.25, 1) }}
+            onMouseDown={() => {
+              triggerScreenFade()
+              titleStage = 'lobby'
+            }}
+          >
+            <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.2, 0.14, 0.04, 1) }}>
+              <Label value="MULTIPLAYER" fontSize={22} color={Color4.create(1, 0.9, 0.65, 1)} textAlign="middle-center" />
             </UiEntity>
           </UiEntity>
         </UiEntity>
@@ -1468,6 +1524,239 @@ function matchSetupOverlay() {
             <Label value="START MATCH" fontSize={22} color={Color4.create(0.85, 0.93, 1, 1)} textAlign="middle-center" />
           </UiEntity>
         </UiEntity>
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Multiplayer lobby: four seats shared by everyone in the world. Players claim
+// a seat, pick a race and a team; the host can fill empty seats with computers
+// and launches the match for everyone at once.
+// ---------------------------------------------------------------------------
+
+const LOBBY_SEAT_COLORS = [
+  Color4.create(0.35, 0.65, 1, 1),
+  Color4.create(0.95, 0.3, 0.25, 1),
+  Color4.create(1, 0.62, 0.15, 1),
+  Color4.create(0.82, 0.35, 0.95, 1)
+]
+
+function lobbyRaceLabel(race: RaceId | 'random'): string {
+  return race === 'random' ? 'RANDOM' : RACES[race].name.toUpperCase()
+}
+
+function nextLobbyRace(race: RaceId | 'random'): RaceId | 'random' {
+  const next = (OPPONENT_RACE_OPTIONS.indexOf(race) + 1) % OPPONENT_RACE_OPTIONS.length
+  return OPPONENT_RACE_OPTIONS[next]
+}
+
+/** Small action button used inside lobby seat rows. */
+function lobbyButton(key: string, label: string, color: Color4, onClick: () => void) {
+  return (
+    <UiEntity
+      key={key}
+      uiTransform={{ width: 96, height: 34, margin: { right: 6 }, justifyContent: 'center', alignItems: 'center' }}
+      uiBackground={{ color }}
+      onMouseDown={onClick}
+    >
+      <Label value={label} fontSize={12} color={UI.text} textAlign="middle-center" />
+    </UiEntity>
+  )
+}
+
+function lobbySeatRow(seat: LobbySeat, index: number) {
+  const iAmHost = isHost()
+  const mySeat = getMySeatIndex()
+  const isMine = mySeat === index
+
+  const chips: ReactEcs.JSX.Element[] = []
+
+  if (seat.kind === 'human') {
+    const name = `${seat.name ?? '???'}${isMine ? '  (YOU)' : ''}`
+    chips.push(
+      <Label key={`seat-name-${index}`} value={name} fontSize={14} color={isMine ? UI.gold : UI.text} textAlign="middle-left" uiTransform={{ width: 240 }} />
+    )
+    chips.push(
+      opponentChip(`seat-race-${index}`, lobbyRaceLabel(seat.race), 110, () => {
+        if (isMine) setMyRace(nextLobbyRace(seat.race))
+      })
+    )
+    chips.push(
+      opponentChip(`seat-team-${index}`, `TEAM ${seat.allianceId + 1}`, 92, () => {
+        if (isMine) setMyAlliance((seat.allianceId + 1) % 4)
+      })
+    )
+    chips.push(
+      <Label
+        key={`seat-ready-${index}`}
+        value={seat.ready ? 'READY' : 'NOT READY'}
+        fontSize={13}
+        color={seat.ready ? UI.green : UI.dim}
+        textAlign="middle-left"
+        uiTransform={{ width: 110, margin: { left: 8 } }}
+      />
+    )
+  } else if (seat.kind === 'computer') {
+    chips.push(<Label key={`seat-name-${index}`} value="COMPUTER" fontSize={14} color={UI.dim} textAlign="middle-left" uiTransform={{ width: 240 }} />)
+    chips.push(
+      opponentChip(`seat-race-${index}`, lobbyRaceLabel(seat.race), 110, () => {
+        if (iAmHost) hostSetSeat(index, { race: nextLobbyRace(seat.race) })
+      })
+    )
+    chips.push(
+      opponentChip(`seat-team-${index}`, `TEAM ${seat.allianceId + 1}`, 92, () => {
+        if (iAmHost) hostSetSeat(index, { allianceId: (seat.allianceId + 1) % 4 })
+      })
+    )
+    chips.push(
+      opponentChip(`seat-diff-${index}`, AI_DIFFICULTY[seat.difficulty].label.toUpperCase(), 92, () => {
+        const next = (DIFFICULTY_IDS.indexOf(seat.difficulty) + 1) % DIFFICULTY_IDS.length
+        if (iAmHost) hostSetSeat(index, { difficulty: DIFFICULTY_IDS[next] })
+      })
+    )
+    if (iAmHost) {
+      chips.push(
+        <UiEntity
+          key={`seat-close-${index}`}
+          uiTransform={{ width: 34, height: 34, justifyContent: 'center', alignItems: 'center' }}
+          uiBackground={{ color: Color4.create(0.45, 0.12, 0.12, 0.9) }}
+          onMouseDown={() => hostSetSeat(index, { kind: 'closed' })}
+        >
+          <Label value="X" fontSize={13} color={UI.text} textAlign="middle-center" />
+        </UiEntity>
+      )
+    }
+  } else {
+    chips.push(<Label key={`seat-name-${index}`} value="OPEN SEAT" fontSize={14} color={Color4.create(0.45, 0.48, 0.55, 0.9)} textAlign="middle-left" uiTransform={{ width: 240 }} />)
+    if (getMyAddress() !== '') {
+      chips.push(lobbyButton(`seat-join-${index}`, isMine ? 'JOINED' : mySeat >= 0 ? 'MOVE HERE' : 'JOIN', Color4.create(0.12, 0.3, 0.16, 0.95), () => claimSeat(index)))
+    }
+    if (iAmHost) {
+      chips.push(lobbyButton(`seat-cpu-${index}`, '+ COMPUTER', Color4.create(0.25, 0.32, 0.45, 0.9), () => hostSetSeat(index, { kind: 'computer', ready: false })))
+    }
+  }
+
+  return (
+    <UiEntity
+      key={`lobby-seat-${index}`}
+      uiTransform={{ width: '100%', height: 52, flexDirection: 'row', alignItems: 'center', margin: { bottom: 8 }, padding: { left: 14, right: 14 } }}
+      uiBackground={{ color: isMine ? Color4.create(0.08, 0.11, 0.17, 0.95) : Color4.create(0.05, 0.06, 0.09, 0.92) }}
+    >
+      <UiEntity uiTransform={{ width: 12, height: 12, margin: { right: 10 } }} uiBackground={{ color: LOBBY_SEAT_COLORS[index] }} />
+      <Label value={`SEAT ${index + 1}`} fontSize={13} color={UI.dim} textAlign="middle-left" uiTransform={{ width: 70 }} />
+      {chips}
+    </UiEntity>
+  )
+}
+
+function multiplayerLobbyOverlay() {
+  const lobby = getLobby()
+  const connected = getMyAddress() !== ''
+  const mySeat = getMySeatIndex()
+  const iAmHost = isHost()
+  const hostSeat = lobby.seats.find((seat) => seat.kind === 'human' && seat.address?.toLowerCase() === lobby.hostAddress.toLowerCase())
+  const hostLabel = lobby.hostAddress === '' ? 'electing host...' : iAmHost ? 'you are the host' : `host: ${hostSeat?.name ?? 'in world'}`
+  const canStart = canStartMultiplayerMatch()
+
+  return (
+    <UiEntity
+      uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%' }}
+      uiBackground={{ textureMode: 'stretch', texture: { src: 'images/ui/title-bg-decentracraft.png' } }}
+    >
+      {titleSkyAmbience()}
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%' }}
+        uiBackground={{ color: Color4.create(0, 0, 0, 0.55) }}
+      />
+
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { top: 70, left: 0 }, width: '100%', flexDirection: 'column', alignItems: 'center' }}
+      >
+        <Label value="MULTIPLAYER LOBBY" fontSize={44} color={UI.gold} textAlign="middle-center" uiTransform={{ width: '100%', height: 54 }} />
+        <Label
+          value={connected ? `${getPresentPlayerCount()} player(s) in world  ·  ${hostLabel}` : 'Connecting to world...'}
+          fontSize={16}
+          color={Color4.create(0.75, 0.78, 0.85, 0.9)}
+          textAlign="middle-center"
+          uiTransform={{ width: '100%', height: 22, margin: { top: 8 } }}
+        />
+      </UiEntity>
+
+      <UiEntity
+        uiTransform={{
+          positionType: 'absolute',
+          position: { top: 240, left: '50%' },
+          margin: { left: -430 },
+          width: 860,
+          flexDirection: 'column',
+          padding: { top: 24, bottom: 24, left: 26, right: 26 }
+        }}
+        uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.9) }}
+      >
+        <Label value="SEATS" fontSize={18} color={UI.text} textAlign="middle-left" uiTransform={{ margin: { bottom: 14 } }} />
+        {lobby.seats.map((seat, index) => lobbySeatRow(seat, index))}
+        <Label
+          value="Seats on the same team fight together. Mix players and computers on any side."
+          fontSize={12}
+          color={Color4.create(0.55, 0.58, 0.66, 0.9)}
+          textAlign="middle-left"
+          uiTransform={{ margin: { top: 8 } }}
+        />
+        {lobby.phase === 'inMatch' ? (
+          <Label value="A match is currently in progress in this world." fontSize={13} color={UI.red} textAlign="middle-left" uiTransform={{ margin: { top: 6 } }} />
+        ) : null}
+      </UiEntity>
+
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { bottom: 46, left: 0 }, width: '100%', flexDirection: 'row', justifyContent: 'center' }}
+      >
+        <UiEntity
+          uiTransform={{ width: 220, height: 60, margin: { right: 16 }, padding: 3, justifyContent: 'center', alignItems: 'center' }}
+          uiBackground={{ color: Color4.create(0.3, 0.36, 0.48, 1) }}
+          onMouseDown={() => {
+            leaveSeat()
+            triggerScreenFade()
+            titleStage = 'title'
+          }}
+        >
+          <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.07, 0.09, 0.14, 1) }}>
+            <Label value="BACK" fontSize={20} color={UI.dim} textAlign="middle-center" />
+          </UiEntity>
+        </UiEntity>
+
+        {mySeat >= 0 ? (
+          <UiEntity
+            uiTransform={{ width: 220, height: 60, margin: { right: 16 }, padding: 3, justifyContent: 'center', alignItems: 'center' }}
+            uiBackground={{ color: lobby.seats[mySeat].ready ? UI.green : Color4.create(0.35, 0.65, 1, 1) }}
+            onMouseDown={() => setMyReady(!lobby.seats[mySeat].ready)}
+          >
+            <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.06, 0.14, 0.1, 1) }}>
+              <Label value={lobby.seats[mySeat].ready ? 'UNREADY' : 'READY UP'} fontSize={20} color={UI.text} textAlign="middle-center" />
+            </UiEntity>
+          </UiEntity>
+        ) : null}
+
+        {iAmHost ? (
+          <UiEntity
+            uiTransform={{ width: 320, height: 60, padding: 3, justifyContent: 'center', alignItems: 'center' }}
+            uiBackground={{ color: canStart ? Color4.create(0.35, 0.65, 1, 1) : Color4.create(0.2, 0.24, 0.3, 1) }}
+            onMouseDown={() => {
+              if (canStart) hostStartMatch()
+            }}
+          >
+            <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.06, 0.14, 0.28, 1) }}>
+              <Label
+                value={canStart ? 'START MATCH' : 'WAITING FOR PLAYERS'}
+                fontSize={canStart ? 22 : 16}
+                color={canStart ? Color4.create(0.85, 0.93, 1, 1) : UI.dim}
+                textAlign="middle-center"
+              />
+            </UiEntity>
+          </UiEntity>
+        ) : (
+          <Label value="Waiting for the host to start the match..." fontSize={15} color={UI.dim} textAlign="middle-center" uiTransform={{ width: 340, height: 60 }} />
+        )}
       </UiEntity>
     </UiEntity>
   )
@@ -1626,6 +1915,7 @@ function endGameOverlay() {
             onMouseDown={() => {
               triggerScreenFade()
               titleStage = 'title'
+              hostResetLobby() // reopen the multiplayer lobby if we were hosting
               returnToMainMenu()
             }}
           />

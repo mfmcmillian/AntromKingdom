@@ -60,6 +60,7 @@ import { updateSoldiers as updateSoldiersSystem } from './rts/systems/combat'
 import { createEnemyAi, updateEnemyAi as updateEnemyAiSystem, type EnemyAi } from './rts/systems/enemyAi'
 import { updateSoldierProduction as updateSoldierProductionSystem, updateWorkerProduction as updateWorkerProductionSystem } from './rts/systems/production'
 import { updateWorkers as updateWorkersSystem } from './rts/systems/workers'
+import type { LocalMatchPlan } from './rts/multiplayer/seatMap'
 import { updateDragSelect } from './rts/dragSelect'
 import { initFogOfWar, resetFogOfWar } from './rts/fogOfWar'
 import { isPointerOverHud } from './rts/hud'
@@ -160,6 +161,8 @@ const ENEMY_DEFENSE_RADIUS = 20
 
 // One AI brain per computer opponent, rebuilt from the setup each match.
 let enemyAis: EnemyAi[] = []
+// Set for multiplayer matches: this client's seat-to-team view of the lobby.
+let multiplayerPlan: LocalMatchPlan | undefined
 const TEMPLE_ATTACK_DISTANCE_PADDING = 3
 const MATCH_NOT_STARTED = 'notStarted'
 const MATCH_ACTIVE = 'active'
@@ -173,6 +176,26 @@ export function initRtsGame(): void {
 }
 
 export function startRtsMatch(): void {
+  multiplayerPlan = undefined
+  launchMatch()
+}
+
+/**
+ * Multiplayer entry point: the frozen lobby snapshot (translated to this
+ * client's seat-to-team view) replaces the title-screen opponent setup.
+ * Teams held by other humans get no AI brain; their orders arrive over the
+ * command relay instead.
+ */
+export function startMultiplayerRtsMatch(plan: LocalMatchPlan): void {
+  multiplayerPlan = plan
+  launchMatch()
+}
+
+export function isMultiplayerMatch(): boolean {
+  return multiplayerPlan !== undefined
+}
+
+function launchMatch(): void {
   if (gameState.matchStatus === MATCH_ACTIVE) return
 
   // Always rebuild the base so the chosen race's units and buildings spawn fresh.
@@ -196,6 +219,7 @@ export function endRtsMatch(): void {
  * (so the setup screen sits over a clean map) but leave the match unstarted.
  */
 export function returnToMainMenu(): void {
+  multiplayerPlan = undefined
   resetRtsGame()
   gameState.matchStatus = MATCH_NOT_STARTED
   gameState.matchResult = 'none'
@@ -863,6 +887,11 @@ export function resetRtsGame(): void {
  * 'random' races, and spins up one AI brain per computer.
  */
 function applyOpponentSetup(): void {
+  if (multiplayerPlan) {
+    applyMultiplayerSetup(multiplayerPlan)
+    return
+  }
+
   const opponents = gameState.opponents.slice(0, ENEMY_TEAMS.length)
   gameState.activeEnemyTeams = ENEMY_TEAMS.slice(0, Math.max(1, opponents.length))
 
@@ -891,6 +920,36 @@ function applyOpponentSetup(): void {
   }
 
   enemyAis = gameState.activeEnemyTeams.map((team) => createEnemyAi(team, gameState.enemyDifficulties[team]))
+}
+
+/**
+ * Multiplayer variant of applyOpponentSetup: races, difficulties and alliance
+ * ids come pre-resolved from the shared lobby snapshot (identical on every
+ * client thanks to the seeded race rolls). Only computer-held seats get an AI
+ * brain; human-held teams are driven by remote commands.
+ */
+function applyMultiplayerSetup(plan: LocalMatchPlan): void {
+  gameState.playerRace = plan.races.player
+  gameState.gameMode = plan.gameMode
+  gameState.activeEnemyTeams = plan.activeEnemyTeams.slice()
+  gameState.alliances.player = plan.alliances.player
+
+  for (const team of plan.activeEnemyTeams) {
+    gameState.enemyRaces[team] = plan.races[team]
+    gameState.enemyDifficulties[team] = plan.difficulties[team]
+    gameState.alliances[team] = plan.alliances[team]
+  }
+
+  // Same seating rule as single-player: allies flank the player, hostiles far.
+  const openSeats = COMPUTER_SEATS.map((_, index) => index)
+  for (const team of plan.activeEnemyTeams) {
+    const isAlly = !areHostile('player', team)
+    gameState.enemySeatIndex[team] = isAlly ? openSeats.pop()! : openSeats.shift()!
+  }
+
+  enemyAis = plan.activeEnemyTeams
+    .filter((team) => !plan.humanTeams.includes(team))
+    .map((team) => createEnemyAi(team, gameState.enemyDifficulties[team]))
 }
 
 export function getWorkerCount(): number {

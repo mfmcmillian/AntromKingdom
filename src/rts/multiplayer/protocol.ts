@@ -166,7 +166,7 @@ export type MatchStartMessage = {
 
 export function createDefaultSeat(index: number): LobbySeat {
   return {
-    kind: index === 0 ? 'human' : 'closed',
+    kind: 'closed',
     race: 'random',
     difficulty: 'medium',
     allianceId: index,

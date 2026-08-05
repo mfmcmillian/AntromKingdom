@@ -30,7 +30,7 @@ const LOBBY_SYNC_ID = 5001
 
 const MpLobbyState = engine.defineComponent('dc-mp-lobby-state', {
   json: Schemas.String,
-  revision: Schemas.Int64
+  revision: Schemas.Int
 })
 
 const bus = new MessageBus()
@@ -100,8 +100,8 @@ function sessionSystem(): void {
 
   // Pull remote lobby changes.
   const state = MpLobbyState.getOrNull(lobbyEntity)
-  if (state && Number(state.revision) !== lastSeenRevision) {
-    lastSeenRevision = Number(state.revision)
+  if (state && state.revision !== lastSeenRevision) {
+    lastSeenRevision = state.revision
     try {
       const parsed = JSON.parse(state.json) as LobbyConfig
       if (parsed.version === PROTOCOL_VERSION) {
@@ -217,6 +217,14 @@ export function canStartMatch(): boolean {
   return humans.every((seat) => seat.ready && seat.address)
 }
 
+/** Back to a joinable lobby after a match: clears ready flags, reopens phase. */
+export function hostResetLobby(): void {
+  if (!isHost()) return
+  lobby.phase = 'lobby'
+  for (const seat of lobby.seats) seat.ready = false
+  publishLobby()
+}
+
 export function hostStartMatch(): void {
   if (!isHost() || !canStartMatch()) return
   lobby.phase = 'inMatch'
@@ -292,7 +300,7 @@ function publishLobby(): void {
   lastSeenRevision = lobby.revision
   const state = MpLobbyState.getMutable(lobbyEntity)
   state.json = JSON.stringify(lobby)
-  state.revision = BigInt(lobby.revision) as unknown as number
+  state.revision = lobby.revision
   notifyLobbyChanged()
 }
 
