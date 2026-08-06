@@ -9,9 +9,27 @@ import { Vector3 } from '@dcl/sdk/math'
 const SFX = {
   ack: 'sounds/sfx/ack.wav',
   laser: 'sounds/sfx/laser.wav',
+  melee: 'sounds/sfx/melee.wav',
   explosion: 'sounds/sfx/explosion.wav',
   alert: 'sounds/sfx/alert.wav',
+  complete: 'sounds/sfx/complete.wav',
+  research: 'sounds/sfx/research.wav',
+  click: 'sounds/sfx/click.wav',
   ambient: 'sounds/sfx/ambient.wav'
+}
+
+/** Race-flavored acknowledgment voices: radio chirp / crystal shimmer / organic squelch. */
+const ACK_BY_RACE: Record<string, string> = {
+  human: 'sounds/sfx/ack-human.wav',
+  alien: 'sounds/sfx/ack-alien.wav',
+  bio: 'sounds/sfx/ack-bio.wav'
+}
+
+let ackVoice = SFX.ack
+
+/** Called at match start so order blips speak the player's race. */
+export function setAckVoice(raceId: string): void {
+  ackVoice = ACK_BY_RACE[raceId] ?? SFX.ack
 }
 
 let globalChannel: Entity | undefined
@@ -57,7 +75,31 @@ function playAt(clip: string, position: Vector3, volume: number): void {
 /** Short confirmation blip when the player issues a move/attack order. */
 export function playAcknowledge(): void {
   if (throttled('ack', 180)) return
-  playGlobal(SFX.ack, 0.7)
+  playGlobal(ackVoice, 0.7)
+}
+
+/** Melee swing landing: thump plus clank at the point of impact. */
+export function playMelee(position: Vector3): void {
+  if (throttled('melee', 140)) return
+  playAt(SFX.melee, position, 0.55)
+}
+
+/** Building or unit finished: bright two-note chime. */
+export function playComplete(): void {
+  if (throttled('complete', 400)) return
+  playGlobal(SFX.complete, 0.6)
+}
+
+/** Research finished: rising three-note arpeggio. */
+export function playResearchComplete(): void {
+  if (throttled('research', 400)) return
+  playGlobal(SFX.research, 0.65)
+}
+
+/** Tiny tick for HUD button presses. */
+export function playUiClick(): void {
+  if (throttled('click', 70)) return
+  playGlobal(SFX.click, 0.5)
 }
 
 /** Ranged shot / turret bolt at the shooter's position. */

@@ -101,6 +101,128 @@ const seconds = (s) => Math.floor(s * SAMPLE_RATE)
   writeWav('alert.wav', out)
 }
 
+// Melee hit: dull low thump plus a fast metallic clank ring.
+{
+  const n = seconds(0.13)
+  const out = new Float64Array(n)
+  let thumpPhase = 0
+  let ringPhase = 0
+  let lowpass = 0
+  for (let i = 0; i < n; i++) {
+    const t = i / n
+    const thumpFreq = 170 * Math.pow(0.4, t) + 40
+    thumpPhase += (2 * Math.PI * thumpFreq) / SAMPLE_RATE
+    ringPhase += (2 * Math.PI * 2400) / SAMPLE_RATE
+    const noise = (Math.random() * 2 - 1) * Math.exp(-14 * t)
+    lowpass += (noise - lowpass) * 0.5
+    const thump = Math.sin(thumpPhase) * Math.exp(-9 * t)
+    const clank = Math.sin(ringPhase) * Math.exp(-26 * t)
+    out[i] = (thump * 0.9 + clank * 0.35 + lowpass * 0.6) * 0.5
+  }
+  writeWav('melee.wav', out)
+}
+
+// Production/building complete: bright two-note ascending chime.
+{
+  const n = seconds(0.34)
+  const out = new Float64Array(n)
+  for (let i = 0; i < n; i++) {
+    const t = i / n
+    const note = t < 0.45 ? 660 : 880
+    const local = t < 0.45 ? t / 0.45 : (t - 0.45) / 0.55
+    const env = Math.sin(Math.PI * Math.min(1, local)) ** 0.8
+    const time = i / SAMPLE_RATE
+    out[i] = (Math.sin(2 * Math.PI * note * time) * 0.7 + Math.sin(2 * Math.PI * note * 2 * time) * 0.18) * env * 0.36
+  }
+  writeWav('complete.wav', out)
+}
+
+// Research complete: three-note rising arpeggio, more ceremonial.
+{
+  const n = seconds(0.55)
+  const out = new Float64Array(n)
+  const notes = [523.25, 659.25, 783.99]
+  for (let i = 0; i < n; i++) {
+    const t = i / n
+    const step = Math.min(notes.length - 1, Math.floor(t * notes.length))
+    const local = t * notes.length - step
+    const env = Math.sin(Math.PI * Math.min(1, local)) ** 0.7
+    const time = i / SAMPLE_RATE
+    const freq = notes[step]
+    out[i] = (Math.sin(2 * Math.PI * freq * time) * 0.65 + Math.sin(2 * Math.PI * freq * 2 * time) * 0.2) * env * 0.34
+  }
+  writeWav('research.wav', out)
+}
+
+// UI click: tiny dry tick.
+{
+  const n = seconds(0.035)
+  const out = new Float64Array(n)
+  let phase = 0
+  for (let i = 0; i < n; i++) {
+    const t = i / n
+    phase += (2 * Math.PI * 1800) / SAMPLE_RATE
+    out[i] = (Math.sin(phase) * 0.5 + (Math.random() * 2 - 1) * 0.3) * Math.exp(-18 * t) * 0.3
+  }
+  writeWav('click.wav', out)
+}
+
+// Vanguard ack: crisp military radio chirp with a static click at the front.
+{
+  const n = seconds(0.11)
+  const out = new Float64Array(n)
+  let phase = 0
+  for (let i = 0; i < n; i++) {
+    const t = i / n
+    const freq = 950 + 650 * t
+    phase += (2 * Math.PI * freq) / SAMPLE_RATE
+    // Square-ish radio texture.
+    const square = Math.tanh(Math.sin(phase) * 3)
+    const staticNoise = i < seconds(0.012) ? (Math.random() * 2 - 1) * 0.4 : 0
+    const env = Math.sin(Math.PI * t) ** 0.5
+    out[i] = (square * 0.35 + staticNoise) * env
+  }
+  writeWav('ack-human.wav', out)
+}
+
+// Aetherborn ack: crystalline bell shimmer, slightly detuned partials.
+{
+  const n = seconds(0.22)
+  const out = new Float64Array(n)
+  for (let i = 0; i < n; i++) {
+    const t = i / n
+    const time = i / SAMPLE_RATE
+    const env = Math.exp(-6 * t) * Math.min(1, t * 30)
+    out[i] =
+      (Math.sin(2 * Math.PI * 720 * time) * 0.45 +
+        Math.sin(2 * Math.PI * 726 * time) * 0.3 +
+        Math.sin(2 * Math.PI * 1440 * time) * 0.18 +
+        Math.sin(2 * Math.PI * 2160 * time) * 0.08) *
+      env *
+      0.5
+  }
+  writeWav('ack-alien.wav', out)
+}
+
+// Swarm ack: wet organic squelch, wobbling downward croak.
+{
+  const n = seconds(0.16)
+  const out = new Float64Array(n)
+  let phase = 0
+  let lowpass = 0
+  for (let i = 0; i < n; i++) {
+    const t = i / n
+    const wobble = Math.sin(2 * Math.PI * 26 * t) * 60
+    const freq = 380 - 160 * t + wobble
+    phase += (2 * Math.PI * freq) / SAMPLE_RATE
+    const noise = (Math.random() * 2 - 1) * 0.5
+    lowpass += (noise - lowpass) * 0.18
+    const env = Math.sin(Math.PI * t) ** 0.7
+    out[i] = (Math.sin(phase) * 0.6 + lowpass * Math.sin(phase * 0.5) * 0.8) * env * 0.5
+  }
+  writeWav('ack-bio.wav', out)
+}
+
 // Ambient bed: a slow, dark space pad that loops seamlessly (integer cycles).
 {
   const duration = 12

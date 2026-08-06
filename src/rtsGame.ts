@@ -82,7 +82,7 @@ import { showMoveMarker } from './rts/moveMarker'
 import { fireProjectile } from './rts/projectiles'
 import { spawnBlastRing, spawnDeathBurst, spawnImpactFlash } from './rts/impactVfx'
 import { clearAllConstructionVfx } from './rts/constructionVfx'
-import { playAcknowledge, playExplosion, playLaser, playUnderAttackAlert, startAmbientMusic, stopAmbientMusic } from './rts/sound'
+import { playAcknowledge, playComplete, playExplosion, playLaser, playMelee, playResearchComplete, playUnderAttackAlert, setAckVoice, startAmbientMusic, stopAmbientMusic } from './rts/sound'
 import {
   getDamageMultiplier,
   getNextUpgradeCost,
@@ -1029,6 +1029,7 @@ export function resetRtsGame(): void {
     const anchor = getTeamAnchor('player')
     setCameraFocus(anchor.temple.x, anchor.temple.z)
   }
+  setAckVoice(gameState.playerRace)
   startAmbientMusic()
 }
 
@@ -2173,6 +2174,7 @@ const upgradeSystemDeps = {
   },
   onUpgradeComplete: (team: Team, kind: UpgradeKind, newLevel: number) => {
     if (team === 'player') {
+      playResearchComplete()
       setStatus(`${UPGRADE_INFO[kind].name} level ${newLevel} research complete (${UPGRADE_INFO[kind].effect}).`)
     }
     // Pin the new rank on every fighter already in the field, each wearing
@@ -3053,6 +3055,7 @@ function completeConstruction(site: Building, builder?: Worker): void {
   }
 
   if (getTeam(site) === 'player') {
+    playComplete()
     setStatus(definition.completeStatus)
   }
 }
@@ -3077,11 +3080,18 @@ function damageCombatTarget(target: Building | Soldier | Worker, amount: number,
       fireProjectile(Transform.get(attacker.entity).position, targetPosition, attackerTeam)
       spawnImpactFlash(targetPosition, accent)
       playLaser(Transform.get(attacker.entity).position)
+    } else {
+      // Melee swings land with a clank and a flash so close combat reads clearly.
+      spawnImpactFlash(targetPosition, accent)
+      playMelee(targetPosition)
     }
     if (attacker.splashRadius > 0) {
       // Caster blasts and titan stomps ripple outward.
       spawnBlastRing(targetPosition, accent, attacker.splashRadius)
     }
+  } else if (attacker.kind === 'worker' && attacker.alive && target.alive) {
+    spawnImpactFlash(targetPosition, getRace(attackerTeam).accent)
+    playMelee(targetPosition)
   }
 
   applyCombatDamage(target, damage, attacker)

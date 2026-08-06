@@ -2,6 +2,7 @@ import type { Building, Soldier, SoldierVariant, Team, Worker } from '../types'
 import type { Vector3 } from '@dcl/sdk/math'
 import { addResources, addSupplyUsed, decrementSoldierQueue, decrementWorkerQueue } from '../economy'
 import { getBuildingDisplayName, getSoldierDefinition, getWorkerDefinition } from '../races'
+import { playComplete } from '../sound'
 import { gameState } from '../state'
 import { getTeamSoldierCount, getTeamWorkerCount, soldierProductionOrders, soldiers, workerProductionOrders, workers } from '../world'
 
@@ -56,6 +57,7 @@ export function updateWorkerProduction(dt: number, deps: ProductionDeps): void {
     if (order.team === 'player') {
       const workerName = getWorkerDefinition('player').name
       const templeName = getBuildingDisplayName('temple', 'player')
+      playComplete()
       deps.setStatus(rallyPoint ? `${workerName} ready and moving to the ${templeName} spawn point.` : `${workerName} ready outside the ${templeName}.`)
     }
   }
@@ -98,6 +100,7 @@ export function updateSoldierProduction(dt: number, deps: ProductionDeps): void 
     soldierProductionOrders.splice(i, 1)
     if (order.team === 'player') {
       const soldierName = getSoldierDefinition('player', order.variant).name
+      playComplete()
       deps.setStatus(rallyPoint ? `${soldierName} ready and moving to the spawn point.` : `${soldierName} ready outside the ${barracks.name}.`)
     }
   }

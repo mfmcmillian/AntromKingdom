@@ -1,4 +1,5 @@
 import ReactEcs, { Button, Label, ReactEcsRenderer, UiEntity } from '@dcl/sdk/react-ecs'
+import { playUiClick } from './rts/sound'
 import { InputModifier, UiCanvasInformation, engine } from '@dcl/sdk/ecs'
 import { Color4 } from '@dcl/sdk/math'
 import {
@@ -721,7 +722,9 @@ function commandButton(slot: CommandSlot) {
         if (hoveredSlot?.id === slot.id) hoveredSlot = undefined
       }}
       onMouseDown={() => {
-        if (!locked) slot.onClick()
+        if (locked) return
+        playUiClick()
+        slot.onClick()
       }}
     >
       <UiEntity
