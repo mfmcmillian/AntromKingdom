@@ -1,5 +1,7 @@
 // Synthesizes the game's sound effects as 16-bit PCM WAV files (no deps).
-// Run: node scripts/generate-sfx.mjs
+// The game ships MP3s: after regenerating, run scripts/wav-to-mp3.mjs to
+// compress the WAVs and delete the originals.
+//   node scripts/generate-sfx.mjs && node scripts/wav-to-mp3.mjs
 // Outputs into sounds/sfx/.
 
 import { mkdirSync, writeFileSync } from 'node:fs'

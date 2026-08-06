@@ -7,22 +7,22 @@ import { Vector3 } from '@dcl/sdk/math'
 // One-shots are throttled so big fights don't turn into white noise.
 
 const SFX = {
-  ack: 'sounds/sfx/ack.wav',
-  laser: 'sounds/sfx/laser.wav',
-  melee: 'sounds/sfx/melee.wav',
-  explosion: 'sounds/sfx/explosion.wav',
-  alert: 'sounds/sfx/alert.wav',
-  complete: 'sounds/sfx/complete.wav',
-  research: 'sounds/sfx/research.wav',
-  click: 'sounds/sfx/click.wav',
-  ambient: 'sounds/sfx/ambient.wav'
+  ack: 'sounds/sfx/ack.mp3',
+  laser: 'sounds/sfx/laser.mp3',
+  melee: 'sounds/sfx/melee.mp3',
+  explosion: 'sounds/sfx/explosion.mp3',
+  alert: 'sounds/sfx/alert.mp3',
+  complete: 'sounds/sfx/complete.mp3',
+  research: 'sounds/sfx/research.mp3',
+  click: 'sounds/sfx/click.mp3',
+  ambient: 'sounds/sfx/ambient.mp3'
 }
 
 /** Race-flavored acknowledgment voices: radio chirp / crystal shimmer / organic squelch. */
 const ACK_BY_RACE: Record<string, string> = {
-  human: 'sounds/sfx/ack-human.wav',
-  alien: 'sounds/sfx/ack-alien.wav',
-  bio: 'sounds/sfx/ack-bio.wav'
+  human: 'sounds/sfx/ack-human.mp3',
+  alien: 'sounds/sfx/ack-alien.mp3',
+  bio: 'sounds/sfx/ack-bio.mp3'
 }
 
 let ackVoice = SFX.ack
