@@ -2447,6 +2447,17 @@ export function applyRemoteCommand(team: Team, command: MatchCommand): void {
       break
     }
 
+    case 'heroAbility': {
+      const unit = getRemoteUnit(command.unitId, team)
+      if (unit?.kind === 'soldier') castHeroAbility(unit as Soldier, false)
+      break
+    }
+
+    case 'surrender': {
+      eliminateTeam(team, true)
+      break
+    }
+
     case 'stop':
     case 'hold':
       // Reserved order types; no dedicated local UI issues these yet.
@@ -3133,6 +3144,21 @@ function damageBuilding(building: Building, amount: number, attacker?: Soldier |
   updateMatchEndState()
 }
 
+/** Wipe a team from the field: units die, buildings collapse, elimination check runs. */
+function eliminateTeam(team: Team, surrendered: boolean): void {
+  if (surrendered) setStatus(`${getMultiplayerTeamName(team) ?? 'A commander'} surrendered!`)
+  for (const soldier of soldiers) {
+    if (soldier.alive && getTeam(soldier) === team) damageSoldier(soldier, soldier.hp)
+  }
+  for (const worker of workers) {
+    if (worker.alive && getTeam(worker) === team) damageWorker(worker, worker.hp)
+  }
+  for (const building of [...buildings]) {
+    if (building.alive && getTeam(building) === team) damageBuilding(building, building.hp)
+  }
+  updateMatchEndState()
+}
+
 function isPlayerTempleUnderAttack(building: Building, attacker?: Soldier | Worker): boolean {
   return building.kind === 'temple' && getTeam(building) === 'player' && attacker !== undefined && isHostileToPlayer(getTeam(attacker))
 }
@@ -3285,11 +3311,120 @@ function castCasterAbility(caster: Soldier, target: Building | Soldier | Worker,
   }
 }
 
+// ---------------------------------------------------------------------------
+// Hero active abilities: one signature button per hero on a long cooldown,
+// cast from the command card (and relayed in multiplayer).
+//   Warmaster Kael (human) - Rally Cry: heals nearby allied fighters.
+//   Riftlord Auren (alien) - Rift Nova: damages every enemy around him.
+//   Broodmother Szel (bio)  - Birth Surge: instantly births free Maulers.
+// ---------------------------------------------------------------------------
+
+export const HERO_ABILITY = {
+  human: { name: 'Rally Cry', cooldown: 45, describe: 'Heals allied fighters within 10m of Kael for 60 HP.' },
+  alien: { name: 'Rift Nova', cooldown: 45, describe: 'Deals 45 damage to every enemy within 8m of Auren.' },
+  bio: { name: 'Birth Surge', cooldown: 60, describe: 'Szel instantly births 3 free Maulers (supply permitting).' }
+} as const
+
+const RALLY_CRY_RADIUS = 10
+const RALLY_CRY_HEAL = 60
+const RIFT_NOVA_RADIUS = 8
+const RIFT_NOVA_DAMAGE = 45
+const BIRTH_SURGE_COUNT = 3
+const HEAL_FLASH_COLOR = Color4.create(0.4, 1, 0.55, 1)
+
+export type HeroAbilityStatus = {
+  name: string
+  description: string
+  cooldownRemaining: number
+  cooldownTotal: number
+}
+
+/** The lone selected player hero, if any - drives the ability button on the command card. */
+export function getSelectedHeroAbility(): HeroAbilityStatus | undefined {
+  const hero = getSelectedSoldiers().find((soldier) => soldier.alive && soldier.variant === 'hero' && getTeam(soldier) === 'player')
+  if (!hero) return undefined
+
+  const ability = HERO_ABILITY[getRace('player').id]
+  return {
+    name: ability.name,
+    description: ability.describe,
+    cooldownRemaining: Math.max(0, hero.heroAbilityCooldown ?? 0),
+    cooldownTotal: ability.cooldown
+  }
+}
+
+export function castSelectedHeroAbility(): void {
+  if (!isMatchActive()) return
+  const hero = getSelectedSoldiers().find((soldier) => soldier.alive && soldier.variant === 'hero' && getTeam(soldier) === 'player')
+  if (!hero) return
+
+  const ability = HERO_ABILITY[getRace('player').id]
+  if ((hero.heroAbilityCooldown ?? 0) > 0) {
+    setStatus(`${ability.name} ready in ${Math.ceil(hero.heroAbilityCooldown ?? 0)}s.`)
+    return
+  }
+
+  castHeroAbility(hero, true)
+  if (isRelayActive()) broadcastMyCommand({ type: 'heroAbility', unitId: hero.id })
+}
+
+function castHeroAbility(hero: Soldier, announce: boolean): void {
+  if (!hero.alive || hero.variant !== 'hero' || (hero.heroAbilityCooldown ?? 0) > 0) return
+
+  const team = getTeam(hero)
+  const race = getRace(team).id
+  const ability = HERO_ABILITY[race]
+  hero.heroAbilityCooldown = ability.cooldown
+  const origin = cloneVector(Transform.get(hero.entity).position)
+
+  if (race === 'human') {
+    spawnBlastRing(origin, HEAL_FLASH_COLOR, RALLY_CRY_RADIUS)
+    let healed = 0
+    for (const unit of soldiers) {
+      if (!unit.alive || getTeam(unit) !== team || unit.id === hero.id || unit.hp >= unit.maxHp) continue
+      if (distanceToPoint(Transform.get(unit.entity).position, origin) > RALLY_CRY_RADIUS) continue
+      unit.hp = Math.min(unit.maxHp, unit.hp + RALLY_CRY_HEAL)
+      spawnImpactFlash(cloneVector(Transform.get(unit.entity).position), HEAL_FLASH_COLOR)
+      healed += 1
+    }
+    if (announce) setStatus(`${ability.name}: healed ${healed} fighter${healed === 1 ? '' : 's'}.`)
+    return
+  }
+
+  if (race === 'alien') {
+    spawnBlastRing(origin, getRace(team).accent, RIFT_NOVA_RADIUS)
+    const hits = getHostileUnitsNear(origin, RIFT_NOVA_RADIUS, team, hero.id)
+    for (const unit of hits) {
+      spawnImpactFlash(cloneVector(Transform.get(unit.entity).position), getRace(team).accent)
+      if (unit.kind === 'soldier') damageSoldier(unit, RIFT_NOVA_DAMAGE, hero)
+      else damageWorker(unit, RIFT_NOVA_DAMAGE, hero)
+    }
+    if (announce) setStatus(`${ability.name}: hit ${hits.length} enem${hits.length === 1 ? 'y' : 'ies'}.`)
+    return
+  }
+
+  // Bio - Birth Surge: free Maulers pop out around Szel, supply permitting.
+  const meleeDef = getSoldierDefinition(team, 'melee')
+  let spawned = 0
+  for (let i = 0; i < BIRTH_SURGE_COUNT; i++) {
+    if (getSupplyUsed(team) + meleeDef.supply > getSupplyCap(team)) break
+    const angle = (i / BIRTH_SURGE_COUNT) * Math.PI * 2
+    const spawn = createSoldier(Vector3.create(origin.x + Math.cos(angle) * 1.8, 0.25, origin.z + Math.sin(angle) * 1.8), team, 'melee')
+    soldiers.push(spawn)
+    addSupplyUsed(team, meleeDef.supply)
+    gameState.matchStats[team].unitsProduced += 1
+    spawned += 1
+  }
+  spawnBlastRing(origin, Color4.create(0.45, 0.9, 0.3, 1), 4)
+  if (announce) setStatus(spawned > 0 ? `${ability.name}: ${spawned} free ${meleeDef.name}${spawned === 1 ? '' : 's'} birthed.` : `${ability.name}: no supply for new broodlings.`)
+}
+
 /** Ticks ability cooldowns, slow durations, and poison damage-over-time. */
 function updateStatusEffects(dt: number): void {
   for (const soldier of soldiers) {
     if (!soldier.alive) continue
     if (soldier.abilityTimer !== undefined && soldier.abilityTimer > 0) soldier.abilityTimer -= dt
+    if (soldier.heroAbilityCooldown !== undefined && soldier.heroAbilityCooldown > 0) soldier.heroAbilityCooldown -= dt
     if (soldier.slowRemaining !== undefined && soldier.slowRemaining > 0) soldier.slowRemaining -= dt
     tickPoison(soldier, dt)
   }

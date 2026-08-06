@@ -6,6 +6,8 @@ import {
   cancelBuildingPlacement,
   cancelSelectedConstruction,
   canCancelSelectedConstruction,
+  castSelectedHeroAbility,
+  getSelectedHeroAbility,
   CONTROL_GROUP_SLOTS,
   cycleSelectedStance,
   endRtsMatch,
@@ -150,6 +152,11 @@ const ICON = {
     build: 'images/icons/icon-action-build.jpg',
     buildAdvanced: 'images/icons/icon-action-buildadvanced.jpg'
   },
+  heroAbility: {
+    human: 'images/icons/icon-hero-rallycry.jpg',
+    alien: 'images/icons/icon-hero-riftnova.jpg',
+    bio: 'images/icons/icon-hero-birthsurge.jpg'
+  } as Record<string, string>,
   endgame: {
     victory: 'images/icons/icon-endgame-victory.jpg',
     defeat: 'images/icons/icon-endgame-defeat.jpg',
@@ -917,6 +924,18 @@ function getCommandSlots(selected: SelectedSummary): CommandSlot[] {
   }
 
   if (selected.kind === 'soldier') {
+    // A lone selected hero gets its signature ability button, with cooldown badge.
+    const heroAbility = getSelectedHeroAbility()
+    if (heroAbility) {
+      slots.push({
+        id: 'hero-ability',
+        icon: ICON.heroAbility[gameState.playerRace] ?? ICON.action.attackMove,
+        name: heroAbility.name,
+        description: heroAbility.description,
+        badge: heroAbility.cooldownRemaining > 0 ? `${Math.ceil(heroAbility.cooldownRemaining)}s` : undefined,
+        onClick: castSelectedHeroAbility
+      })
+    }
     slots.push({
       id: 'attack-move',
       icon: ICON.action.attackMove,

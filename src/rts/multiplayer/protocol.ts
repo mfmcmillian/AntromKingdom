@@ -114,6 +114,17 @@ export type RallyCommand = {
   z: number
 }
 
+export type HeroAbilityCommand = {
+  type: 'heroAbility'
+  /** The casting hero's unit id. */
+  unitId: string
+}
+
+/** The sender concedes: their whole team is eliminated on every client. */
+export type SurrenderCommand = {
+  type: 'surrender'
+}
+
 export type MatchCommand =
   | UnitOrderCommand
   | AttackTargetCommand
@@ -124,6 +135,8 @@ export type MatchCommand =
   | ResearchCommand
   | StanceCommand
   | RallyCommand
+  | HeroAbilityCommand
+  | SurrenderCommand
 
 // Lobby requests: clients send these to the authoritative server, which
 // validates them (sender identity comes from the transport, seat ownership

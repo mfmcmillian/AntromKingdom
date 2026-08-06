@@ -129,6 +129,8 @@ export type Soldier = Selectable & {
   kills?: number
   /** Caster signature ability cooldown (seconds until the next auto-cast). */
   abilityTimer?: number
+  /** Hero active ability cooldown (seconds until the button is ready again). */
+  heroAbilityCooldown?: number
   /** Time Fracture slow (seconds remaining at half move speed). */
   slowRemaining?: number
   /** Spore Plague damage-over-time (seconds remaining, damage rate, credit). */
