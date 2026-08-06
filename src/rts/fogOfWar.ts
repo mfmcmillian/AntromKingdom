@@ -1,4 +1,4 @@
-import { Entity, Material, MeshRenderer, Transform, VisibilityComponent, engine } from '@dcl/sdk/ecs'
+import { Entity, Material, MaterialTransparencyMode, MeshRenderer, Transform, VisibilityComponent, engine } from '@dcl/sdk/ecs'
 import { Color4, Vector3 } from '@dcl/sdk/math'
 import { SCENE } from './config'
 import { isHostileToPlayer } from './state'
@@ -24,10 +24,15 @@ const UPDATE_INTERVAL = 0.25
 // Dark blue-gray "night side" tone: clearly unexplored, but tuned to the light
 // regolith surface so the boundary doesn't look like a hole in the world.
 const FOG_COLOR = Color4.create(0.055, 0.055, 0.085, 1)
+// Explored shroud: you've scouted it and remember the terrain, but nobody is
+// watching it right now - a translucent dusk instead of full daylight.
+const SHROUD_COLOR = Color4.create(0.04, 0.04, 0.07, 0.45)
 
 type VisionSource = { x: number; z: number; radius: number }
+export type FogCellState = 'hidden' | 'explored' | 'visible'
 
 const explored: boolean[] = new Array(FOG_GRID_SIZE * FOG_GRID_SIZE).fill(false)
+const cellStates: FogCellState[] = new Array(FOG_GRID_SIZE * FOG_GRID_SIZE).fill('hidden')
 const fogTiles: (Entity | null)[] = new Array(FOG_GRID_SIZE * FOG_GRID_SIZE).fill(null)
 let visionSources: VisionSource[] = []
 let updateTimer = 0
@@ -41,6 +46,11 @@ export function resetFogOfWar(): void {
   explored.fill(false)
   visionSources = []
   createMissingFogTiles()
+  // Force every tile back to the opaque unexplored look.
+  for (let index = 0; index < cellStates.length; index++) {
+    cellStates[index] = 'hidden'
+    applyCellVisual(index, 'hidden')
+  }
 }
 
 /** True when the position is currently inside a player unit/building vision radius. */
@@ -63,6 +73,12 @@ export function isPositionExplored(position: { x: number; z: number }): boolean 
 export function isCellExplored(column: number, row: number): boolean {
   if (column < 0 || row < 0 || column >= FOG_GRID_SIZE || row >= FOG_GRID_SIZE) return true
   return explored[row * FOG_GRID_SIZE + column]
+}
+
+/** Current three-state fog status of a cell (for the minimap shroud). */
+export function getFogCellState(column: number, row: number): FogCellState {
+  if (column < 0 || row < 0 || column >= FOG_GRID_SIZE || row >= FOG_GRID_SIZE) return 'visible'
+  return cellStates[row * FOG_GRID_SIZE + column]
 }
 
 function fogOfWarSystem(dt: number): void {
@@ -112,20 +128,37 @@ function revealExploredCells(): void {
   for (let row = 0; row < FOG_GRID_SIZE; row++) {
     for (let column = 0; column < FOG_GRID_SIZE; column++) {
       const index = row * FOG_GRID_SIZE + column
-      if (explored[index]) continue
 
       const centerX = column * CELL_SIZE + CELL_SIZE / 2
       const centerZ = row * CELL_SIZE + CELL_SIZE / 2
-      if (!isPositionVisibleToPlayer({ x: centerX, z: centerZ })) continue
+      const visibleNow = isPositionVisibleToPlayer({ x: centerX, z: centerZ })
+      if (visibleNow) explored[index] = true
 
-      explored[index] = true
-      const tile = fogTiles[index]
-      if (tile) {
-        engine.removeEntity(tile)
-        fogTiles[index] = null
-      }
+      const nextState: FogCellState = visibleNow ? 'visible' : explored[index] ? 'explored' : 'hidden'
+      if (cellStates[index] === nextState) continue
+
+      cellStates[index] = nextState
+      applyCellVisual(index, nextState)
     }
   }
+}
+
+/** Swap the tile's look for its fog state: opaque night, translucent shroud, or gone. */
+function applyCellVisual(index: number, state: FogCellState): void {
+  const tile = fogTiles[index]
+  if (!tile) return
+
+  if (state === 'visible') {
+    VisibilityComponent.createOrReplace(tile, { visible: false })
+    return
+  }
+
+  VisibilityComponent.createOrReplace(tile, { visible: true })
+  Material.setPbrMaterial(tile, {
+    albedoColor: state === 'hidden' ? FOG_COLOR : SHROUD_COLOR,
+    transparencyMode: state === 'hidden' ? MaterialTransparencyMode.MTM_OPAQUE : MaterialTransparencyMode.MTM_ALPHA_BLEND,
+    castShadows: false
+  })
 }
 
 function updateEnemyVisibility(): void {

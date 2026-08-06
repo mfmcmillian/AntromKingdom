@@ -2,7 +2,7 @@ import { PrimaryPointerInfo, Transform, UiCanvasInformation, engine } from '@dcl
 import { Color4 } from '@dcl/sdk/math'
 import ReactEcs, { UiEntity } from '@dcl/sdk/react-ecs'
 import { SCENE } from './config'
-import { FOG_GRID_SIZE, isCellExplored, isPositionExplored, isPositionVisibleToPlayer } from './fogOfWar'
+import { FOG_GRID_SIZE, getFogCellState, isPositionExplored, isPositionVisibleToPlayer } from './fogOfWar'
 import { gameState, isHostileToPlayer } from './state'
 import type { EnemyTeam, Team } from './types'
 import { BASIN_PATCHES, CRATERS } from './terrain'
@@ -29,6 +29,8 @@ const MINIMAP_COLORS = {
   groundDark: Color4.create(0.24, 0.24, 0.28, 1),
   borderRock: Color4.create(0.38, 0.38, 0.42, 1),
   fog: Color4.create(0.045, 0.045, 0.07, 0.96),
+  // Explored but nobody watching: a lighter dusk than full fog.
+  shroud: Color4.create(0.045, 0.045, 0.07, 0.45),
   playerUnit: Color4.create(0.3, 0.75, 1, 1),
   playerBuilding: Color4.create(0.2, 0.9, 0.4, 1),
   // One hostile hue per computer slot, matching the in-world team glow.
@@ -267,7 +269,8 @@ function fogOverlay() {
   const cells = []
   for (let row = 0; row < FOG_GRID_SIZE; row++) {
     for (let column = 0; column < FOG_GRID_SIZE; column++) {
-      if (isCellExplored(column, row)) continue
+      const state = getFogCellState(column, row)
+      if (state === 'visible') continue
       cells.push(
         <UiEntity
           key={`fog-${column}-${row}`}
@@ -280,7 +283,7 @@ function fogOverlay() {
             width: FOG_CELL_SIZE + 0.5,
             height: FOG_CELL_SIZE + 0.5
           }}
-          uiBackground={{ color: MINIMAP_COLORS.fog }}
+          uiBackground={{ color: state === 'hidden' ? MINIMAP_COLORS.fog : MINIMAP_COLORS.shroud }}
         />
       )
     }
