@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Hero Reference Render</title>
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; background: #05060c; }
+  canvas { display: block; }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+<script>
+async function boot() {
+  const response = await fetch('./hero-parts.json')
+  const heroes = await response.json()
+
+  const scene = new THREE.Scene()
+  scene.background = new THREE.Color(0x070a14)
+  scene.fog = new THREE.Fog(0x070a14, 18, 42)
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true })
+  renderer.setSize(window.innerWidth, window.innerHeight)
+  renderer.setPixelRatio(window.devicePixelRatio || 1)
+  renderer.outputEncoding = THREE.sRGBEncoding
+  renderer.toneMapping = THREE.ACESFilmicToneMapping
+  renderer.toneMappingExposure = 1.15
+  document.body.appendChild(renderer.domElement)
+
+  // Lights: cool key, warm rim, soft fill.
+  scene.add(new THREE.HemisphereLight(0x8899cc, 0x11131f, 0.7))
+  const key = new THREE.DirectionalLight(0xffeedd, 1.1)
+  key.position.set(-6, 10, 8)
+  scene.add(key)
+  const rim = new THREE.DirectionalLight(0x5588ff, 0.9)
+  rim.position.set(6, 6, -8)
+  scene.add(rim)
+  const under = new THREE.PointLight(0x33ccff, 0.5, 30)
+  under.position.set(0, 0.4, 4)
+  scene.add(under)
+
+  // Ground: dark disc.
+  const ground = new THREE.Mesh(
+    new THREE.CircleGeometry(40, 48),
+    new THREE.MeshStandardMaterial({ color: 0x0b0e18, roughness: 0.95, metalness: 0 })
+  )
+  ground.rotation.x = -Math.PI / 2
+  scene.add(ground)
+
+  function makeGeometry(mesh) {
+    if (!mesh) return null
+    if (mesh.kind === 'box') return new THREE.BoxGeometry(1, 1, 1)
+    if (mesh.kind === 'sphere') return new THREE.SphereGeometry(0.5, 24, 16)
+    if (mesh.kind === 'plane') return new THREE.PlaneGeometry(1, 1)
+    if (mesh.kind === 'cylinder') return new THREE.CylinderGeometry(mesh.radiusTop, mesh.radiusBottom, 1, 24)
+    return null
+  }
+
+  function makeMaterial(mat) {
+    const albedo = (mat && (mat.albedoColor || mat.diffuseColor)) || { r: 0.8, g: 0.8, b: 0.8, a: 1 }
+    // Without an environment map, high metalness renders grey - clamp it and
+    // lean on albedo so the in-game palette comes through.
+    const material = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(albedo.r, albedo.g, albedo.b),
+      roughness: Math.max(0.35, mat && mat.roughness !== undefined ? mat.roughness : 0.7),
+      metalness: Math.min(0.3, mat && mat.metallic !== undefined ? mat.metallic : 0.1),
+      side: THREE.DoubleSide
+    })
+    if (mat && mat.emissiveColor) {
+      const boost = Math.min(2.2, (mat.emissiveIntensity !== undefined ? mat.emissiveIntensity : 1) * 0.75)
+      material.emissive = new THREE.Color(mat.emissiveColor.r, mat.emissiveColor.g, mat.emissiveColor.b)
+      material.emissiveIntensity = boost
+    }
+    if (albedo.a !== undefined && albedo.a < 0.999) {
+      material.transparent = true
+      material.opacity = albedo.a
+    }
+    return material
+  }
+
+  // Build one hero from its recorded parts (DCL left-handed -> three right-handed).
+  function buildHero(parts) {
+    const group = new THREE.Group()
+    const nodes = new Map()
+
+    for (const part of parts) {
+      const geometry = makeGeometry(part.mesh)
+      const node = geometry ? new THREE.Mesh(geometry, makeMaterial(part.material)) : new THREE.Group()
+      node.position.set(part.position.x, part.position.y, -part.position.z)
+      node.quaternion.set(-part.rotation.x, -part.rotation.y, part.rotation.z, part.rotation.w)
+      node.scale.set(part.scale.x, part.scale.y, part.scale.z)
+      nodes.set(part.id, node)
+    }
+    for (const part of parts) {
+      const node = nodes.get(part.id)
+      const parent = part.parent !== null ? nodes.get(part.parent) : null
+      ;(parent || group).add(node)
+    }
+    return group
+  }
+
+  const params = new URLSearchParams(location.search)
+  const spacing = parseFloat(params.get('spacing') || '4.8')
+  const layout = [
+    { race: 'alien', x: -spacing, yaw: 22 },
+    { race: 'human', x: 0, yaw: 0 },
+    { race: 'bio', x: spacing, yaw: -22 }
+  ]
+  for (const slot of layout) {
+    const hero = buildHero(heroes[slot.race])
+    hero.position.set(slot.x, 0, 0)
+    hero.rotation.y = THREE.MathUtils.degToRad(180 + slot.yaw)
+    scene.add(hero)
+  }
+
+  const camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 0.1, 100)
+  camera.position.set(parseFloat(params.get('cx') || '0'), parseFloat(params.get('cy') || '2.1'), parseFloat(params.get('cz') || '10.5'))
+  camera.lookAt(0, parseFloat(params.get('ty') || '1.9'), 0)
+
+  renderer.render(scene, camera)
+  document.title = 'RENDER_READY'
+}
+boot()
+</script>
+</body>
+</html>
