@@ -4,7 +4,7 @@ import { distanceToPoint, distanceToPosition, moveTowardPosition } from '../math
 import { getSpeedMultiplier } from '../upgrades'
 import type { Building, Soldier, Worker } from '../types'
 import { areHostile } from '../state'
-import { buildings, getTeam, soldiers, workers } from '../world'
+import { buildings, canAttackTarget, getTeam, soldiers, workers } from '../world'
 
 type CombatTarget = Building | Soldier | Worker
 
@@ -292,7 +292,8 @@ function findNearestEnemyInRange(soldier: Soldier, range: number): CombatTarget 
   const position = Transform.get(soldier.entity).position
 
   return (
-    nearestInRange(position, soldiers, range, (candidate) => candidate.alive && areHostile(getTeam(candidate), team)) ??
+    // Melee scanners skip flyers they could never reach instead of chasing them.
+    nearestInRange(position, soldiers, range, (candidate) => candidate.alive && areHostile(getTeam(candidate), team) && canAttackTarget(soldier, candidate)) ??
     nearestInRange(position, workers, range, (candidate) => candidate.alive && areHostile(getTeam(candidate), team)) ??
     nearestInRange(position, buildings, range, (candidate) => candidate.alive && areHostile(getTeam(candidate), team))
   )

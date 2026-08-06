@@ -15,6 +15,18 @@ export function createEntityId(kind: string): string {
   return `${kind}-${nextId++}`
 }
 
+/** Weapons shorter than this are close-quarters and cannot reach airborne units. */
+const MIN_ANTI_AIR_RANGE = 4
+
+/**
+ * Flyers can only be hit by ranged weapons: melee fighters, titans, close-combat
+ * heroes and workers all swing in close quarters and can't touch them.
+ */
+export function canAttackTarget(attacker: Soldier | Worker, target: Building | Soldier | Worker): boolean {
+  if (target.kind !== 'soldier' || target.variant !== 'flyer') return true
+  return attacker.kind === 'soldier' && attacker.attackRange >= MIN_ANTI_AIR_RANGE
+}
+
 /**
  * Multiplayer ids: one counter per (scope, kind) instead of a global counter.
  * Clients create entities in different orders (each builds its own base first),
