@@ -867,7 +867,7 @@ function getCommandSlots(selected: SelectedSummary): CommandSlot[] {
       name: 'Repair',
       description:
         gameState.playerRace === 'human'
-          ? 'Click a damaged building or mech fighter after pressing. Costs crystal; Vanguard crews repair 75% faster.'
+          ? `Click a damaged building, ${getRace('player').flyer.name} or ${getRace('player').titan.name} after pressing. Costs crystal; Vanguard crews repair 75% faster.`
           : 'Click a damaged building after pressing. Costs crystal while repairing.',
       onClick: startRepairOrder
     })
@@ -936,7 +936,7 @@ function getCommandSlots(selected: SelectedSummary): CommandSlot[] {
       id: 'stance',
       icon: ICON.action.stance,
       name: `Stance: ${STANCE_LABELS[stance]}`,
-      description: 'Cycle stance. Defensive: short chase, returns to post. Aggressive: chases forever. Hold: never moves.',
+      description: 'Toggle stance. Defensive: short chase, returns to post. Hold: never moves, fires in range.',
       onClick: cycleSelectedStance
     })
     slots.push(selectAllSlot('all fighters'))

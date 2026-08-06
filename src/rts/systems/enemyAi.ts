@@ -260,9 +260,16 @@ function tryStartEnemyConstruction(ai: EnemyAi, kind: BuildableKind, deps: Enemy
 function sendEnemyAttackWave(ai: EnemyAi, deps: EnemyAiDeps): void {
   // March on whichever hostile faction is closest: all completed temples of
   // hostile teams, nearest first (in FFA that can be another computer).
-  const hostileTemples = buildings
+  // Elimination requires razing every structure, so once the temples are
+  // gone the waves sweep whatever hostile buildings remain.
+  let hostileTemples = buildings
     .filter((building) => building.alive && building.isComplete && building.kind === 'temple' && areHostile(getTeam(building), ai.team))
     .sort((a, b) => distanceToPoint(Transform.get(a.entity).position, ai.home) - distanceToPoint(Transform.get(b.entity).position, ai.home))
+  if (hostileTemples.length === 0) {
+    hostileTemples = buildings
+      .filter((building) => building.alive && areHostile(getTeam(building), ai.team))
+      .sort((a, b) => distanceToPoint(Transform.get(a.entity).position, ai.home) - distanceToPoint(Transform.get(b.entity).position, ai.home))
+  }
   if (hostileTemples.length === 0) return
 
   const availableAttackers = soldiers.filter((soldier) => soldier.alive && getTeam(soldier) === ai.team && soldier.state === 'idle')

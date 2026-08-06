@@ -19,12 +19,13 @@ export function createEntityId(kind: string): string {
 const MIN_ANTI_AIR_RANGE = 4
 
 /**
- * Flyers can only be hit by ranged weapons: melee fighters, titans, close-combat
- * heroes and workers all swing in close quarters and can't touch them.
+ * Flyers can only be hit by ranged weapons or titans (big enough to swat them):
+ * melee fighters, close-combat heroes and workers can't touch them.
  */
 export function canAttackTarget(attacker: Soldier | Worker, target: Building | Soldier | Worker): boolean {
   if (target.kind !== 'soldier' || target.variant !== 'flyer') return true
-  return attacker.kind === 'soldier' && attacker.attackRange >= MIN_ANTI_AIR_RANGE
+  if (attacker.kind !== 'soldier') return false
+  return attacker.variant === 'titan' || attacker.attackRange >= MIN_ANTI_AIR_RANGE
 }
 
 /**

@@ -1,6 +1,6 @@
 import type { Building, Soldier, SoldierVariant, Team, Worker } from '../types'
 import type { Vector3 } from '@dcl/sdk/math'
-import { addSupplyUsed, decrementSoldierQueue, decrementWorkerQueue } from '../economy'
+import { addResources, addSupplyUsed, decrementSoldierQueue, decrementWorkerQueue } from '../economy'
 import { getBuildingDisplayName, getSoldierDefinition, getWorkerDefinition } from '../races'
 import { gameState } from '../state'
 import { getTeamSoldierCount, getTeamWorkerCount, soldierProductionOrders, soldiers, workerProductionOrders, workers } from '../world'
@@ -28,7 +28,9 @@ export function updateWorkerProduction(dt: number, deps: ProductionDeps): void {
     if (!temple?.alive || !temple.isComplete) {
       workerProductionOrders.splice(i, 1)
       decrementWorkerQueue(order.team)
-      if (order.team === 'player') deps.setStatus(`${getWorkerDefinition('player').name} production cancelled: ${getBuildingDisplayName('temple', 'player')} unavailable.`)
+      // The building died with the order unfinished: give the resources back.
+      addResources(order.team, getWorkerDefinition(order.team).cost)
+      if (order.team === 'player') deps.setStatus(`${getWorkerDefinition('player').name} production cancelled: ${getBuildingDisplayName('temple', 'player')} unavailable. Cost refunded.`)
       continue
     }
 
@@ -69,7 +71,9 @@ export function updateSoldierProduction(dt: number, deps: ProductionDeps): void 
     if (!barracks?.alive || !barracks.isComplete) {
       soldierProductionOrders.splice(i, 1)
       decrementSoldierQueue(order.team)
-      if (order.team === 'player') deps.setStatus(`${getSoldierDefinition('player', order.variant).name} production cancelled: production building unavailable.`)
+      // The building died with the order unfinished: give the resources back.
+      addResources(order.team, getSoldierDefinition(order.team, order.variant).cost)
+      if (order.team === 'player') deps.setStatus(`${getSoldierDefinition('player', order.variant).name} production cancelled: production building unavailable. Cost refunded.`)
       continue
     }
 

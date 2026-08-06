@@ -38,6 +38,7 @@ import {
   addSupplyUsed,
   addResources,
   addSupplyCap,
+  canQueueUnit,
   getConstructionRefund,
   getSupplyCap,
   getSupplyUsed,
@@ -61,6 +62,7 @@ import { ENEMY_TEAMS, areHostile, gameState, isHostileToPlayer, isPlayerAlly, re
 import { updateSoldiers as updateSoldiersSystem } from './rts/systems/combat'
 import { createEnemyAi, updateEnemyAi as updateEnemyAiSystem, type EnemyAi } from './rts/systems/enemyAi'
 import { updateSoldierProduction as updateSoldierProductionSystem, updateWorkerProduction as updateWorkerProductionSystem } from './rts/systems/production'
+import { updateUnitSeparation } from './rts/systems/separation'
 import { updateWorkers as updateWorkersSystem } from './rts/systems/workers'
 import { mulberry32, type LocalMatchPlan } from './rts/multiplayer/seatMap'
 import { broadcastMyCommand, isRelayActive, stopCommandRelay } from './rts/multiplayer/commandRelay'
@@ -274,7 +276,7 @@ export function queueWorker(): void {
     return
   }
 
-  if (getSupplyUsed('player') + gameState.economies.player.workerQueue >= getSupplyCap('player')) {
+  if (!canQueueUnit('player', workerDef.supply)) {
     setStatus(`Need more supply before creating ${workerDef.name}s.`)
     return
   }
@@ -583,13 +585,12 @@ function updateAttackMoveInput(dt: number): void {
 }
 
 // ---------------------------------------------------------------------------
-// Stances: cycle defensive -> aggressive -> hold for the selected fighters.
+// Stances: toggle defensive <-> hold for the selected fighters.
 // ---------------------------------------------------------------------------
 
-const STANCE_ORDER: SoldierStance[] = ['defensive', 'aggressive', 'hold']
+const STANCE_ORDER: SoldierStance[] = ['defensive', 'hold']
 export const STANCE_LABELS: Record<SoldierStance, string> = {
   defensive: 'Defensive',
-  aggressive: 'Aggressive',
   hold: 'Hold Position'
 }
 
@@ -1225,6 +1226,8 @@ export function getSelectedSummary(): SelectedSummary {
     // A lone hero or caster shows its signature perk so it's discoverable in-game.
     const heroLine = selectedUnitCount <= 1 && soldier.variant === 'hero' ? `${getRace(getTeam(soldier)).heroTrait} ` : ''
     const casterLine = selectedUnitCount <= 1 && soldier.variant === 'caster' ? `${CASTER_ABILITY[getRace(getTeam(soldier)).id].describe} ` : ''
+    // Close-quarters units can't reach flyers - surface that in the panel.
+    const airLine = selectedUnitCount <= 1 && !canAttackTarget(soldier, { kind: 'soldier', variant: 'flyer' } as Soldier) ? 'Cannot attack air. ' : ''
     const killLine = selectedUnitCount <= 1 ? ` · Kills: ${soldier.kills ?? 0}` : ''
     return {
       name: selectedUnitCount > 1 ? `${selectedUnitCount} Units` : soldier.name,
@@ -1233,7 +1236,7 @@ export function getSelectedSummary(): SelectedSummary {
       hp: soldier.hp,
       maxHp: soldier.maxHp,
       variant: soldier.variant,
-      detail: `${getGroupSelectionPrefix()}${heroLine}${casterLine}State: ${soldier.state}${killLine}`
+      detail: `${getGroupSelectionPrefix()}${heroLine}${casterLine}${airLine}State: ${soldier.state}${killLine}`
     }
   }
 
@@ -1999,8 +2002,9 @@ function assignWorkerToRepair(worker: Worker, target: Building | Soldier, announ
   if (!worker.alive || !target.alive) return
   if (target.kind !== 'soldier' && !(target as Building).isComplete) return
   if (getTeam(worker) !== getTeam(target)) return
-  // Only human mech fighters can be field-repaired; other races' flesh heals otherwise.
-  if (target.kind === 'soldier' && getRace(getTeam(worker)).id !== 'human') {
+  // Only human mech fighters (gunships, juggernauts) can be field-repaired;
+  // infantry and other races' flesh heal on their own or not at all.
+  if (target.kind === 'soldier' && !isMechSoldier(worker, target as Soldier)) {
     if (announce) setStatus('Only mechanical fighters can be repaired.')
     return
   }
@@ -2554,6 +2558,7 @@ function rtsTickSystem(dt: number): void {
   updateWorkersSystem(dt, workerSystemDeps)
   updateWorkerCargoVisuals()
   updateSoldiersSystem(dt, combatSystemDeps)
+  updateUnitSeparation(dt)
   updateStatusEffects(dt)
   updateConstructionSites(dt)
   updateTurrets(dt)
@@ -2632,15 +2637,16 @@ function updateAttackAlert(dt: number): void {
 function updateMatchEndState(): void {
   if (gameState.matchStatus === MATCH_ENDED) return
 
-  const playerTemplesAlive = buildings.some((building) => building.alive && building.kind === 'temple' && getTeam(building) === 'player')
-  // Victory means every faction hostile to the player is out of temples;
-  // surviving allies don't block the win, and losing your own HQ is a loss
-  // even if an ally still stands - you are out of the game.
-  const hostileTemplesAlive = buildings.some((building) => building.alive && building.kind === 'temple' && isHostileToPlayer(getTeam(building)))
+  // StarCraft elimination rule: a faction is out when it has no buildings left
+  // at all - temples, production, defenses, even unfinished foundations.
+  // Surviving allies don't block the win, and losing your own last building is
+  // a loss even if an ally still stands - you are out of the game.
+  const playerBuildingsAlive = buildings.some((building) => building.alive && getTeam(building) === 'player')
+  const hostileBuildingsAlive = buildings.some((building) => building.alive && isHostileToPlayer(getTeam(building)))
 
-  if (!playerTemplesAlive) {
+  if (!playerBuildingsAlive) {
     endMatch('loss')
-  } else if (!hostileTemplesAlive) {
+  } else if (!hostileBuildingsAlive) {
     endMatch('win')
   }
 }
@@ -2657,7 +2663,7 @@ function endMatch(result: 'win' | 'loss'): void {
   cancelPlacement()
   clearSelection()
   const time = formatRuntimeMatchTime(gameState.matchTime)
-  setStatus(result === 'win' ? `You destroyed every enemy Temple in ${time}. Victory!` : `All player Temples were destroyed after ${time}. You lose.`)
+  setStatus(result === 'win' ? `You destroyed every enemy structure in ${time}. Victory!` : `All of your structures were destroyed after ${time}. You lose.`)
 }
 
 function updateGhostPreview(): void {
@@ -2826,9 +2832,10 @@ function updateTurrets(dt: number): void {
     fireProjectile(Vector3.create(origin.x, origin.y + TURRET_STATS.muzzleHeight, origin.z), targetPosition, team)
     spawnImpactFlash(targetPosition, getRace(team).accent)
     playLaser(origin)
-    if (target.hp <= TURRET_STATS.damage) gameState.matchStats[team].unitsKilled += 1
     if (target.kind === 'soldier') damageSoldier(target, TURRET_STATS.damage)
     else damageWorker(target, TURRET_STATS.damage)
+    // Credit the kill only once the damage has actually landed.
+    if (!target.alive) gameState.matchStats[team].unitsKilled += 1
   }
 }
 
@@ -3445,12 +3452,17 @@ function isEnemyAttackTarget(selectable: Selectable): selectable is Building | S
 }
 
 /** Anything the armed repair order accepts: damaged friendly buildings, plus damaged mech fighters for humans. */
+/** The Vanguard's machines: the units a repair crew can actually weld back together. */
+function isMechSoldier(worker: Worker, soldier: Soldier): boolean {
+  return getRace(getTeam(worker)).id === 'human' && (soldier.variant === 'flyer' || soldier.variant === 'titan')
+}
+
 function isPlayerRepairableTarget(selectable: Selectable): selectable is Building | Soldier {
   if (isPlayerRepairTarget(selectable)) return true
   if (selectable.kind !== 'soldier') return false
   const soldier = selectable as Soldier
 
-  return getTeam(soldier) === 'player' && getRace('player').id === 'human' && soldier.hp < soldier.maxHp
+  return getTeam(soldier) === 'player' && getRace('player').id === 'human' && (soldier.variant === 'flyer' || soldier.variant === 'titan') && soldier.hp < soldier.maxHp
 }
 
 function isPlayerRepairTarget(selectable: Selectable): selectable is Building {

@@ -104,7 +104,7 @@ export type ResearchCommand = {
 export type StanceCommand = {
   type: 'stance'
   unitIds: string[]
-  stance: 'aggressive' | 'defensive' | 'hold'
+  stance: 'defensive' | 'hold'
 }
 
 export type RallyCommand = {

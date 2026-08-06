@@ -24,8 +24,8 @@ export type WorkerState =
   | 'attacking'
   | 'dead'
 export type SoldierState = 'idle' | 'movingToAttack' | 'attacking' | 'movingToRally' | 'attackMoving' | 'patrolling' | 'dead'
-/** aggressive: chase forever; defensive: chase a short leash then return; hold: never move, only fire in range. */
-export type SoldierStance = 'aggressive' | 'defensive' | 'hold'
+/** defensive: chase a short leash then return to post; hold: never move, only fire in range. */
+export type SoldierStance = 'defensive' | 'hold'
 export type SoldierVariant = 'melee' | 'ranged' | 'caster' | 'flyer' | 'titan' | 'hero'
 export type BuildableKind = 'temple' | 'supplyHouse' | 'barracks' | 'techLab' | 'forge' | 'airForge' | 'fireplace' | 'turret'
 /** damage/speed are ground-only (forge); airDamage/airSpeed apply to flyers (air forge). */
