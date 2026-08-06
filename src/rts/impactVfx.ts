@@ -21,6 +21,8 @@ type Effect = {
 }
 
 const effects: Effect[] = []
+/** Hard pool cap: monster fights recycle the oldest flash instead of growing forever. */
+const MAX_EFFECTS = 48
 
 export function spawnImpactFlash(position: Vector3, color: Color4): void {
   const effect = obtainEffect('flash')
@@ -76,6 +78,16 @@ function obtainEffect(shape: EffectShape): Effect {
   if (idle) {
     idle.shape = shape
     return idle
+  }
+
+  if (effects.length >= MAX_EFFECTS) {
+    // Steal the effect closest to finishing; one dropped frame of flash is invisible in a battle that big.
+    let oldest = effects[0]
+    for (const candidate of effects) {
+      if (candidate.age / candidate.duration > oldest.age / oldest.duration) oldest = candidate
+    }
+    oldest.shape = shape
+    return oldest
   }
 
   const entity = engine.addEntity()

@@ -1,7 +1,7 @@
 import { Entity, Material, MaterialTransparencyMode, MeshRenderer, Transform, VisibilityComponent, engine } from '@dcl/sdk/ecs'
 import { Color4, Vector3 } from '@dcl/sdk/math'
 import { SCENE } from './config'
-import { isHostileToPlayer } from './state'
+import { gameState, isHostileToPlayer } from './state'
 import { getRace } from './races'
 import { isProceduralBuilding, setBuildingModelVisible } from './buildingModels'
 import { isProceduralResource, setResourceModelVisible } from './resourceModels'
@@ -82,6 +82,9 @@ export function getFogCellState(column: number, row: number): FogCellState {
 }
 
 function fogOfWarSystem(dt: number): void {
+  // No match, no scouting: the grid sleeps under the menus and end screens.
+  if (gameState.matchStatus !== 'active') return
+
   updateTimer += dt
   if (updateTimer < UPDATE_INTERVAL) return
   updateTimer = 0
