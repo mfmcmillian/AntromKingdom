@@ -62,6 +62,7 @@ import { ENEMY_TEAMS, areHostile, gameState, isHostileToPlayer, isPlayerAlly, re
 import { updateSoldiers as updateSoldiersSystem } from './rts/systems/combat'
 import { createEnemyAi, updateEnemyAi as updateEnemyAiSystem, type EnemyAi } from './rts/systems/enemyAi'
 import { updateSoldierProduction as updateSoldierProductionSystem, updateWorkerProduction as updateWorkerProductionSystem } from './rts/systems/production'
+import { addAttackPing, clearAttackPings, updateAttackPings } from './rts/minimap'
 import { clearHealthBars, updateHealthBars } from './rts/healthBars'
 import { updateUnitSeparation } from './rts/systems/separation'
 import { updateWorkers as updateWorkersSystem } from './rts/systems/workers'
@@ -2583,6 +2584,7 @@ function rtsTickSystem(dt: number): void {
   updateIncomeSampling(dt)
   updateBuildingDamageVfxSystem()
   updateHealthBars()
+  updateAttackPings(dt)
   updateDepletedResources(dt)
   updateMatchEndState()
 }
@@ -2676,6 +2678,7 @@ function endMatch(result: 'win' | 'loss'): void {
   gameState.attackAlert = ''
   gameState.attackAlertTimer = 0
   clearHealthBars()
+  clearAttackPings()
   stopAmbientMusic()
   disableTopDownView()
   cancelPlacement()
@@ -2847,6 +2850,7 @@ function updateTurrets(dt: number): void {
 
     turretFireTimers.set(turret.id, 0)
     const targetPosition = cloneVector(Transform.get(target.entity).position)
+    if (getTeam(target) === 'player') addAttackPing(targetPosition.x, targetPosition.z)
     fireProjectile(Vector3.create(origin.x, origin.y + TURRET_STATS.muzzleHeight, origin.z), targetPosition, team)
     spawnImpactFlash(targetPosition, getRace(team).accent)
     playLaser(origin)
@@ -3063,6 +3067,8 @@ function completeConstruction(site: Building, builder?: Worker): void {
 function damageCombatTarget(target: Building | Soldier | Worker, amount: number, attacker: Soldier | Worker): void {
   const attackerTeam = getTeam(attacker)
   const targetPosition = cloneVector(Transform.get(target.entity).position)
+  // Red flash on the minimap wherever the player's own stuff is getting hit.
+  if (getTeam(target) === 'player') addAttackPing(targetPosition.x, targetPosition.z)
   // Weapon upgrades scale every fighter's damage team-wide the moment research lands,
   // and the VANGUARD hero's banner boosts anyone fighting beside him.
   const damage = attacker.kind === 'soldier' ? Math.round(amount * getDamageMultiplier(attackerTeam, attacker.variant) * getHeroAuraMultiplier(attacker)) : amount

@@ -46,6 +46,64 @@ const MINIMAP_COLORS = {
 /** World meters -> minimap pixels. */
 const MAP_SCALE = MAP_SIZE / SCENE.size
 
+// ---------------------------------------------------------------------------
+// Attack pings: a red flash on the minimap wherever friendly units or
+// buildings are taking damage, so off-screen fights are impossible to miss.
+// ---------------------------------------------------------------------------
+
+const PING_DURATION = 3
+/** New damage near an existing ping refreshes it instead of stacking flashes. */
+const PING_MERGE_RADIUS = 14
+const PING_COLOR = Color4.create(1, 0.15, 0.1, 0.85)
+
+type AttackPing = { x: number; z: number; age: number }
+const attackPings: AttackPing[] = []
+
+export function addAttackPing(x: number, z: number): void {
+  for (const ping of attackPings) {
+    const dx = ping.x - x
+    const dz = ping.z - z
+    if (dx * dx + dz * dz < PING_MERGE_RADIUS * PING_MERGE_RADIUS) {
+      ping.age = 0
+      return
+    }
+  }
+  attackPings.push({ x, z, age: 0 })
+}
+
+export function updateAttackPings(dt: number): void {
+  for (let i = attackPings.length - 1; i >= 0; i--) {
+    attackPings[i].age += dt
+    if (attackPings[i].age >= PING_DURATION) attackPings.splice(i, 1)
+  }
+}
+
+export function clearAttackPings(): void {
+  attackPings.length = 0
+}
+
+function pingMarkers() {
+  const markers = []
+  for (let i = 0; i < attackPings.length; i++) {
+    const ping = attackPings[i]
+    // 4 Hz blink, shrinking slightly as it ages out.
+    if (Math.floor(ping.age * 8) % 2 === 1) continue
+    const size = 18 - (ping.age / PING_DURATION) * 8
+    const left = clamp((ping.x / SCENE.size) * MAP_SIZE - size / 2, 0, MAP_SIZE - size)
+    const top = clamp(MAP_SIZE - (ping.z / SCENE.size) * MAP_SIZE - size / 2, 0, MAP_SIZE - size)
+    markers.push(
+      <UiEntity
+        key={`ping-${i}`}
+        uiTransform={{ positionType: 'absolute', position: { left, top }, width: size, height: size, padding: 3 }}
+        uiBackground={{ color: PING_COLOR }}
+      >
+        <UiEntity uiTransform={{ width: '100%', height: '100%' }} uiBackground={{ color: MINIMAP_COLORS.frame }} />
+      </UiEntity>
+    )
+  }
+  return markers
+}
+
 export function minimapPanel() {
   if (gameState.matchStatus !== 'active') return null
 
@@ -75,6 +133,7 @@ export function minimapPanel() {
         {unitDots()}
         {viewDot()}
         {fogOverlay()}
+        {pingMarkers()}
       </UiEntity>
       </UiEntity>
     </UiEntity>
