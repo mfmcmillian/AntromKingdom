@@ -17,7 +17,11 @@ const HIGH_COLOR = Color4.create(0.2, 0.9, 0.3, 1)
 const MID_COLOR = Color4.create(0.95, 0.75, 0.15, 1)
 const LOW_COLOR = Color4.create(0.95, 0.25, 0.15, 1)
 
-type BarEntry = { root: Entity; back: Entity; fill: Entity; lastRatio: number; lastColor: Color4 }
+// The fill and the dark remainder sit side by side at the SAME depth instead
+// of stacked planes: billboards flip their z toward or away from the camera
+// depending on the explorer, and a stacked fill can end up hidden behind the
+// backing plane (bars rendered all-black). Side-by-side can't be occluded.
+type BarEntry = { root: Entity; fill: Entity; rest: Entity; lastRatio: number; lastColor: Color4 }
 
 const bars = new Map<string, BarEntry>()
 const seenThisPass = new Set<string>()
@@ -61,9 +65,15 @@ function trackBar(target: Building | Soldier | Worker, width: number, height: nu
   const ratio = Math.max(0.02, target.hp / target.maxHp)
   if (Math.abs(ratio - entry.lastRatio) > 0.005) {
     entry.lastRatio = ratio
+
     const fillTransform = Transform.getMutable(entry.fill)
-    fillTransform.scale = Vector3.create(width * ratio, BAR_HEIGHT * 0.72, 1)
-    fillTransform.position = Vector3.create(-width / 2 + (width * ratio) / 2, 0, 0.01)
+    fillTransform.scale = Vector3.create(width * ratio, BAR_HEIGHT, 1)
+    fillTransform.position = Vector3.create(-width / 2 + (width * ratio) / 2, 0, 0)
+
+    const restWidth = Math.max(0.001, width * (1 - ratio))
+    const restTransform = Transform.getMutable(entry.rest)
+    restTransform.scale = Vector3.create(restWidth, BAR_HEIGHT, 1)
+    restTransform.position = Vector3.create(width / 2 - restWidth / 2, 0, 0)
 
     const color = ratio > 0.5 ? HIGH_COLOR : ratio > 0.25 ? MID_COLOR : LOW_COLOR
     if (color !== entry.lastColor) {
@@ -78,17 +88,17 @@ function createBar(id: string, width: number): BarEntry {
   Transform.create(root, { position: Vector3.Zero() })
   Billboard.create(root)
 
-  const back = engine.addEntity()
-  Transform.create(back, { parent: root, scale: Vector3.create(width + 0.06, BAR_HEIGHT, 1) })
-  MeshRenderer.setPlane(back)
-  Material.setBasicMaterial(back, { diffuseColor: BACK_COLOR })
-
   const fill = engine.addEntity()
-  Transform.create(fill, { parent: root, position: Vector3.create(0, 0, 0.01), scale: Vector3.create(width, BAR_HEIGHT * 0.72, 1) })
+  Transform.create(fill, { parent: root, position: Vector3.create(0, 0, 0), scale: Vector3.create(width, BAR_HEIGHT, 1) })
   MeshRenderer.setPlane(fill)
   Material.setBasicMaterial(fill, { diffuseColor: HIGH_COLOR })
 
-  return { root, back, fill, lastRatio: -1, lastColor: BACK_COLOR }
+  const rest = engine.addEntity()
+  Transform.create(rest, { parent: root, position: Vector3.create(width / 2, 0, 0), scale: Vector3.create(0.001, BAR_HEIGHT, 1) })
+  MeshRenderer.setPlane(rest)
+  Material.setBasicMaterial(rest, { diffuseColor: BACK_COLOR })
+
+  return { root, fill, rest, lastRatio: -1, lastColor: BACK_COLOR }
 }
 
 function unitBarWidth(soldier: Soldier): number {
