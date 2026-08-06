@@ -1311,6 +1311,7 @@ function settingsOverlay() {
   )
 }
 
+/** Compact race card for the match-setup panel (race choice moved off the title screen). */
 function raceCard(raceId: RaceId) {
   const race = RACES[raceId]
   const isSelected = gameState.playerRace === raceId
@@ -1320,9 +1321,9 @@ function raceCard(raceId: RaceId) {
     <UiEntity
       key={`race-${raceId}`}
       uiTransform={{
-        width: 216,
-        height: 268,
-        margin: { left: 12, right: 12 },
+        width: 148,
+        height: 196,
+        margin: { left: 6, right: 6 },
         padding: 3,
         flexDirection: 'column'
       }}
@@ -1336,7 +1337,7 @@ function raceCard(raceId: RaceId) {
         uiBackground={{ color: Color4.create(0.02, 0.025, 0.04, 0.95) }}
       >
         <UiEntity
-          uiTransform={{ width: 186, height: 186, margin: { top: 12 } }}
+          uiTransform={{ width: 122, height: 122, margin: { top: 10 } }}
           uiBackground={{
             textureMode: 'stretch',
             texture: { src: portrait },
@@ -1346,17 +1347,17 @@ function raceCard(raceId: RaceId) {
         />
         <Label
           value={race.name.toUpperCase()}
-          fontSize={17}
+          fontSize={14}
           color={isSelected ? Color4.White() : Color4.create(0.62, 0.62, 0.66, 1)}
           textAlign="middle-center"
-          uiTransform={{ margin: { top: 10 } }}
+          uiTransform={{ margin: { top: 8 } }}
         />
         <Label
-          value={`${race.worker.name} · ${race.melee.name} · ${race.ranged.name}`}
-          fontSize={11}
+          value={race.hero.name}
+          fontSize={10}
           color={isSelected ? race.accent : Color4.create(0.45, 0.45, 0.5, 0.9)}
           textAlign="middle-center"
-          uiTransform={{ margin: { top: 4 } }}
+          uiTransform={{ margin: { top: 3 } }}
         />
       </UiEntity>
     </UiEntity>
@@ -1559,10 +1560,10 @@ function startScreenOverlay() {
     >
       {titleSkyAmbience()}
 
-      {/* Darkens the artwork behind the race picker so text stays readable. */}
+      {/* Darkens the artwork behind the menu buttons so text stays readable. */}
       <UiEntity
-        uiTransform={{ positionType: 'absolute', position: { bottom: 0, left: 0 }, width: '100%', height: 470 }}
-        uiBackground={{ color: Color4.create(0, 0, 0, 0.52) }}
+        uiTransform={{ positionType: 'absolute', position: { bottom: 0, left: 0 }, width: '100%', height: 190 }}
+        uiBackground={{ color: Color4.create(0, 0, 0, 0.45) }}
       />
 
       {/* Logo (transparent PNG) floating over the sky, with a slow breathing drift. */}
@@ -1587,19 +1588,8 @@ function startScreenOverlay() {
           alignItems: 'center'
         }}
       >
-        {/* Full-width labels + centered rows: auto-sized children drift left in this UI runtime. */}
-        <Label value="CHOOSE YOUR RACE" fontSize={14} color={Color4.create(0.75, 0.78, 0.85, 0.9)} textAlign="middle-center" uiTransform={{ width: '100%', height: 18, margin: { bottom: 14 } }} />
-        <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { bottom: 12 } }}>
-          {RACE_IDS.map((raceId) => raceCard(raceId))}
-        </UiEntity>
-        <Label
-          value={RACES[gameState.playerRace].tagline}
-          fontSize={14}
-          color={Color4.create(0.85, 0.87, 0.92, 0.95)}
-          textAlign="middle-center"
-          uiTransform={{ width: '100%', height: 18, margin: { bottom: 18 } }}
-        />
-
+        {/* Race choice lives on the next screen (and in the MP lobby), so the
+            title stays clean: logo, two buttons, done. */}
         <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center' }}>
           <UiEntity
             uiTransform={{ width: 300, height: 62, margin: { right: 12 }, justifyContent: 'center', alignItems: 'center', padding: 3 }}
@@ -1669,6 +1659,34 @@ function matchSetupOverlay() {
           color={Color4.create(0.75, 0.78, 0.85, 0.9)}
           textAlign="middle-center"
           uiTransform={{ width: '100%', height: 22, margin: { top: 8 } }}
+        />
+      </UiEntity>
+
+      {/* Left panel: race choice (moved here from the title screen). Mirrors
+          the hero panel on the right, leaving the explorer's top-left HUD clear. */}
+      <UiEntity
+        uiTransform={{
+          positionType: 'absolute',
+          position: { top: 200, left: '50%' },
+          margin: { left: -890 },
+          width: 540,
+          height: 400,
+          flexDirection: 'column',
+          alignItems: 'center',
+          padding: { top: 26, bottom: 26, left: 30, right: 30 }
+        }}
+        uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.9) }}
+      >
+        <Label value="YOUR RACE" fontSize={22} color={UI.text} textAlign="middle-center" uiTransform={{ width: '100%', height: 26, margin: { bottom: 16 } }} />
+        <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { bottom: 14 } }}>
+          {RACE_IDS.map((raceId) => raceCard(raceId))}
+        </UiEntity>
+        <Label
+          value={race.tagline}
+          fontSize={13}
+          color={Color4.create(0.85, 0.87, 0.92, 0.95)}
+          textAlign="middle-center"
+          uiTransform={{ width: '100%', height: 40 }}
         />
       </UiEntity>
 
