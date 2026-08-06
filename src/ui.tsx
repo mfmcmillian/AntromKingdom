@@ -340,6 +340,8 @@ function resourceBar() {
 function supplyTooltip(used: number, cap: number, capped: boolean) {
   const supplyHouseName = getBuildingDisplayName('supplyHouse', 'player')
   const supplyHouseAdds = BUILDING_DEFINITIONS.supplyHouse.supplyAdds
+  const templeName = getBuildingDisplayName('temple', 'player')
+  const templeAdds = BUILDING_DEFINITIONS.temple.supplyAdds
 
   return (
     <UiEntity
@@ -362,7 +364,7 @@ function supplyTooltip(used: number, cap: number, capped: boolean) {
         uiTransform={{ width: '100%', height: 36, margin: { top: 4 } }}
       />
       <Label
-        value={`Build ${supplyHouseName}s (+${supplyHouseAdds} each) to raise the cap and field a bigger army.`}
+        value={`Build ${supplyHouseName}s (+${supplyHouseAdds} each) or ${templeName}s (+${templeAdds} each) to raise the cap and field a bigger army.`}
         fontSize={13}
         color={UI.dim}
         textAlign="top-left"

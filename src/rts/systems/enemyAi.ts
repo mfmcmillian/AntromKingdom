@@ -92,7 +92,6 @@ function runEnemyBuildOrder(ai: EnemyAi, deps: EnemyAiDeps): void {
   const team = ai.team
   const homesteads = getCompletedTeamBuildings(team, 'supplyHouse')
   const barracks = getCompletedTeamBuildings(team, 'barracks')
-  const temples = getCompletedTeamBuildings(team, 'temple')
   const workerCount = getTeamWorkerCount(team)
   const guardCount = getTeamSoldierCount(team)
 
@@ -126,7 +125,8 @@ function runEnemyBuildOrder(ai: EnemyAi, deps: EnemyAiDeps): void {
     return
   }
 
-  if (workerCount >= 8 && guardCount >= ai.settings.defenderCount && temples.length < ai.settings.maxTemples) {
+  // Count in-progress temples too: expansions cost 300 and shouldn't stack up.
+  if (workerCount >= 8 && guardCount >= ai.settings.defenderCount && getTeamBuildings(team, 'temple').length < ai.settings.maxTemples) {
     tryStartEnemyConstruction(ai, 'temple', deps)
     return
   }
@@ -141,7 +141,9 @@ function queueEnemyProduction(ai: EnemyAi): void {
   const economy = gameState.economies[team]
   const workerCount = getTeamWorkerCount(team) + economy.workerQueue
   const guardCount = getTeamSoldierCount(team) + economy.soldierQueue
-  const temple = getCompletedTeamBuildings(team, 'temple')[0]
+  const temples = getCompletedTeamBuildings(team, 'temple')
+  // Round-robin across every base so expansions staff their own mineral lines.
+  const temple = temples.length > 0 ? temples[workerCount % temples.length] : undefined
   const barracks = getCompletedTeamBuildings(team, 'barracks')[0]
 
   const workerDef = getWorkerDefinition(team)
@@ -249,13 +251,21 @@ function sendEnemyAttackWave(ai: EnemyAi, deps: EnemyAiDeps): void {
 
   // Focus on the nearest faction's temples rather than spreading map-wide.
   const targetTeam = getTeam(hostileTemples[0])
-  const targets = hostileTemples.filter((temple) => getTeam(temple) === targetTeam)
+  const temples = hostileTemples.filter((temple) => getTeam(temple) === targetTeam)
+
+  // Defense towers shred a wave that ignores them, so part of the wave is
+  // always assigned to knock the target's turrets down first.
+  const turrets = buildings
+    .filter((building) => building.alive && building.isComplete && building.kind === 'turret' && getTeam(building) === targetTeam)
+    .sort((a, b) => distanceToPoint(Transform.get(a.entity).position, ai.home) - distanceToPoint(Transform.get(b.entity).position, ai.home))
+
+  const targets = [...turrets, ...temples]
   for (let i = 0; i < attackers.length; i++) {
     deps.assignSoldierToAttack(attackers[i], targets[i % targets.length], i)
   }
 
   if (targetTeam === 'player') {
-    deps.setStatus(`Enemy attack wave incoming: ${attackers.length} hostiles targeting your Temple${targets.length === 1 ? '' : 's'}.`)
+    deps.setStatus(`Enemy attack wave incoming: ${attackers.length} hostiles heading for your base.`)
   } else if (isPlayerAlly(ai.team)) {
     deps.setStatus(`Your ally is attacking with ${attackers.length} fighters.`)
   }
@@ -308,6 +318,13 @@ function getNearestResourceOfKind(position: Vector3, resource: ResourceKind): Re
 
 function getEnemyBuildPosition(ai: EnemyAi, kind: BuildableKind, deps: EnemyAiDeps): Vector3 | undefined {
   const definition = BUILDING_DEFINITIONS[kind]
+
+  // Expanding AIs put extra temples at fresh mineral clusters, not in the main.
+  if (kind === 'temple' && ai.settings.expands) {
+    const expansion = getEnemyExpansionPosition(ai, deps)
+    if (expansion) return expansion
+  }
+
   const homeTemple = deps.getNearestTemple(ai.home, ai.team)
   const center = homeTemple ? Transform.get(homeTemple.entity).position : ai.home
   const existingKindCount = getTeamBuildings(ai.team, kind).length
@@ -317,6 +334,49 @@ function getEnemyBuildPosition(ai: EnemyAi, kind: BuildableKind, deps: EnemyAiDe
     const offset = offsets[(existingKindCount + i) % offsets.length]
     const position = deps.getSnappedPlacementPosition(Vector3.create(center.x + offset.x, 0, center.z + offset.z))
     if (deps.canPlaceBuildingAt(definition, position)) return position
+  }
+
+  return undefined
+}
+
+/** Ring of candidate temple spots around an expansion's crystal line. */
+const EXPANSION_TEMPLE_OFFSETS = [
+  Vector3.create(9, 0, 0),
+  Vector3.create(-9, 0, 0),
+  Vector3.create(0, 0, 9),
+  Vector3.create(0, 0, -9),
+  Vector3.create(7, 0, 7),
+  Vector3.create(-7, 0, 7),
+  Vector3.create(7, 0, -7),
+  Vector3.create(-7, 0, -7)
+]
+
+/**
+ * Picks where an expanding AI plants its next base: the mineral cluster
+ * closest to home that still has crystals and no temple (anyone's, finished
+ * or under construction) already claiming it. Skipping claimed clusters also
+ * keeps the AI from expanding into a hostile main.
+ */
+function getEnemyExpansionPosition(ai: EnemyAi, deps: EnemyAiDeps): Vector3 | undefined {
+  const definition = BUILDING_DEFINITIONS.temple
+  const claimRadius = 22
+
+  const openClusters = resources
+    .filter((node) => node.alive && node.amount > 0 && node.resource === 'minerals')
+    .filter((node) => {
+      const position = Transform.get(node.entity).position
+      return !buildings.some(
+        (building) => building.alive && building.kind === 'temple' && distanceToPoint(position, Transform.get(building.entity).position) < claimRadius
+      )
+    })
+    .sort((a, b) => distanceToPoint(Transform.get(a.entity).position, ai.home) - distanceToPoint(Transform.get(b.entity).position, ai.home))
+
+  for (const node of openClusters) {
+    const nodePosition = Transform.get(node.entity).position
+    for (const offset of EXPANSION_TEMPLE_OFFSETS) {
+      const position = deps.getSnappedPlacementPosition(Vector3.create(nodePosition.x + offset.x, 0, nodePosition.z + offset.z))
+      if (deps.canPlaceBuildingAt(definition, position)) return position
+    }
   }
 
   return undefined

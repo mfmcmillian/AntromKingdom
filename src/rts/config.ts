@@ -4,7 +4,9 @@ import type { BuildableKind, BuildingDefinition, Difficulty, ResourceDefinition,
 export const CONFIG = {
   mineralsStart: 50,
   gasStart: 0,
-  startSupplyCap: 10,
+  // Base cap before buildings: the starting temple contributes its supplyAdds
+  // on top of this, so matches still open at a 10 cap.
+  startSupplyCap: 0,
   workerMineTime: 3,
   workerCarryAmount: 10,
   workerMoveSpeed: 2.5,
@@ -137,6 +139,8 @@ export type DifficultySettings = {
   maxTurrets: number
   /** Whether the AI researches forge upgrades at all. */
   research: boolean
+  /** Whether extra temples go to fresh mineral clusters (expansions) instead of the main base. */
+  expands: boolean
   /** Income multiplier on delivered resources (classic hard-AI cheat). */
   gatherMultiplier: number
 }
@@ -155,6 +159,7 @@ export const AI_DIFFICULTY: Record<Difficulty, DifficultySettings> = {
     maxTemples: 1,
     maxTurrets: 1,
     research: false,
+    expands: false,
     gatherMultiplier: 1
   },
   medium: {
@@ -170,6 +175,7 @@ export const AI_DIFFICULTY: Record<Difficulty, DifficultySettings> = {
     maxTemples: 3,
     maxTurrets: 2,
     research: true,
+    expands: false,
     gatherMultiplier: 1
   },
   hard: {
@@ -178,13 +184,15 @@ export const AI_DIFFICULTY: Record<Difficulty, DifficultySettings> = {
     attackInterval: 70,
     initialAttackTimer: 30,
     defenderCount: 5,
-    targetWorkers: 18,
+    // High enough to staff the main plus expansion mineral lines.
+    targetWorkers: 24,
     targetGuards: 24,
     maxAdvancedUnits: 12,
     maxHomesteads: 8,
-    maxTemples: 3,
+    maxTemples: 4,
     maxTurrets: 3,
     research: true,
+    expands: true,
     gatherMultiplier: 1.25
   }
 }
@@ -265,11 +273,11 @@ export const BUILDING_DEFINITIONS: Record<BuildableKind, BuildingDefinition> = {
     cost: { minerals: 300 },
     hp: CONFIG.templeHp,
     buildTime: 10,
-    supplyAdds: 0,
+    supplyAdds: 10,
     placementY: MODEL_TRANSFORMS.hq.y,
     scale: MODEL_TRANSFORMS.hq.scale,
     color: COLORS.temple,
-    completeStatus: 'Temple complete. Train workers and deliver resources here.'
+    completeStatus: 'Temple complete. Supply cap raised. Train workers and deliver resources here.'
   },
   supplyHouse: {
     kind: 'supplyHouse',

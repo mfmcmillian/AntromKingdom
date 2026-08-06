@@ -1261,6 +1261,8 @@ function createStartingBase(): void {
   const playerAtClassicStart = playerAnchor === MAP_ANCHORS[0]
 
   buildings.push(createBuilding('temple', getBuildingDisplayName('temple', 'player'), playerAnchor.temple, CONFIG.templeHp, 'complete', playerAnchor.rotationY, 'player'))
+  // Pre-built temples skip completeConstruction, so grant their supply here.
+  addSupplyCap('player', BUILDING_DEFINITIONS.temple.supplyAdds)
 
   spawnResourceFields()
 
@@ -1295,6 +1297,7 @@ function createStartingBase(): void {
   for (const team of gameState.activeEnemyTeams) {
     const seat = getTeamAnchor(team)
     buildings.push(createBuilding('temple', `${teamNamePrefix(team)}${getBuildingDisplayName('temple', team)}`, seat.temple, CONFIG.templeHp, 'complete', seat.rotationY, team))
+    addSupplyCap(team, BUILDING_DEFINITIONS.temple.supplyAdds)
 
     // Workers spawn toward the map center so they don't clip the border highlands.
     const towardCenter = seat.temple.x < SCENE.center ? 5 : -5
@@ -3444,7 +3447,7 @@ function getBuildingDetail(building: Building): string {
     const templeName = getBuildingDisplayName('temple', getTeam(building))
     if (isEnemyTeam(getTeam(building))) return `${teamNamePrefix(getTeam(building))}${templeName}: AI headquarters. Location ${formatPosition(templePosition)}.`
     const rallyPoint = templeRallyPoints.get(building.id)
-    const base = `${templeName}: trains workers, receives resources.`
+    const base = `${templeName}: trains workers, receives resources, +${BUILDING_DEFINITIONS.temple.supplyAdds} supply.`
     return rallyPoint ? `${base} Spawn ${formatPosition(rallyPoint)}.` : `${base} Location ${formatPosition(templePosition)}.`
   }
   if (building.kind === 'supplyHouse') {
