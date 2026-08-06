@@ -146,7 +146,9 @@ const ICON = {
     attackMove: 'images/icons/icon-action-attackmove.jpg',
     patrol: 'images/icons/icon-action-patrol.jpg',
     stance: 'images/icons/icon-action-stance.jpg',
-    repair: 'images/icons/icon-action-repair.jpg'
+    repair: 'images/icons/icon-action-repair.jpg',
+    build: 'images/icons/icon-action-build.jpg',
+    buildAdvanced: 'images/icons/icon-action-buildadvanced.jpg'
   },
   endgame: {
     victory: 'images/icons/icon-endgame-victory.jpg',
@@ -781,9 +783,21 @@ function tooltipCost(icon: string, amount: number) {
   )
 }
 
+/** StarCraft-style build submenus: the worker's root card only holds two build
+ * buttons; each opens a page of structures so the card never overflows. */
+let workerBuildMenu: 'basic' | 'advanced' | null = null
+
+const BUILD_MENU_PAGES: Record<'basic' | 'advanced', BuildableKind[]> = {
+  basic: ['temple', 'supplyHouse', 'barracks', 'fireplace'],
+  advanced: ['techLab', 'forge', 'airForge', 'turret']
+}
+
 function getCommandSlots(selected: SelectedSummary): CommandSlot[] {
   const slots: CommandSlot[] = []
   const isPlayerSelection = selected.team === undefined || selected.team === 'player'
+
+  // Selecting anything else closes an open build page.
+  if (selected.kind !== 'worker' && workerBuildMenu) workerBuildMenu = null
 
   if (gameState.placementMode === 'placing') {
     slots.push({
@@ -799,20 +813,54 @@ function getCommandSlots(selected: SelectedSummary): CommandSlot[] {
   if (!isPlayerSelection) return slots
 
   if (selected.kind === 'worker') {
-    const buildOrder: BuildableKind[] = ['temple', 'supplyHouse', 'barracks', 'techLab', 'forge', 'airForge', 'turret', 'fireplace']
-    for (const kind of buildOrder) {
-      const definition = BUILDING_DEFINITIONS[kind]
-      const displayName = getBuildingDisplayName(kind, 'player')
+    // Inside a build page: that page's structures plus a Back button.
+    if (workerBuildMenu) {
+      for (const kind of BUILD_MENU_PAGES[workerBuildMenu]) {
+        const definition = BUILDING_DEFINITIONS[kind]
+        const displayName = getBuildingDisplayName(kind, 'player')
+        slots.push({
+          id: `build-${kind}`,
+          icon: buildingIcon(kind),
+          name: `Build ${displayName}`,
+          cost: definition.cost,
+          description: getBuildingDescription(kind),
+          locked: definition.requires && !isBuildingUnlocked(kind) ? `Requires ${getBuildingDisplayName(definition.requires, 'player')}` : undefined,
+          onClick: () => {
+            workerBuildMenu = null
+            startWorkerBuildingPlacement(kind)
+          }
+        })
+      }
       slots.push({
-        id: `build-${kind}`,
-        icon: buildingIcon(kind),
-        name: `Build ${displayName}`,
-        cost: definition.cost,
-        description: getBuildingDescription(kind),
-        locked: definition.requires && !isBuildingUnlocked(kind) ? `Requires ${getBuildingDisplayName(definition.requires, 'player')}` : undefined,
-        onClick: () => startWorkerBuildingPlacement(kind)
+        id: 'build-back',
+        icon: ICON.action.cancel,
+        name: 'Back',
+        description: 'Return to the worker commands.',
+        onClick: () => {
+          workerBuildMenu = null
+        }
       })
+      return slots
     }
+
+    slots.push({
+      id: 'build-basic',
+      icon: ICON.action.build,
+      name: 'Build Structure',
+      description: `Basic structures: ${BUILD_MENU_PAGES.basic.map((kind) => getBuildingDisplayName(kind, 'player')).join(', ')}.`,
+      onClick: () => {
+        workerBuildMenu = 'basic'
+      }
+    })
+    slots.push({
+      id: 'build-advanced',
+      icon: ICON.action.buildAdvanced,
+      name: 'Build Advanced Structure',
+      description: `Advanced structures: ${BUILD_MENU_PAGES.advanced.map((kind) => getBuildingDisplayName(kind, 'player')).join(', ')}.`,
+      onClick: () => {
+        workerBuildMenu = 'advanced'
+      }
+    })
     slots.push({
       id: 'repair',
       icon: ICON.action.repair,
