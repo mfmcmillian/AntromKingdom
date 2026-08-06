@@ -62,6 +62,7 @@ import { ENEMY_TEAMS, areHostile, gameState, isHostileToPlayer, isPlayerAlly, re
 import { updateSoldiers as updateSoldiersSystem } from './rts/systems/combat'
 import { createEnemyAi, updateEnemyAi as updateEnemyAiSystem, type EnemyAi } from './rts/systems/enemyAi'
 import { updateSoldierProduction as updateSoldierProductionSystem, updateWorkerProduction as updateWorkerProductionSystem } from './rts/systems/production'
+import { clearHealthBars, updateHealthBars } from './rts/healthBars'
 import { updateUnitSeparation } from './rts/systems/separation'
 import { updateWorkers as updateWorkersSystem } from './rts/systems/workers'
 import { mulberry32, type LocalMatchPlan } from './rts/multiplayer/seatMap'
@@ -1018,6 +1019,7 @@ export function resetRtsGame(): void {
   resetWorld()
   resetUpgrades()
   clearSelectionMarkers()
+  clearHealthBars()
   resetFogOfWar()
 
   createStartingBase()
@@ -2578,6 +2580,7 @@ function rtsTickSystem(dt: number): void {
   updateHeroBrood(dt)
   updateIncomeSampling(dt)
   updateBuildingDamageVfxSystem()
+  updateHealthBars()
   updateDepletedResources(dt)
   updateMatchEndState()
 }
@@ -2670,6 +2673,7 @@ function endMatch(result: 'win' | 'loss'): void {
   gameState.matchResult = result
   gameState.attackAlert = ''
   gameState.attackAlertTimer = 0
+  clearHealthBars()
   stopAmbientMusic()
   disableTopDownView()
   cancelPlacement()
