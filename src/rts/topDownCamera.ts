@@ -114,8 +114,10 @@ function createAvatarHideArea(): void {
   Transform.create(hideAvatarEntity, {
     position: Vector3.create(SCENE.center, 0, SCENE.center)
   })
+  // Oversized on purpose: must swallow every possible avatar position,
+  // including spawn fringes and below-terrain glitches.
   AvatarModifierArea.create(hideAvatarEntity, {
-    area: Vector3.create(SCENE.size, 80, SCENE.size),
+    area: Vector3.create(SCENE.size * 10, 1000, SCENE.size * 10),
     modifiers: [AvatarModifierType.AMT_HIDE_AVATARS],
     excludeIds: []
   })

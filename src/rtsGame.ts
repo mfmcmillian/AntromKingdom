@@ -1481,10 +1481,13 @@ function createStaticScene(): void {
 function hideAvatarsEverywhere(): void {
   const hider = engine.addEntity()
   Transform.create(hider, {
-    position: Vector3.create(SCENE.center, 40, SCENE.center)
+    position: Vector3.create(SCENE.center, 0, SCENE.center)
   })
+  // Deliberately absurd size: players reported avatars peeking through with a
+  // scene-sized box (spawn points and explorer quirks can park bodies at the
+  // fringes), so the volume dwarfs the scene in every direction, floor included.
   AvatarModifierArea.create(hider, {
-    area: Vector3.create(SCENE.size + 40, 120, SCENE.size + 40),
+    area: Vector3.create(SCENE.size * 10, 1000, SCENE.size * 10),
     modifiers: [AvatarModifierType.AMT_HIDE_AVATARS],
     excludeIds: []
   })
