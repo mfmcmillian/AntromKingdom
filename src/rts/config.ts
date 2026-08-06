@@ -67,7 +67,8 @@ export const RESOURCE_LABELS: Record<ResourceKind, string> = {
 export const RESOURCE_DEFINITIONS: Record<ResourceKind, ResourceDefinition> = {
   minerals: {
     name: 'Crystal Vein',
-    amount: 500,
+    // ~10 min of saturated mining per main line; rich center nodes hold 1.5x this.
+    amount: 750,
     placementY: 0,
     colliderScale: Vector3.create(1.8, 1.5, 1.8),
     audioClipUrl: ASSETS.rockSound,
@@ -75,7 +76,7 @@ export const RESOURCE_DEFINITIONS: Record<ResourceKind, ResourceDefinition> = {
   },
   gas: {
     name: 'Plasma Vent',
-    amount: 1000,
+    amount: 1500,
     placementY: 0,
     colliderScale: Vector3.create(2.4, 1.8, 2.4),
     hoverText: 'Siphon plasma'
