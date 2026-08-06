@@ -242,10 +242,11 @@ function updateAttacking(soldier: Soldier, target: CombatTarget, dt: number, dep
   }
 }
 
-/** Propulsion research speeds up the matching fighters (ground or air); Time Fracture halves it. */
+/** Propulsion research speeds up the matching fighters (ground or air); Time Fracture halves it, Obelisk haste boosts it. */
 function getUpgradedMoveSpeed(soldier: Soldier): number {
   const slowFactor = (soldier.slowRemaining ?? 0) > 0 ? 0.5 : 1
-  return soldier.moveSpeed * getSpeedMultiplier(getTeam(soldier), soldier.variant) * slowFactor
+  const hasteFactor = (soldier.hasteRemaining ?? 0) > 0 ? 1.25 : 1
+  return soldier.moveSpeed * getSpeedMultiplier(getTeam(soldier), soldier.variant) * slowFactor * hasteFactor
 }
 
 function startAttacking(soldier: Soldier, deps: CombatSystemDeps): void {

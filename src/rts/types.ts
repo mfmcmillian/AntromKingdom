@@ -89,6 +89,8 @@ export type Worker = Selectable & {
   activeAnimation: string
   /** Lifetime enemy units this worker has finished off. */
   kills?: number
+  /** Obelisk haste aura (seconds remaining at +25% move speed). */
+  hasteRemaining?: number
   /** Spore Plague damage-over-time (seconds remaining, damage rate, credit). */
   poisonRemaining?: number
   poisonDamagePerSecond?: number
@@ -133,6 +135,8 @@ export type Soldier = Selectable & {
   heroAbilityCooldown?: number
   /** Time Fracture slow (seconds remaining at half move speed). */
   slowRemaining?: number
+  /** Obelisk haste aura (seconds remaining at +25% move speed). */
+  hasteRemaining?: number
   /** Spore Plague damage-over-time (seconds remaining, damage rate, credit). */
   poisonRemaining?: number
   poisonDamagePerSecond?: number

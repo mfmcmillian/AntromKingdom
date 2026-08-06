@@ -2570,6 +2570,7 @@ function rtsTickSystem(dt: number): void {
   updateWorkerCargoVisuals()
   updateSoldiersSystem(dt, combatSystemDeps)
   updateUnitSeparation(dt)
+  updateFireplaceAuras(dt)
   updateStatusEffects(dt)
   updateConstructionSites(dt)
   updateTurrets(dt)
@@ -3419,6 +3420,54 @@ function castHeroAbility(hero: Soldier, announce: boolean): void {
   if (announce) setStatus(spawned > 0 ? `${ability.name}: ${spawned} free ${meleeDef.name}${spawned === 1 ? '' : 's'} birthed.` : `${ability.name}: no supply for new broodlings.`)
 }
 
+// ---------------------------------------------------------------------------
+// Fireplace utility: the cheap camp building does something different per race.
+//   Beacon (human)      - signal fire: huge vision radius (handled in fogOfWar).
+//   Obelisk (alien)     - haste aura: nearby allied units move +25% faster.
+//   Spore Mound (bio)   - spore field: nearby hostiles take light poison.
+// ---------------------------------------------------------------------------
+
+const FIREPLACE_AURA_INTERVAL = 0.5
+const OBELISK_HASTE_RADIUS = 9
+const SPORE_MOUND_RADIUS = 8
+const SPORE_MOUND_DPS = 3
+const SPORE_MOUND_DURATION = 2.5
+
+let fireplaceAuraTimer = 0
+
+function updateFireplaceAuras(dt: number): void {
+  fireplaceAuraTimer += dt
+  if (fireplaceAuraTimer < FIREPLACE_AURA_INTERVAL) return
+  fireplaceAuraTimer = 0
+
+  for (const fireplace of buildings) {
+    if (!fireplace.alive || !fireplace.isComplete || fireplace.kind !== 'fireplace') continue
+
+    const team = getTeam(fireplace)
+    const race = getRace(team).id
+    if (race === 'human') continue // Beacon vision is applied by the fog system.
+
+    const origin = Transform.get(fireplace.entity).position
+
+    if (race === 'alien') {
+      // Refresh the haste window; it expires shortly after leaving the aura.
+      for (const unit of [...soldiers, ...workers]) {
+        if (!unit.alive || getTeam(unit) !== team) continue
+        if (distanceToPoint(Transform.get(unit.entity).position, origin) > OBELISK_HASTE_RADIUS) continue
+        unit.hasteRemaining = FIREPLACE_AURA_INTERVAL + 0.5
+      }
+      continue
+    }
+
+    // Bio: creeping spores poison whatever hostile stands near the mound.
+    for (const unit of getHostileUnitsNear(cloneVector(origin), SPORE_MOUND_RADIUS, team, fireplace.id)) {
+      unit.poisonRemaining = Math.max(unit.poisonRemaining ?? 0, SPORE_MOUND_DURATION)
+      unit.poisonDamagePerSecond = Math.max(unit.poisonDamagePerSecond ?? 0, SPORE_MOUND_DPS)
+      unit.poisonTick = unit.poisonTick ?? 0
+    }
+  }
+}
+
 /** Ticks ability cooldowns, slow durations, and poison damage-over-time. */
 function updateStatusEffects(dt: number): void {
   for (const soldier of soldiers) {
@@ -3426,10 +3475,13 @@ function updateStatusEffects(dt: number): void {
     if (soldier.abilityTimer !== undefined && soldier.abilityTimer > 0) soldier.abilityTimer -= dt
     if (soldier.heroAbilityCooldown !== undefined && soldier.heroAbilityCooldown > 0) soldier.heroAbilityCooldown -= dt
     if (soldier.slowRemaining !== undefined && soldier.slowRemaining > 0) soldier.slowRemaining -= dt
+    if (soldier.hasteRemaining !== undefined && soldier.hasteRemaining > 0) soldier.hasteRemaining -= dt
     tickPoison(soldier, dt)
   }
   for (const worker of workers) {
-    if (worker.alive) tickPoison(worker, dt)
+    if (!worker.alive) continue
+    if (worker.hasteRemaining !== undefined && worker.hasteRemaining > 0) worker.hasteRemaining -= dt
+    tickPoison(worker, dt)
   }
 }
 
@@ -3674,7 +3726,12 @@ function getBuildingDetail(building: Building): string {
     return `Complete: researches flyer upgrades. Flight Weapons Lv${damageLevel}, Flight Propulsion Lv${speedLevel}.`
   }
   if (building.kind === 'turret') return `Automated defense: fires on hostile units within ${TURRET_STATS.range}m.`
-  if (building.kind === 'fireplace') return 'Complete: camp utility building.'
+  if (building.kind === 'fireplace') {
+    const raceId = getRace(getTeam(building)).id
+    if (raceId === 'human') return 'Signal fire: lights up a huge area of the map.'
+    if (raceId === 'alien') return `Haste aura: allied units within ${OBELISK_HASTE_RADIUS}m move +25% faster.`
+    return `Spore field: hostiles within ${SPORE_MOUND_RADIUS}m take ${SPORE_MOUND_DPS}/s poison.`
+  }
   if (building.kind === 'enemyBuilding') return 'Enemy structure'
 
   return 'Complete'

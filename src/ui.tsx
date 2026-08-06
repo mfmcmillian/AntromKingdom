@@ -1068,7 +1068,10 @@ function getBuildingDescription(kind: BuildableKind): string {
   if (kind === 'forge') return 'Researches ground Weapons and Propulsion upgrades. Unlocks the titan.'
   if (kind === 'airForge') return `Researches Flight Weapons and Flight Propulsion for your ${race.flyer.name}s.`
   if (kind === 'turret') return 'Automated defense tower. Fires on hostile units in range.'
-  return 'A camp utility building.'
+  // Fireplace: each race's camp building does something different.
+  if (race.id === 'human') return 'Signal fire. Lights up a huge area of the map through the fog.'
+  if (race.id === 'alien') return 'Haste aura. Allied units near it move 25% faster.'
+  return 'Spore field. Poisons hostile units that come near it.'
 }
 
 // ---------------------------------------------------------------------------

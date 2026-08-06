@@ -11,6 +11,11 @@ import { getTeam, resources, workers } from '../world'
 /** How far a worker will walk to a replacement deposit when its node runs dry. */
 const RESOURCE_REASSIGN_RANGE = 45
 
+/** Obelisk haste aura boosts worker legs the same way it boosts fighters. */
+function workerSpeed(worker: Worker, base: number): number {
+  return base * ((worker.hasteRemaining ?? 0) > 0 ? 1.25 : 1)
+}
+
 type WorkerCombatTarget = Building | Soldier | Worker
 
 export type WorkerSystemDeps = {
@@ -67,7 +72,7 @@ function updateWorkerCombat(worker: Worker, dt: number, deps: WorkerSystemDeps):
       faceWorkerTarget(worker, targetPosition)
       deps.setWorkerAnimation(worker, 'talk', true)
     } else {
-      moveTowardPosition(worker.entity, targetPosition, CONFIG.workerMoveSpeed, dt)
+      moveTowardPosition(worker.entity, targetPosition, workerSpeed(worker, CONFIG.workerMoveSpeed), dt)
       deps.setWorkerAnimation(worker, 'walk')
     }
     return
@@ -102,7 +107,7 @@ function updateWorkerGathering(worker: Worker, dt: number, deps: WorkerSystemDep
 
   if (worker.state === 'movingToResource' && resource) {
     const gatherPosition = deps.getWorkerGatherPosition(worker, resource)
-    moveTowardPosition(worker.entity, gatherPosition, CONFIG.workerMoveSpeed, dt)
+    moveTowardPosition(worker.entity, gatherPosition, workerSpeed(worker, CONFIG.workerMoveSpeed), dt)
     if (distanceToPosition(worker.entity, gatherPosition) < 0.35) {
       worker.state = 'gathering'
       worker.timer = 0
@@ -139,7 +144,7 @@ function updateWorkerGathering(worker: Worker, dt: number, deps: WorkerSystemDep
     }
 
     const dropoffPosition = deps.getTempleDropoffPosition(temple, worker)
-    moveTowardPosition(worker.entity, dropoffPosition, CONFIG.workerMoveSpeed, dt)
+    moveTowardPosition(worker.entity, dropoffPosition, workerSpeed(worker, CONFIG.workerMoveSpeed), dt)
     if (distanceToPosition(worker.entity, dropoffPosition) < 0.35) {
       const deliveredResource = worker.carryingResource ?? 'minerals'
       const deliveredAmount = Math.round(worker.carrying * getGatherMultiplier(getTeam(worker)))
@@ -213,7 +218,7 @@ function updateWorkerBuildMovement(worker: Worker, dt: number, deps: WorkerSyste
   }
 
   const workPosition = deps.getBuilderWorkPosition(site, Transform.get(worker.entity).position)
-  moveTowardPosition(worker.entity, workPosition, CONFIG.builderMoveSpeed, dt)
+  moveTowardPosition(worker.entity, workPosition, workerSpeed(worker, CONFIG.builderMoveSpeed), dt)
   if (distanceToPosition(worker.entity, workPosition) <= 0.25) {
     worker.state = 'constructing'
     site.constructionState = 'building'
@@ -239,7 +244,7 @@ function updateWorkerRepairMovement(worker: Worker, dt: number, deps: WorkerSyst
   const reachDistance = isUnit ? 1.2 : 0.25
   const driftDistance = isUnit ? 2.4 : 0.8
   if (worker.state === 'movingToRepair') {
-    moveTowardPosition(worker.entity, workPosition, CONFIG.builderMoveSpeed, dt)
+    moveTowardPosition(worker.entity, workPosition, workerSpeed(worker, CONFIG.builderMoveSpeed), dt)
     if (distanceToPosition(worker.entity, workPosition) <= reachDistance) {
       worker.state = 'repairing'
       worker.timer = 0
@@ -296,7 +301,7 @@ function updateWorkerRallyMovement(worker: Worker, dt: number, deps: WorkerSyste
   }
 
   const rallyPosition = deps.getWorkerRallyPosition(worker)
-  moveTowardPosition(worker.entity, rallyPosition, CONFIG.workerMoveSpeed, dt)
+  moveTowardPosition(worker.entity, rallyPosition, workerSpeed(worker, CONFIG.workerMoveSpeed), dt)
   if (distanceToPosition(worker.entity, rallyPosition) <= 0.35) {
     worker.state = 'idle'
     worker.rallyPoint = undefined

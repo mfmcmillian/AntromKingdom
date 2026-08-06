@@ -2,6 +2,7 @@ import { Entity, Material, MeshRenderer, Transform, VisibilityComponent, engine 
 import { Color4, Vector3 } from '@dcl/sdk/math'
 import { SCENE } from './config'
 import { isHostileToPlayer } from './state'
+import { getRace } from './races'
 import { isProceduralBuilding, setBuildingModelVisible } from './buildingModels'
 import { isProceduralResource, setResourceModelVisible } from './resourceModels'
 import { isProceduralUnit, setUnitVisible } from './unitModels'
@@ -17,6 +18,8 @@ const CELL_SIZE = SCENE.size / FOG_GRID_SIZE
 const FOG_TILE_THICKNESS = 0.12
 const UNIT_VISION_RADIUS = 18
 const BUILDING_VISION_RADIUS = 24
+/** Vanguard Beacons are signal fires: they light up a huge patch of the map. */
+const BEACON_VISION_RADIUS = 42
 const UPDATE_INTERVAL = 0.25
 // Dark blue-gray "night side" tone: clearly unexplored, but tuned to the light
 // regolith surface so the boundary doesn't look like a hole in the world.
@@ -98,7 +101,8 @@ function collectPlayerVisionSources(): VisionSource[] {
   for (const building of buildings) {
     if (!building.alive || isHostileToPlayer(getTeam(building))) continue
     const position = Transform.get(building.entity).position
-    sources.push({ x: position.x, z: position.z, radius: BUILDING_VISION_RADIUS })
+    const isBeacon = building.kind === 'fireplace' && building.isComplete && getRace(getTeam(building)).id === 'human'
+    sources.push({ x: position.x, z: position.z, radius: isBeacon ? BEACON_VISION_RADIUS : BUILDING_VISION_RADIUS })
   }
 
   return sources
