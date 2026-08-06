@@ -1679,23 +1679,22 @@ function matchSetupOverlay() {
         />
       </UiEntity>
 
-      {/* Left panel: race choice (moved here from the title screen). Mirrors
-          the hero panel on the right, leaving the explorer's top-left HUD clear. */}
+      {/* Race choice: stacked directly above the hero panel on the right, so
+          picking a race and seeing its hero read as one column. */}
       <UiEntity
         uiTransform={{
           positionType: 'absolute',
-          position: { top: 200, left: '50%' },
-          margin: { left: -890 },
+          position: { top: 130, right: 70 },
           width: 540,
-          height: 400,
+          height: 324,
           flexDirection: 'column',
           alignItems: 'center',
-          padding: { top: 26, bottom: 26, left: 30, right: 30 }
+          padding: { top: 20, bottom: 20, left: 30, right: 30 }
         }}
         uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.9) }}
       >
-        <Label value="YOUR RACE" fontSize={22} color={UI.text} textAlign="middle-center" uiTransform={{ width: '100%', height: 26, margin: { bottom: 16 } }} />
-        <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { bottom: 14 } }}>
+        <Label value="YOUR RACE" fontSize={22} color={UI.text} textAlign="middle-center" uiTransform={{ width: '100%', height: 26, margin: { bottom: 12 } }} />
+        <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { bottom: 8 } }}>
           {RACE_IDS.map((raceId) => raceCard(raceId))}
         </UiEntity>
         <Label
@@ -1703,7 +1702,7 @@ function matchSetupOverlay() {
           fontSize={13}
           color={Color4.create(0.85, 0.87, 0.92, 0.95)}
           textAlign="middle-center"
-          uiTransform={{ width: '100%', height: 40 }}
+          uiTransform={{ width: '100%', height: 36 }}
         />
       </UiEntity>
 
@@ -2052,31 +2051,31 @@ function heroStatsPanel() {
     <UiEntity
       uiTransform={{
         positionType: 'absolute',
-        position: { top: 200, right: 70 },
+        position: { top: 470, right: 70 },
         width: 540,
-        height: 640,
+        height: 490,
         flexDirection: 'column',
         alignItems: 'center',
-        padding: { top: 26, bottom: 26, left: 40, right: 40 }
+        padding: { top: 20, bottom: 16, left: 40, right: 40 }
       }}
       uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.9) }}
     >
       <Label value="YOUR HERO" fontSize={22} color={UI.text} textAlign="middle-center" uiTransform={{ width: '100%', height: 26 }} />
 
-      <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: 14 } }}>
-        <UiEntity uiTransform={{ width: 170, height: 170, padding: 3 }} uiBackground={{ color: race.accent }}>
+      <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: 10 } }}>
+        <UiEntity uiTransform={{ width: 120, height: 120, padding: 3 }} uiBackground={{ color: race.accent }}>
           <UiEntity uiTransform={{ width: '100%', height: '100%' }} uiBackground={{ textureMode: 'stretch', texture: { src: portrait } }} />
         </UiEntity>
       </UiEntity>
 
-      <Label value={hero.name.toUpperCase()} fontSize={30} color={race.accent} textAlign="middle-center" uiTransform={{ width: '100%', height: 36, margin: { top: 14 } }} />
+      <Label value={hero.name.toUpperCase()} fontSize={26} color={race.accent} textAlign="middle-center" uiTransform={{ width: '100%', height: 32, margin: { top: 10 } }} />
       <Label
         value={race.heroTrait}
         fontSize={14}
         color={Color4.create(0.85, 0.87, 0.92, 0.95)}
         textAlign="middle-center"
         textWrap="wrap"
-        uiTransform={{ width: 440, height: 40, margin: { top: 10, bottom: 14 } }}
+        uiTransform={{ width: 440, height: 36, margin: { top: 6, bottom: 8 } }}
       />
 
       <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center' }}>
@@ -2095,7 +2094,7 @@ function heroStatsPanel() {
         fontSize={12}
         color={Color4.create(0.55, 0.58, 0.66, 0.9)}
         textAlign="middle-center"
-        uiTransform={{ width: '100%', margin: { top: 26 } }}
+        uiTransform={{ width: '100%', margin: { top: 12 } }}
       />
     </UiEntity>
   )
