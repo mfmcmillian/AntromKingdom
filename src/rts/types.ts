@@ -158,6 +158,8 @@ export type ResourceNode = Selectable & {
   kind: 'resource'
   resource: ResourceKind
   amount: number
+  /** Gold crystal / cryo plasma: workers haul 1.5x per trip. */
+  rich?: boolean
   depletionTimer?: number
 }
 

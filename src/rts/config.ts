@@ -9,6 +9,8 @@ export const CONFIG = {
   startSupplyCap: 0,
   workerMineTime: 3,
   workerCarryAmount: 10,
+  /** Rich (gold crystal / cryo plasma) nodes: workers haul this much more per trip, and the node holds more. */
+  richYieldMultiplier: 1.5,
   workerMoveSpeed: 2.5,
   // Workers can fight when commanded, but poorly - pulling them is a last resort.
   workerDamage: 3,
@@ -243,6 +245,8 @@ export type ResourceField = {
   center: Vector3
   count: number
   radius: number
+  /** Rich fields (map center): gold crystals / cryo plasma with bigger yields. */
+  rich?: boolean
 }
 
 // StarCraft-style layout scaled for six starts: every base anchor gets a main
@@ -303,10 +307,10 @@ export const RESOURCE_FIELDS: ResourceField[] = [
   { kind: 'minerals', center: Vector3.create(150, 0, 76), count: 6, radius: 4 },
   { kind: 'gas', center: Vector3.create(142, 0, 68), count: 1, radius: 0 },
 
-  // --- Contested center ---
-  { kind: 'minerals', center: Vector3.create(80, 0, 80), count: 7, radius: 5 },
-  { kind: 'gas', center: Vector3.create(70, 0, 90), count: 1, radius: 0 },
-  { kind: 'gas', center: Vector3.create(90, 0, 70), count: 1, radius: 0 }
+  // --- Contested center: RICH nodes (gold crystal + cryo plasma, 1.5x yield) ---
+  { kind: 'minerals', center: Vector3.create(80, 0, 80), count: 7, radius: 5, rich: true },
+  { kind: 'gas', center: Vector3.create(70, 0, 90), count: 1, radius: 0, rich: true },
+  { kind: 'gas', center: Vector3.create(90, 0, 70), count: 1, radius: 0, rich: true }
 ]
 
 export const BUILDING_DEFINITIONS: Record<BuildableKind, BuildingDefinition> = {

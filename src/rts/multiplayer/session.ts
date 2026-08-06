@@ -157,6 +157,10 @@ export function hostSetGameMode(mode: GameMode): void {
   sendRequest({ type: 'setGameMode', gameMode: mode })
 }
 
+export function hostSetMap(mapId: string): void {
+  sendRequest({ type: 'setMap', mapId })
+}
+
 export function hostSetSeatDifficulty(seatIndex: number, difficulty: Difficulty): void {
   hostSetSeat(seatIndex, { difficulty })
 }

@@ -1,4 +1,5 @@
 import { AI_DIFFICULTY, CONFIG } from './config'
+import { DEFAULT_MAP_ID } from './maps'
 import type { BuildableKind, Difficulty, EnemyTeam, GameMode, PlacementState, RaceId, SelectableKind, Team } from './types'
 
 export const ENEMY_TEAMS: EnemyTeam[] = ['enemy1', 'enemy2', 'enemy3', 'enemy4', 'enemy5']
@@ -44,6 +45,8 @@ function createStats(): TeamStats {
 export const gameState = {
   playerRace: 'human' as RaceId,
   gameMode: 'team' as GameMode,
+  // Battleground picked on the match setup screen (MP: synced via the lobby).
+  selectedMapId: DEFAULT_MAP_ID,
   // Match setup chosen on the title screen: 1-5 computers, each with a race, difficulty and side.
   opponents: [{ race: 'random', difficulty: 'medium', ally: false }] as OpponentSetup[],
   // Resolved at match start from `opponents` (random races rolled here).

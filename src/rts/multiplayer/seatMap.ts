@@ -1,3 +1,4 @@
+import { DEFAULT_MAP_ID } from '../maps'
 import type { Difficulty, EnemyTeam, GameMode, RaceId, Team } from '../types'
 import type { LobbyConfig } from './protocol'
 
@@ -24,6 +25,8 @@ export type LocalMatchPlan = {
   /** Wallet addresses for human-held teams (leaver detection). */
   addresses: Partial<Record<Team, string>>
   gameMode: GameMode
+  /** Battleground everyone loads (rts/maps.ts registry id). */
+  mapId: string
   seed: number
 }
 
@@ -100,6 +103,7 @@ export function buildLocalMatchPlan(config: LobbyConfig, myAddress: string): Loc
     names,
     addresses,
     gameMode: config.gameMode,
+    mapId: config.mapId ?? DEFAULT_MAP_ID,
     seed: config.seed
   }
 }

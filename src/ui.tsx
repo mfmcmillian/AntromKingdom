@@ -56,6 +56,7 @@ import {
   getMySeatIndex,
   getPresentPlayerCount,
   requestLobbyReset,
+  hostSetMap,
   hostSetSeat,
   hostStartMatch,
   isHost,
@@ -69,6 +70,7 @@ import { buildLocalMatchPlan } from './rts/multiplayer/seatMap'
 import { startCommandRelay } from './rts/multiplayer/commandRelay'
 import type { LobbySeat } from './rts/multiplayer/protocol'
 import { getDragScreenRect } from './rts/dragSelect'
+import { MAPS, getMapById, getNextMapId } from './rts/maps'
 import { minimapPanel } from './rts/minimap'
 import { BUILDING_DEFINITIONS } from './rts/config'
 import { RACES, RACE_IDS, getBuildingDisplayName, getRace, getSoldierDefinition, getWorkerDefinition } from './rts/races'
@@ -1706,6 +1708,10 @@ function matchSetupOverlay() {
         />
       </UiEntity>
 
+      {/* Battleground selector: single map today, but the registry, the
+          arrows and the lobby sync are the groundwork for more. */}
+      {mapSelectorPanel()}
+
       {/* Opponents panel: centered where the 3D hero used to spin, clear of the
           explorer's own minimap/chat overlays on the left edge. */}
       <UiEntity
@@ -1780,6 +1786,79 @@ function matchSetupOverlay() {
           </UiEntity>
         </UiEntity>
       </UiEntity>
+    </UiEntity>
+  )
+}
+
+/**
+ * Battleground picker on the match setup screen. One map ships today, but the
+ * arrows cycle the registry so extra maps drop straight in. The thumbnail is
+ * the rendered top-down layout diagram (bases, naturals, rich center).
+ */
+function mapSelectorPanel() {
+  const map = getMapById(gameState.selectedMapId)
+  const mapIndex = Math.max(0, MAPS.findIndex((entry) => entry.id === map.id))
+  const cycleMap = () => {
+    gameState.selectedMapId = getNextMapId(gameState.selectedMapId)
+  }
+
+  return (
+    <UiEntity
+      uiTransform={{
+        positionType: 'absolute',
+        position: { top: 200, left: 70 },
+        width: 540,
+        height: 640,
+        flexDirection: 'column',
+        alignItems: 'center',
+        padding: { top: 22, bottom: 18, left: 30, right: 30 }
+      }}
+      uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.9) }}
+    >
+      <Label value="BATTLEGROUND" fontSize={22} color={UI.text} textAlign="middle-center" uiTransform={{ width: '100%', height: 26 }} />
+
+      {/* Layout diagram, framed in the gold accent. */}
+      <UiEntity uiTransform={{ width: 406, height: 435, margin: { top: 12 }, padding: 3 }} uiBackground={{ color: Color4.create(0.65, 0.55, 0.3, 1) }}>
+        <UiEntity
+          uiTransform={{ width: '100%', height: '100%' }}
+          uiBackground={{ textureMode: 'stretch', texture: { src: map.thumbnail } }}
+        />
+      </UiEntity>
+
+      {/* Name row with cycle arrows: no-ops with one map, ready for more. */}
+      <UiEntity uiTransform={{ width: '100%', height: 40, margin: { top: 10 }, flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}>
+        <UiEntity
+          uiTransform={{ width: 40, height: 34, margin: { right: 10 }, justifyContent: 'center', alignItems: 'center' }}
+          uiBackground={{ color: Color4.create(0.12, 0.16, 0.24, 0.95) }}
+          onMouseDown={cycleMap}
+        >
+          <Label value="<" fontSize={18} color={UI.dim} textAlign="middle-center" />
+        </UiEntity>
+        <Label value={map.name.toUpperCase()} fontSize={22} color={UI.gold} textAlign="middle-center" uiTransform={{ width: 300, height: 34 }} />
+        <UiEntity
+          uiTransform={{ width: 40, height: 34, margin: { left: 10 }, justifyContent: 'center', alignItems: 'center' }}
+          uiBackground={{ color: Color4.create(0.12, 0.16, 0.24, 0.95) }}
+          onMouseDown={cycleMap}
+        >
+          <Label value=">" fontSize={18} color={UI.dim} textAlign="middle-center" />
+        </UiEntity>
+      </UiEntity>
+
+      <Label
+        value={`MAP ${mapIndex + 1} OF ${MAPS.length}  ·  UP TO ${map.maxPlayers} PLAYERS`}
+        fontSize={12}
+        color={Color4.create(0.55, 0.58, 0.66, 0.9)}
+        textAlign="middle-center"
+        uiTransform={{ width: '100%', height: 16, margin: { top: 2 } }}
+      />
+      <Label
+        value={map.tagline}
+        fontSize={13}
+        color={Color4.create(0.85, 0.87, 0.92, 0.95)}
+        textAlign="middle-center"
+        textWrap="wrap"
+        uiTransform={{ width: 460, height: 52, margin: { top: 8 } }}
+      />
     </UiEntity>
   )
 }
@@ -1907,6 +1986,46 @@ function lobbySeatRow(seat: LobbySeat, index: number) {
   )
 }
 
+/**
+ * Battleground row at the top of the lobby: everyone sees the synced map pick,
+ * the host can cycle it (server validates against the registry). One map for
+ * now, so the button just wraps back to it.
+ */
+function lobbyMapRow(iAmHost: boolean) {
+  const lobby = getLobby()
+  const map = getMapById(lobby.mapId)
+
+  return (
+    <UiEntity
+      uiTransform={{ width: '100%', height: 76, flexDirection: 'row', alignItems: 'center', margin: { bottom: 16 }, padding: { left: 14, right: 14 } }}
+      uiBackground={{ color: Color4.create(0.05, 0.06, 0.09, 0.92) }}
+    >
+      <UiEntity uiTransform={{ width: 58, height: 62, margin: { right: 14 }, padding: 2 }} uiBackground={{ color: Color4.create(0.65, 0.55, 0.3, 1) }}>
+        <UiEntity uiTransform={{ width: '100%', height: '100%' }} uiBackground={{ textureMode: 'stretch', texture: { src: map.thumbnail } }} />
+      </UiEntity>
+      <UiEntity uiTransform={{ flexDirection: 'column', width: 480 }}>
+        <Label value={`BATTLEGROUND: ${map.name.toUpperCase()}`} fontSize={16} color={UI.gold} textAlign="middle-left" uiTransform={{ width: '100%', height: 20 }} />
+        <Label
+          value={`Up to ${map.maxPlayers} players  ·  rich gold + cryo center`}
+          fontSize={12}
+          color={Color4.create(0.55, 0.58, 0.66, 0.9)}
+          textAlign="middle-left"
+          uiTransform={{ width: '100%', height: 16, margin: { top: 4 } }}
+        />
+      </UiEntity>
+      {iAmHost && getLobby().phase === 'lobby' ? (
+        <UiEntity
+          uiTransform={{ width: 150, height: 34, margin: { left: 20 }, justifyContent: 'center', alignItems: 'center' }}
+          uiBackground={{ color: Color4.create(0.25, 0.32, 0.45, 0.9) }}
+          onMouseDown={() => hostSetMap(getNextMapId(lobby.mapId))}
+        >
+          <Label value="CHANGE MAP" fontSize={12} color={UI.text} textAlign="middle-center" />
+        </UiEntity>
+      ) : null}
+    </UiEntity>
+  )
+}
+
 function multiplayerLobbyOverlay() {
   const lobby = getLobby()
   const connected = getMyAddress() !== ''
@@ -1952,6 +2071,7 @@ function multiplayerLobbyOverlay() {
         }}
         uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.9) }}
       >
+        {lobbyMapRow(iAmHost)}
         <Label value="SEATS" fontSize={18} color={UI.text} textAlign="middle-left" uiTransform={{ margin: { bottom: 14 } }} />
         {lobby.seats.map((seat, index) => lobbySeatRow(seat, index))}
         <Label

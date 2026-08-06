@@ -38,8 +38,8 @@ const FIELDS = [
   // contested rims
   { k: 'm', x: 10, z: 84, c: 6, r: 4, tag: 'CONTESTED' }, { k: 'g', x: 18, z: 92 },
   { k: 'm', x: 150, z: 76, c: 6, r: 4, tag: 'CONTESTED' }, { k: 'g', x: 142, z: 68 },
-  // center
-  { k: 'm', x: 80, z: 80, c: 7, r: 5, tag: 'CENTER' }, { k: 'g', x: 70, z: 90 }, { k: 'g', x: 90, z: 70 }
+  // center: RICH nodes (gold crystal + cryo plasma, 1.5x yield)
+  { k: 'm', x: 80, z: 80, c: 7, r: 5, tag: 'RICH CENTER', rich: true }, { k: 'g', x: 70, z: 90, rich: true }, { k: 'g', x: 90, z: 70, rich: true }
 ]
 
 let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">`
@@ -61,7 +61,7 @@ for (const f of FIELDS) {
       const rr = (f.r ?? 4) * 0.75
       const cx = px(f.x + Math.cos(a) * rr)
       const cy = py(f.z + Math.sin(a) * rr)
-      svg += `<rect x="${cx - 5}" y="${cy - 5}" width="10" height="10" fill="#5aa0ff" transform="rotate(45 ${cx} ${cy})"/>`
+      svg += `<rect x="${cx - 5}" y="${cy - 5}" width="10" height="10" fill="${f.rich ? '#ffc63d' : '#5aa0ff'}" transform="rotate(45 ${cx} ${cy})"/>`
     }
     if (f.tag) {
       svg += `<text x="${px(f.x)}" y="${py(f.z) + 42}" fill="#8fa3c0" font-family="Arial" font-size="17" font-weight="bold" text-anchor="middle">${f.tag}</text>`
@@ -69,7 +69,8 @@ for (const f of FIELDS) {
   } else {
     const cx = px(f.x)
     const cy = py(f.z)
-    svg += `<circle cx="${cx}" cy="${cy}" r="9" fill="#3ddb5a"/><circle cx="${cx}" cy="${cy}" r="13" fill="none" stroke="#3ddb5a" stroke-width="2" opacity="0.55"/>`
+    const gc = f.rich ? '#6fd8ff' : '#3ddb5a'
+    svg += `<circle cx="${cx}" cy="${cy}" r="9" fill="${gc}"/><circle cx="${cx}" cy="${cy}" r="13" fill="none" stroke="${gc}" stroke-width="2" opacity="0.55"/>`
   }
 }
 
@@ -93,8 +94,12 @@ svg += `<rect x="${PAD}" y="${ly - 12}" width="14" height="14" fill="#5aa0ff" tr
 svg += `<text x="${PAD + 24}" y="${ly}" fill="#c7d2e4" font-family="Arial" font-size="20">Crystal field</text>`
 svg += `<circle cx="${PAD + 190}" cy="${ly - 6}" r="9" fill="#3ddb5a"/>`
 svg += `<text x="${PAD + 210}" y="${ly}" fill="#c7d2e4" font-family="Arial" font-size="20">Plasma vent</text>`
-svg += `<rect x="${PAD + 380}" y="${ly - 18}" width="22" height="22" fill="#35a4ff"/>`
-svg += `<text x="${PAD + 412}" y="${ly}" fill="#c7d2e4" font-family="Arial" font-size="20">Base start (7 crystals + 2 vents, own NATURAL nearby)</text>`
+svg += `<rect x="${PAD + 380}" y="${ly - 12}" width="14" height="14" fill="#ffc63d" transform="rotate(45 ${PAD + 387} ${ly - 5})"/>`
+svg += `<text x="${PAD + 404}" y="${ly}" fill="#c7d2e4" font-family="Arial" font-size="20">Gold vein (1.5x)</text>`
+svg += `<circle cx="${PAD + 600}" cy="${ly - 6}" r="9" fill="#6fd8ff"/>`
+svg += `<text x="${PAD + 620}" y="${ly}" fill="#c7d2e4" font-family="Arial" font-size="20">Cryo vent (1.5x)</text>`
+svg += `<rect x="${PAD + 810}" y="${ly - 18}" width="22" height="22" fill="#35a4ff"/>`
+svg += `<text x="${PAD + 842}" y="${ly}" fill="#c7d2e4" font-family="Arial" font-size="20">Base start</text>`
 svg += `</svg>`
 
 await sharp(Buffer.from(svg)).png().toFile('scripts/map-layout.png')

@@ -44,6 +44,9 @@ const MINIMAP_COLORS = {
   ally: Color4.create(0.95, 0.85, 0.3, 1),
   minerals: Color4.create(0.45, 0.7, 1, 1),
   gas: Color4.create(0.35, 0.9, 0.45, 1),
+  // Rich center nodes: gold crystal and icy cryo plasma.
+  goldMinerals: Color4.create(1, 0.8, 0.25, 1),
+  cryoGas: Color4.create(0.55, 0.88, 1, 1),
   avatar: Color4.create(1, 1, 1, 1)
 }
 
@@ -212,7 +215,9 @@ function resourceDots() {
     if (!resource.alive) continue
     const position = Transform.get(resource.entity).position
     if (!isPositionExplored(position)) continue
-    dots.push(dot(`res-${resource.id}`, position, resource.resource === 'gas' ? 6 : 5, resource.resource === 'gas' ? MINIMAP_COLORS.gas : MINIMAP_COLORS.minerals))
+    const isGas = resource.resource === 'gas'
+    const color = resource.rich ? (isGas ? MINIMAP_COLORS.cryoGas : MINIMAP_COLORS.goldMinerals) : isGas ? MINIMAP_COLORS.gas : MINIMAP_COLORS.minerals
+    dots.push(dot(`res-${resource.id}`, position, isGas ? 6 : 5, color))
   }
   return dots
 }

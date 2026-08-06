@@ -1,3 +1,4 @@
+import { DEFAULT_MAP_ID } from '../maps'
 import type { Difficulty, GameMode, RaceId } from '../types'
 
 // Wire protocol for DecentraCraft multiplayer.
@@ -39,6 +40,8 @@ export type LobbyConfig = {
   hostAddress: string
   phase: 'lobby' | 'starting' | 'inMatch'
   gameMode: GameMode
+  /** Battleground everyone loads (see rts/maps.ts registry); leader picks it. */
+  mapId: string
   seats: LobbySeat[]
   /** Shared RNG seed rolled by the server at match start. */
   seed: number
@@ -158,6 +161,7 @@ export type LobbyRequest =
   // Leader-only from here down.
   | { type: 'setSeat'; seat: number; patch: Partial<LobbySeat> }
   | { type: 'setGameMode'; gameMode: GameMode }
+  | { type: 'setMap'; mapId: string }
   | { type: 'startMatch' }
   | { type: 'resetLobby' }
 
@@ -177,6 +181,7 @@ export function createDefaultLobby(): LobbyConfig {
     hostAddress: '',
     phase: 'lobby',
     gameMode: 'team',
+    mapId: DEFAULT_MAP_ID,
     seats: [createDefaultSeat(0), createDefaultSeat(1), createDefaultSeat(2), createDefaultSeat(3), createDefaultSeat(4), createDefaultSeat(5)],
     seed: 0,
     revision: 0

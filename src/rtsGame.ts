@@ -29,11 +29,11 @@ import {
   MODEL_TRANSFORMS,
   POSITIONS,
   RESOURCE_DEFINITIONS,
-  RESOURCE_FIELDS,
   ResourceField,
   SCENE,
   TURRET_STATS
 } from './rts/config'
+import { getMapById } from './rts/maps'
 import {
   addSupplyUsed,
   addResources,
@@ -1280,6 +1280,7 @@ function applyOpponentSetup(): void {
 function applyMultiplayerSetup(plan: LocalMatchPlan): void {
   gameState.playerRace = plan.races.player
   gameState.gameMode = plan.gameMode
+  gameState.selectedMapId = plan.mapId
   gameState.activeEnemyTeams = plan.activeEnemyTeams.slice()
   gameState.alliances.player = plan.alliances.player
 
@@ -1444,11 +1445,12 @@ export function getSelectedSummary(): SelectedSummary {
 
   if (selected.kind === 'resource') {
     const resource = selected as ResourceNode
+    const richLine = resource.rich ? 'RICH: workers haul 1.5x per trip. ' : ''
     return {
       name: resource.name,
       kind: resource.kind,
       resourceKind: resource.resource,
-      detail: `${resource.amount} ${resource.resource} remaining`
+      detail: `${richLine}${resource.amount} ${resource.resource} remaining`
     }
   }
 
@@ -1586,7 +1588,7 @@ function getResourceFieldsForMatch(): ResourceField[] {
   // generates the exact same resource map; single-player stays truly random.
   const random = multiplayerPlan ? mulberry32(multiplayerPlan.seed ^ 0x5eed) : Math.random
 
-  return RESOURCE_FIELDS.map((field, index) => {
+  return getMapById(gameState.selectedMapId).fields.map((field, index) => {
     // The six mains (3 entries each: crystal line + two vents) never move -
     // every start must be identical. Naturals and contested fields shuffle.
     if (index < 18) return field
@@ -1608,7 +1610,8 @@ function spawnResourceFields(): void {
     const definition = RESOURCE_DEFINITIONS[field.kind]
     for (const position of generateFieldPositions(field, fieldIndex)) {
       counters[field.kind] += 1
-      resources.push(createResourceNode(field.kind, `${definition.name} ${counters[field.kind]}`, position))
+      const baseName = field.rich ? (field.kind === 'minerals' ? 'Gold Vein' : 'Cryo Vent') : definition.name
+      resources.push(createResourceNode(field.kind, `${baseName} ${counters[field.kind]}`, position, field.rich === true))
     }
   })
 }
@@ -1737,12 +1740,12 @@ function createProceduralUnitSelectable(kind: 'worker' | 'soldier', name: string
   return selectable
 }
 
-function createResourceNode(resource: ResourceKind, name: string, position: Vector3): ResourceNode {
+function createResourceNode(resource: ResourceKind, name: string, position: Vector3, rich = false): ResourceNode {
   const definition = RESOURCE_DEFINITIONS[resource]
   const id = mintEntityId('resource', undefined)
   const entity = engine.addEntity()
   Transform.create(entity, { position: cloneVector(position) })
-  buildResourceModel(entity, resource)
+  buildResourceModel(entity, resource, rich)
 
   if (definition.audioClipUrl) {
     AudioSource.create(entity, {
@@ -1753,6 +1756,8 @@ function createResourceNode(resource: ResourceKind, name: string, position: Vect
     })
   }
 
+  // Rich nodes hold more total and workers haul more per trip.
+  const amount = Math.round(definition.amount * (rich ? CONFIG.richYieldMultiplier : 1))
   const patch: ResourceNode = {
     id,
     kind: 'resource',
@@ -1760,7 +1765,8 @@ function createResourceNode(resource: ResourceKind, name: string, position: Vect
     entity,
     alive: true,
     resource,
-    amount: definition.amount
+    amount,
+    rich
   }
   patch.colliderEntity = createModelColliderEntity(entity, {
     position,
@@ -1770,7 +1776,7 @@ function createResourceNode(resource: ResourceKind, name: string, position: Vect
   })
   selectables.set(id, patch)
   registerSelectable(patch)
-  updateLabel(patch, `${name}\n${definition.amount}`)
+  updateLabel(patch, `${name}\n${amount}`)
   return patch
 }
 

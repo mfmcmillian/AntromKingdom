@@ -117,7 +117,9 @@ function updateWorkerGathering(worker: Worker, dt: number, deps: WorkerSystemDep
   } else if (worker.state === 'gathering' && resource) {
     worker.timer += dt
     if (worker.timer >= CONFIG.workerMineTime) {
-      const gathered = Math.min(CONFIG.workerCarryAmount, resource.amount)
+      // Gold crystal and cryo plasma nodes yield more per haul.
+      const capacity = Math.round(CONFIG.workerCarryAmount * (resource.rich ? CONFIG.richYieldMultiplier : 1))
+      const gathered = Math.min(capacity, resource.amount)
       resource.amount -= gathered
       worker.carrying = gathered
       worker.carryingResource = resource.resource

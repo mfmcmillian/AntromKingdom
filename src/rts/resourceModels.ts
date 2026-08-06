@@ -12,6 +12,8 @@ interface ResourceRig {
   pulseTimer: number
   dyingTimer: number
   depleted: boolean
+  /** Rich node (gold crystal / cryo plasma): drives the plume color on re-show. */
+  rich: boolean
   // Gas geysers: glowing pool that collapses on depletion, and the smoke emitter.
   pool?: Entity
   poolBaseScale?: Vector3
@@ -34,14 +36,34 @@ const MINERAL_GLOW = Color4.create(0.45, 0.7, 1, 1)
 const GAS_GREEN = Color4.create(0.3, 0.85, 0.4, 1)
 const GAS_GLOW = Color4.create(0.35, 0.95, 0.45, 1)
 
-export function buildResourceModel(root: Entity, kind: ResourceKind): void {
+// Rich variants: gold crystal veins and icy cryo plasma at the map center.
+const GOLD_DEEP = Color4.create(0.95, 0.62, 0.12, 1)
+const GOLD_BRIGHT = Color4.create(1, 0.85, 0.4, 1)
+const GOLD_GLOW = Color4.create(1, 0.78, 0.25, 1)
+const CRYO_BLUE = Color4.create(0.35, 0.75, 1, 1)
+const CRYO_GLOW = Color4.create(0.5, 0.88, 1, 1)
+
+/** Shard/pool palette per node tier, so rich nodes read instantly at a glance. */
+type CrystalPalette = { deep: Color4; bright: Color4; glow: Color4 }
+type PlasmaPalette = { pool: Color4; glow: Color4 }
+
+const CRYSTAL_PALETTES: Record<'normal' | 'rich', CrystalPalette> = {
+  normal: { deep: MINERAL_BLUE, bright: MINERAL_ICE, glow: MINERAL_GLOW },
+  rich: { deep: GOLD_DEEP, bright: GOLD_BRIGHT, glow: GOLD_GLOW }
+}
+const PLASMA_PALETTES: Record<'normal' | 'rich', PlasmaPalette> = {
+  normal: { pool: GAS_GREEN, glow: GAS_GLOW },
+  rich: { pool: CRYO_BLUE, glow: CRYO_GLOW }
+}
+
+export function buildResourceModel(root: Entity, kind: ResourceKind, rich = false): void {
   const bodyRoot = engine.addEntity()
   Transform.create(bodyRoot, { parent: root })
 
-  const rig: ResourceRig = { bodyRoot, parts: [bodyRoot], pulseTimer: 0, dyingTimer: -1, depleted: false, smokeActive: false }
+  const rig: ResourceRig = { bodyRoot, parts: [bodyRoot], pulseTimer: 0, dyingTimer: -1, depleted: false, rich, smokeActive: false }
 
-  if (kind === 'minerals') buildMineralField(rig)
-  else buildGasGeyser(rig)
+  if (kind === 'minerals') buildMineralField(rig, CRYSTAL_PALETTES[rich ? 'rich' : 'normal'])
+  else buildGasGeyser(rig, PLASMA_PALETTES[rich ? 'rich' : 'normal'])
 
   rigs.set(root, rig)
 }
@@ -90,10 +112,10 @@ function addPart(
  * gem facets, capped with a brighter pyramid tip so every spire tapers to a
  * glowing point (the pre-rotated cone rides the same yaw/lean).
  */
-function addCrystalShard(rig: ResourceRig, position: Vector3, width: number, height: number, yaw: number, lean: number, bright: boolean): void {
+function addCrystalShard(rig: ResourceRig, palette: CrystalPalette, position: Vector3, width: number, height: number, yaw: number, lean: number, bright: boolean): void {
   const rotation = Quaternion.multiply(Quaternion.fromEulerDegrees(0, yaw, 0), Quaternion.fromEulerDegrees(lean, 45, 0))
-  addPart(rig, position, Vector3.create(width, height, width), bright ? MINERAL_ICE : MINERAL_BLUE, {
-    emissive: MINERAL_GLOW,
+  addPart(rig, position, Vector3.create(width, height, width), bright ? palette.bright : palette.deep, {
+    emissive: palette.glow,
     emissiveIntensity: bright ? 1.4 : 0.9,
     rotation,
     metallic: 0.15,
@@ -109,9 +131,9 @@ function addCrystalShard(rig: ResourceRig, position: Vector3, width: number, hei
     position.y + Math.cos(leanRad) * tipRise,
     position.z + Math.sin(leanRad) * Math.cos(yawRad) * tipRise
   )
-  addPart(rig, tipOffset, Vector3.create(width * 0.92, width * 1.5, width * 0.92), MINERAL_ICE, {
+  addPart(rig, tipOffset, Vector3.create(width * 0.92, width * 1.5, width * 0.92), palette.bright, {
     cone: true,
-    emissive: MINERAL_GLOW,
+    emissive: palette.glow,
     emissiveIntensity: bright ? 2.6 : 1.8,
     rotation: Quaternion.multiply(Quaternion.fromEulerDegrees(0, yaw, 0), Quaternion.fromEulerDegrees(lean, 45, 0)),
     metallic: 0.1,
@@ -119,7 +141,7 @@ function addCrystalShard(rig: ResourceRig, position: Vector3, width: number, hei
   })
 }
 
-function buildMineralField(rig: ResourceRig): void {
+function buildMineralField(rig: ResourceRig, palette: CrystalPalette): void {
   // Regolith mound the crystals grow out of, with strewn rubble.
   addPart(rig, Vector3.create(0, 0.1, 0), Vector3.create(2.1, 0.2, 2.1), ROCK_DARK, { cylinder: true })
   addPart(rig, Vector3.create(0, 0.24, 0), Vector3.create(1.5, 0.14, 1.5), ROCK_BROWN, { cylinder: true })
@@ -134,9 +156,9 @@ function buildMineralField(rig: ResourceRig): void {
   })
 
   // Energy fissures: glowing cracks radiating out from under the cluster.
-  addPart(rig, Vector3.create(0, 0.32, 0), Vector3.create(1.05, 0.04, 1.05), MINERAL_BLUE, {
+  addPart(rig, Vector3.create(0, 0.32, 0), Vector3.create(1.05, 0.04, 1.05), palette.deep, {
     cylinder: true,
-    emissive: MINERAL_GLOW,
+    emissive: palette.glow,
     emissiveIntensity: 1.1
   })
   for (const [yaw, length] of [
@@ -145,8 +167,8 @@ function buildMineralField(rig: ResourceRig): void {
     [170, 1.45],
     [265, 1.25]
   ]) {
-    addPart(rig, Vector3.create(0, 0.225, 0), Vector3.create(0.09, 0.015, length), MINERAL_ICE, {
-      emissive: MINERAL_GLOW,
+    addPart(rig, Vector3.create(0, 0.225, 0), Vector3.create(0.09, 0.015, length), palette.bright, {
+      emissive: palette.glow,
       emissiveIntensity: 2.2,
       rotation: Quaternion.fromEulerDegrees(0, yaw, 0)
     })
@@ -154,16 +176,16 @@ function buildMineralField(rig: ResourceRig): void {
 
   // The spire cluster: one dominant crystal, a mid ring, and small sprouts,
   // every one tapering to a glowing faceted tip.
-  addCrystalShard(rig, Vector3.create(0, 0.85, 0), 0.42, 1.35, 15, 4, true)
-  addCrystalShard(rig, Vector3.create(0.48, 0.55, 0.22), 0.3, 0.95, 70, 16, false)
-  addCrystalShard(rig, Vector3.create(-0.45, 0.5, -0.18), 0.28, 0.85, 200, -14, false)
-  addCrystalShard(rig, Vector3.create(0.12, 0.4, -0.55), 0.22, 0.65, 130, -12, true)
-  addCrystalShard(rig, Vector3.create(-0.24, 0.34, 0.52), 0.2, 0.52, 300, 14, false)
-  addCrystalShard(rig, Vector3.create(0.6, 0.26, -0.38), 0.15, 0.38, 250, 18, true)
-  addCrystalShard(rig, Vector3.create(-0.65, 0.22, 0.05), 0.13, 0.32, 320, -18, false)
+  addCrystalShard(rig, palette, Vector3.create(0, 0.85, 0), 0.42, 1.35, 15, 4, true)
+  addCrystalShard(rig, palette, Vector3.create(0.48, 0.55, 0.22), 0.3, 0.95, 70, 16, false)
+  addCrystalShard(rig, palette, Vector3.create(-0.45, 0.5, -0.18), 0.28, 0.85, 200, -14, false)
+  addCrystalShard(rig, palette, Vector3.create(0.12, 0.4, -0.55), 0.22, 0.65, 130, -12, true)
+  addCrystalShard(rig, palette, Vector3.create(-0.24, 0.34, 0.52), 0.2, 0.52, 300, 14, false)
+  addCrystalShard(rig, palette, Vector3.create(0.6, 0.26, -0.38), 0.15, 0.38, 250, 18, true)
+  addCrystalShard(rig, palette, Vector3.create(-0.65, 0.22, 0.05), 0.13, 0.32, 320, -18, false)
 }
 
-function buildGasGeyser(rig: ResourceRig): void {
+function buildGasGeyser(rig: ResourceRig, palette: PlasmaPalette): void {
   // Volcanic cone: four strata layers tapering up to the vent mouth.
   addPart(rig, Vector3.create(0, 0.18, 0), Vector3.create(2.7, 0.36, 2.7), ROCK_BROWN, { cylinder: true })
   addPart(rig, Vector3.create(0, 0.5, 0), Vector3.create(2.15, 0.32, 2.15), ROCK_DARK, { cylinder: true })
@@ -172,17 +194,17 @@ function buildGasGeyser(rig: ResourceRig): void {
 
   // Crater mouth with the glowing plasma pool inside.
   addPart(rig, Vector3.create(0, 1.2, 0), Vector3.create(1.02, 0.06, 1.02), CRATER_DARK, { cylinder: true })
-  const pool = addPart(rig, Vector3.create(0, 1.25, 0), Vector3.create(0.82, 0.05, 0.82), GAS_GREEN, {
+  const pool = addPart(rig, Vector3.create(0, 1.25, 0), Vector3.create(0.82, 0.05, 0.82), palette.pool, {
     cylinder: true,
-    emissive: GAS_GLOW,
+    emissive: palette.glow,
     emissiveIntensity: 2.2
   })
   rig.pool = pool
   rig.poolBaseScale = Vector3.create(0.82, 0.05, 0.82)
   // Bubble dome rising out of the pool.
-  addPart(rig, Vector3.create(0.18, 1.26, -0.12), Vector3.create(0.2, 0.14, 0.2), GAS_GREEN, {
+  addPart(rig, Vector3.create(0.18, 1.26, -0.12), Vector3.create(0.2, 0.14, 0.2), palette.pool, {
     sphere: true,
-    emissive: GAS_GLOW,
+    emissive: palette.glow,
     emissiveIntensity: 2.6
   })
 
@@ -204,8 +226,8 @@ function buildGasGeyser(rig: ResourceRig): void {
     [255, 0.55]
   ]) {
     const rad = (yaw * Math.PI) / 180
-    addPart(rig, Vector3.create(Math.cos(rad) * 0.85, drop, Math.sin(rad) * 0.85), Vector3.create(0.1, 0.75, 0.08), GAS_GREEN, {
-      emissive: GAS_GLOW,
+    addPart(rig, Vector3.create(Math.cos(rad) * 0.85, drop, Math.sin(rad) * 0.85), Vector3.create(0.1, 0.75, 0.08), palette.pool, {
+      emissive: palette.glow,
       emissiveIntensity: 1.9,
       rotation: Quaternion.fromEulerDegrees(Math.sin(rad) * 32, yaw, -Math.cos(rad) * 32)
     })
@@ -221,13 +243,13 @@ function buildGasGeyser(rig: ResourceRig): void {
   addPart(rig, Vector3.create(-0.6, 0.3, 1), Vector3.create(0.32, 0.38, 0.3), ROCK_DARK, {
     rotation: Quaternion.fromEulerDegrees(6, 220, -6)
   })
-  addPart(rig, Vector3.create(0.7, 0.12, -1.05), Vector3.create(0.3, 0.16, 0.26), GAS_GREEN, {
-    emissive: GAS_GLOW,
+  addPart(rig, Vector3.create(0.7, 0.12, -1.05), Vector3.create(0.3, 0.16, 0.26), palette.pool, {
+    emissive: palette.glow,
     emissiveIntensity: 1.3,
     rotation: Quaternion.fromEulerDegrees(4, 60, -4)
   })
-  addPart(rig, Vector3.create(-1.1, 0.1, 0.35), Vector3.create(0.24, 0.12, 0.2), GAS_GREEN, {
-    emissive: GAS_GLOW,
+  addPart(rig, Vector3.create(-1.1, 0.1, 0.35), Vector3.create(0.24, 0.12, 0.2), palette.pool, {
+    emissive: palette.glow,
     emissiveIntensity: 1.3,
     rotation: Quaternion.fromEulerDegrees(-6, 160, 5)
   })
@@ -235,13 +257,17 @@ function buildGasGeyser(rig: ResourceRig): void {
   // Rising gas plume out of the crater mouth.
   const smoke = engine.addEntity()
   Transform.create(smoke, { parent: rig.bodyRoot, position: Vector3.create(0, 1.35, 0) })
-  ParticleSystem.create(smoke, createGeyserSmokeOptions())
+  ParticleSystem.create(smoke, createGeyserSmokeOptions(rig.rich))
   rig.parts.push(smoke)
   rig.smoke = smoke
   rig.smokeActive = true
 }
 
-function createGeyserSmokeOptions() {
+function createGeyserSmokeOptions(rich: boolean) {
+  // Cryo vents breathe an icy blue mist; standard vents a sickly green plume.
+  const [start, mid, end] = rich
+    ? [Color4.create(0.55, 0.85, 1, 0.45), Color4.create(0.45, 0.75, 1, 0.36), Color4.create(0.3, 0.42, 0.6, 0)]
+    : [Color4.create(0.5, 0.85, 0.55, 0.42), Color4.create(0.45, 0.75, 0.5, 0.36), Color4.create(0.3, 0.4, 0.32, 0)]
   return {
     rate: 7,
     maxParticles: 32,
@@ -251,14 +277,8 @@ function createGeyserSmokeOptions() {
     initialSize: { start: 0.24, end: 0.5 },
     sizeOverTime: { start: 0.6, end: 1.9 },
     initialVelocitySpeed: { start: 0.3, end: 0.7 },
-    initialColor: {
-      start: Color4.create(0.5, 0.85, 0.55, 0.42),
-      end: Color4.create(0.42, 0.72, 0.46, 0.3)
-    },
-    colorOverTime: {
-      start: Color4.create(0.45, 0.75, 0.5, 0.36),
-      end: Color4.create(0.3, 0.4, 0.32, 0)
-    },
+    initialColor: { start, end: mid },
+    colorOverTime: { start: mid, end },
     blendMode: PARTICLE_BLEND_ALPHA,
     shape: ParticleSystem.Shape.Cone({ angle: 10, radius: 0.28 }),
     loop: true,
@@ -305,7 +325,7 @@ function setSmokeActive(rig: ResourceRig, active: boolean): void {
   if (!rig.smoke || rig.smokeActive === active) return
 
   rig.smokeActive = active
-  if (active) ParticleSystem.createOrReplace(rig.smoke, createGeyserSmokeOptions())
+  if (active) ParticleSystem.createOrReplace(rig.smoke, createGeyserSmokeOptions(rig.rich))
   else ParticleSystem.deleteFrom(rig.smoke)
 }
 

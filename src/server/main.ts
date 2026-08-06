@@ -10,6 +10,7 @@ import {
   type LobbySeat,
   type MatchCommand
 } from '../rts/multiplayer/protocol'
+import { MAPS } from '../rts/maps'
 import { LOBBY_SYNC_ID, MpLobbyState, room } from '../rts/multiplayer/transport'
 
 // DecentraCraft authoritative server. Runs headlessly alongside the world and
@@ -155,6 +156,13 @@ export function startServer(): void {
       case 'setGameMode': {
         if (!isLeader) return
         lobby.gameMode = request.gameMode
+        break
+      }
+      case 'setMap': {
+        // Leader picks the battleground; reject ids not in the map registry.
+        if (!isLeader || lobby.phase !== 'lobby') return
+        if (!MAPS.some((map) => map.id === request.mapId)) return
+        lobby.mapId = request.mapId
         break
       }
       case 'startMatch': {
