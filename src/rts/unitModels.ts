@@ -26,10 +26,12 @@ type MotionProfile = {
  *   orbit - circles the anchor with a gentle vertical wobble.
  *   ember - rises from the anchor while shrinking to nothing, then loops.
  *   pulse - breathes its XZ scale and slowly rotates in place (ground rings).
+ *   flap  - oscillating roll around Z for wing pivots (radius = amplitude in
+ *           degrees, height = rest angle; signs mirror the two wings).
  */
 type UnitFx = {
   entity: Entity
-  mode: 'orbit' | 'ember' | 'pulse'
+  mode: 'orbit' | 'ember' | 'pulse' | 'flap'
   anchor: Vector3
   radius: number
   height: number
@@ -135,6 +137,19 @@ type PartOptions = {
 }
 
 type PartAdder = (position: Vector3, scale: Vector3, color: Color4, options?: PartOptions) => Entity
+
+/** Like addPart but parented to an arbitrary pivot/carrier instead of the body root. */
+function addChildPart(rig: UnitRig, parent: Entity, position: Vector3, scale: Vector3, color: Color4, options: PartOptions = {}): Entity {
+  const part = engine.addEntity()
+  Transform.create(part, { parent, position, scale, rotation: options.rotation ?? Quaternion.Identity() })
+  if (options.cone) MeshRenderer.setCylinder(part, 0.5, 0.03)
+  else if (options.cylinder) MeshRenderer.setCylinder(part)
+  else if (options.sphere) MeshRenderer.setSphere(part)
+  else MeshRenderer.setBox(part)
+  applyPartMaterial(part, color, options)
+  rig.parts.push(part)
+  return part
+}
 
 /** Shared PBR setup for every unit part. */
 function applyPartMaterial(part: Entity, color: Color4, options: PartOptions): void {
@@ -670,47 +685,99 @@ function buildHumanStormcaller(rig: UnitRig, addPart: PartAdder, glow: Color4): 
   }
 }
 
-/** Human flyer: a twin-engine gunship hovering with a spinning rotor and chin cannon. */
+/** Human flyer: the Kestrel Gunship - an attack VTOL with a four-blade rotor,
+ * tail boom, twin engine nacelles, underwing missile pods and a tri-barrel chin gatling. */
 function buildHumanRaptor(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
-  rig.baseHeight = 1.9
+  rig.baseHeight = 2.0
 
-  // Fuselage with a cockpit visor.
-  addPart(Vector3.create(0, 0.5, 0.05), Vector3.create(0.5, 0.34, 0.98), HUMAN_HULL)
-  addPart(Vector3.create(0, 0.56, 0.44), Vector3.create(0.32, 0.16, 0.2), glow, { emissive: glow, emissiveIntensity: 2.4 })
-  addPart(Vector3.create(0, 0.68, -0.32), Vector3.create(0.3, 0.14, 0.5), METAL_DARK)
+  // --- Fuselage: layered hull, armored belly, framed cockpit canopy. -------
+  addPart(Vector3.create(0, 0.5, 0.05), Vector3.create(0.52, 0.36, 1.05), HUMAN_HULL)
+  addPart(Vector3.create(0, 0.48, 0.62), Vector3.create(0.38, 0.26, 0.3), METAL_LIGHT)
+  addPart(Vector3.create(0, 0.34, 0.1), Vector3.create(0.44, 0.12, 0.9), METAL_DARK)
+  addPart(Vector3.create(0, 0.62, 0.42), Vector3.create(0.3, 0.15, 0.26), glow, { emissive: glow, emissiveIntensity: 2.6 })
+  addPart(Vector3.create(0, 0.67, 0.3), Vector3.create(0.34, 0.06, 0.12), METAL_DARK)
+  addPart(Vector3.create(0, 0.7, -0.12), Vector3.create(0.22, 0.12, 0.66), METAL_DARK)
 
-  // Stub wings with engine pods and glow exhausts.
+  // --- Tail boom with fin, planes and a small tail rotor cross. ------------
+  addPart(Vector3.create(0, 0.56, -0.78), Vector3.create(0.15, 0.13, 0.62), METAL_LIGHT)
+  addPart(Vector3.create(0, 0.8, -1.02), Vector3.create(0.05, 0.36, 0.28), HUMAN_HULL)
   for (const side of [-1, 1]) {
-    addPart(Vector3.create(side * 0.5, 0.5, -0.05), Vector3.create(0.5, 0.07, 0.3), METAL_LIGHT)
-    addPart(Vector3.create(side * 0.78, 0.48, -0.05), Vector3.create(0.18, 0.18, 0.44), METAL_DARK, { cylinder: true, rotation: Quaternion.fromEulerDegrees(90, 0, 0) })
-    addPart(Vector3.create(side * 0.78, 0.48, -0.3), Vector3.create(0.13, 0.13, 0.06), glow, {
+    addPart(Vector3.create(side * 0.19, 0.6, -0.98), Vector3.create(0.3, 0.04, 0.16), METAL_LIGHT)
+  }
+  addPart(Vector3.create(0.06, 0.78, -1.04), Vector3.create(0.02, 0.34, 0.05), METAL_DARK)
+  addPart(Vector3.create(0.06, 0.78, -1.04), Vector3.create(0.02, 0.05, 0.34), METAL_DARK)
+  // Tail beacon.
+  addPart(Vector3.create(0, 1.0, -1.02), Vector3.create(0.05, 0.05, 0.05), glow, { sphere: true, emissive: glow, emissiveIntensity: 3.5 })
+
+  // --- Stub wings: engine nacelles, intake rings, exhausts, missile pods. --
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.55, 0.52, 0), Vector3.create(0.55, 0.07, 0.36), METAL_LIGHT)
+    // Nacelle with a bright intake ring and glowing exhaust.
+    addPart(Vector3.create(side * 0.86, 0.5, -0.02), Vector3.create(0.2, 0.2, 0.56), METAL_DARK, { cylinder: true, rotation: Quaternion.fromEulerDegrees(90, 0, 0) })
+    addPart(Vector3.create(side * 0.86, 0.5, 0.28), Vector3.create(0.23, 0.23, 0.05), METAL_LIGHT, { cylinder: true, rotation: Quaternion.fromEulerDegrees(90, 0, 0) })
+    addPart(Vector3.create(side * 0.86, 0.5, -0.32), Vector3.create(0.15, 0.15, 0.06), glow, {
       cylinder: true,
       emissive: glow,
-      emissiveIntensity: 2.6,
+      emissiveIntensity: 3,
       rotation: Quaternion.fromEulerDegrees(90, 0, 0)
+    })
+    // Wingtip navigation light.
+    addPart(Vector3.create(side * 1.02, 0.56, 0.05), Vector3.create(0.05, 0.05, 0.05), glow, { sphere: true, emissive: glow, emissiveIntensity: 3.5 })
+    // Missile pod: rack plus two visible warheads.
+    addPart(Vector3.create(side * 0.58, 0.38, 0.08), Vector3.create(0.17, 0.14, 0.42), METAL_DARK)
+    for (const slot of [-0.045, 0.045]) {
+      addPart(Vector3.create(side * 0.58 + slot, 0.38, 0.33), Vector3.create(0.05, 0.13, 0.05), BLADE_STEEL, {
+        cone: true,
+        metallic: 0.7,
+        roughness: 0.3,
+        rotation: Quaternion.fromEulerDegrees(90, 0, 0)
+      })
+    }
+    // Engine heat shimmer sinking from the exhaust.
+    const heat = addPart(Vector3.create(side * 0.86, 0.42, -0.34), Vector3.create(0.07, 0.07, 0.07), glow, { sphere: true, emissive: glow, emissiveIntensity: 2.8 })
+    rig.fx.push({ entity: heat, mode: 'ember', anchor: Vector3.create(side * 0.86, 0.42, -0.34), radius: 0.03, height: -0.45, speed: 1.7, phase: side, size: 0.07 })
+  }
+
+  // --- Main rotor: mast, hub and four coned blades on a spinning carrier. --
+  addPart(Vector3.create(0, 0.8, 0), Vector3.create(0.09, 0.14, 0.09), METAL_DARK, { cylinder: true })
+  const rotor = engine.addEntity()
+  Transform.create(rotor, { parent: rig.bodyRoot, position: Vector3.create(0, 0.9, 0) })
+  rig.parts.push(rotor)
+  rig.spinner = rotor
+  addChildPart(rig, rotor, Vector3.create(0, 0, 0), Vector3.create(0.16, 0.06, 0.16), METAL_DARK, { cylinder: true })
+  for (const angle of [0, 90]) {
+    addChildPart(rig, rotor, Vector3.create(0, 0.02, 0), Vector3.create(2.3, 0.022, 0.14), METAL_LIGHT, {
+      rotation: Quaternion.fromEulerDegrees(0, angle, 2.5)
     })
   }
 
-  // Top rotor that spins constantly.
-  addPart(Vector3.create(0, 0.72, 0), Vector3.create(0.08, 0.1, 0.08), METAL_DARK, { cylinder: true })
-  rig.spinner = addPart(Vector3.create(0, 0.8, 0), Vector3.create(1.15, 0.03, 0.12), METAL_LIGHT)
+  // --- Chin gatling: swivel mount, three barrels, muzzle glow. -------------
+  addPart(Vector3.create(0, 0.3, 0.44), Vector3.create(0.13, 0.12, 0.13), METAL_DARK, { cylinder: true })
+  for (const [bx, by] of [[0, 0.035], [-0.03, -0.02], [0.03, -0.02]] as const) {
+    addPart(Vector3.create(bx, 0.27 + by, 0.64), Vector3.create(0.045, 0.045, 0.36), METAL_LIGHT, {
+      cylinder: true,
+      rotation: Quaternion.fromEulerDegrees(90, 0, 0)
+    })
+  }
+  addPart(Vector3.create(0, 0.27, 0.82), Vector3.create(0.07, 0.07, 0.07), glow, { sphere: true, emissive: glow, emissiveIntensity: 2.8 })
 
-  // Chin cannon.
-  addPart(Vector3.create(0, 0.32, 0.36), Vector3.create(0.08, 0.08, 0.4), METAL_DARK, { cylinder: true, rotation: Quaternion.fromEulerDegrees(90, 0, 0) })
-  addPart(Vector3.create(0, 0.32, 0.58), Vector3.create(0.1, 0.1, 0.05), glow, {
-    cylinder: true,
-    emissive: glow,
-    emissiveIntensity: 2.4,
-    rotation: Quaternion.fromEulerDegrees(90, 0, 0)
-  })
+  // --- Landing skids. -------------------------------------------------------
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.24, 0.14, 0.05), Vector3.create(0.05, 0.04, 0.9), METAL_LIGHT)
+    for (const off of [-0.28, 0.32]) {
+      addPart(Vector3.create(side * 0.24, 0.23, off), Vector3.create(0.04, 0.15, 0.04), METAL_DARK, {
+        rotation: Quaternion.fromEulerDegrees(0, 0, side * -14)
+      })
+    }
+  }
 
   rig.spinAxis = 'y'
   rig.profiles = {
-    idle: { amplitude: 0.1, speed: 1.6, tilt: 0, spin: 700, lunge: 0 },
-    walk: { amplitude: 0.07, speed: 3.5, tilt: 10, spin: 1000, lunge: 0 },
-    talk: { amplitude: 0.08, speed: 4, tilt: 4, spin: 800, lunge: 0 },
-    attack: { amplitude: 0.05, speed: 12, tilt: 6, spin: 1100, lunge: -0.06 },
-    impact: { amplitude: 0.12, speed: 16, tilt: -8, spin: 700, lunge: 0 }
+    idle: { amplitude: 0.1, speed: 1.6, tilt: 0, spin: 900, lunge: 0 },
+    walk: { amplitude: 0.07, speed: 3.5, tilt: 12, spin: 1300, lunge: 0 },
+    talk: { amplitude: 0.08, speed: 4, tilt: 4, spin: 1000, lunge: 0 },
+    attack: { amplitude: 0.05, speed: 12, tilt: 7, spin: 1400, lunge: -0.06 },
+    impact: { amplitude: 0.12, speed: 16, tilt: -8, spin: 900, lunge: 0 }
   }
 }
 
@@ -816,50 +883,100 @@ function buildAlienOracle(rig: UnitRig, addPart: PartAdder, glow: Color4): void 
   }
 }
 
-/** Alien flyer: a crescent-winged ray gliding high with a charged beam prow. */
+/** Alien flyer: the Tempest - a crystalline sky-ray with layered swept wings,
+ * glowing crystal veins, a halo drive ring and a prow of orbiting beam shards. */
 function buildAlienTempest(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
-  rig.baseHeight = 2.1
+  rig.baseHeight = 2.2
+  const gild = { metallic: 0.8, roughness: 0.25 }
 
-  // Central body pod.
-  addPart(Vector3.create(0, 0.5, 0), Vector3.create(0.46, 0.26, 0.8), ALIEN_GOLD, { sphere: true, metallic: 0.8, roughness: 0.25 })
-  addPart(Vector3.create(0, 0.56, 0.3), Vector3.create(0.16, 0.12, 0.2), ALIEN_DARK, { sphere: true })
+  // --- Antigrav disc pulsing beneath the hull. -----------------------------
+  const grav = addPart(Vector3.create(0, 0.16, 0), Vector3.create(0.85, 0.03, 0.85), Color4.create(ALIEN_CRYSTAL.r, ALIEN_CRYSTAL.g, ALIEN_CRYSTAL.b, 0.5), {
+    cylinder: true,
+    emissive: ALIEN_CRYSTAL,
+    emissiveIntensity: 1.8
+  })
+  rig.fx.push({ entity: grav, mode: 'pulse', anchor: Vector3.create(0, 0.16, 0), radius: 0, height: 0, speed: 2.6, phase: 0, size: 0.85 })
 
-  // Sweeping crescent wings.
+  // --- Central hull: gold pod, dark armor plates, canopy slit. -------------
+  addPart(Vector3.create(0, 0.52, 0.05), Vector3.create(0.5, 0.28, 0.92), ALIEN_GOLD, { sphere: true, ...gild })
+  addPart(Vector3.create(0, 0.64, -0.02), Vector3.create(0.34, 0.1, 0.6), ALIEN_DARK, { sphere: true })
+  addPart(Vector3.create(0, 0.55, 0.52), Vector3.create(0.26, 0.14, 0.32), ALIEN_DARK, { sphere: true })
+  addPart(Vector3.create(0, 0.62, 0.34), Vector3.create(0.2, 0.055, 0.16), glow, { emissive: glow, emissiveIntensity: 3.2 })
+
+  // --- Halo drive ring standing behind the hull. ---------------------------
+  addPart(Vector3.create(0, 0.78, -0.36), Vector3.create(0.55, 0.03, 0.55), ALIEN_GOLD, {
+    cylinder: true,
+    ...gild,
+    rotation: Quaternion.fromEulerDegrees(90, 0, 0)
+  })
+  addPart(Vector3.create(0, 0.78, -0.36), Vector3.create(0.4, 0.015, 0.4), ALIEN_CRYSTAL, {
+    cylinder: true,
+    emissive: ALIEN_CRYSTAL,
+    emissiveIntensity: 2.2,
+    rotation: Quaternion.fromEulerDegrees(90, 0, 0)
+  })
+
+  // --- Two-segment swept wings with crystal veins and tip prisms. ----------
   for (const side of [-1, 1]) {
-    addPart(Vector3.create(side * 0.55, 0.5, -0.1), Vector3.create(0.75, 0.07, 0.5), ALIEN_GOLD, {
-      metallic: 0.8,
-      roughness: 0.25,
-      rotation: Quaternion.fromEulerDegrees(0, side * -18, side * 8)
+    addPart(Vector3.create(side * 0.58, 0.52, -0.08), Vector3.create(0.72, 0.06, 0.56), ALIEN_GOLD, {
+      ...gild,
+      rotation: Quaternion.fromEulerDegrees(0, side * -14, side * 6)
     })
-    addPart(Vector3.create(side * 0.95, 0.52, -0.28), Vector3.create(0.3, 0.05, 0.26), ALIEN_DARK, {
-      rotation: Quaternion.fromEulerDegrees(0, side * -30, side * 10)
+    addPart(Vector3.create(side * 1.08, 0.58, -0.26), Vector3.create(0.52, 0.045, 0.4), ALIEN_DARK, {
+      rotation: Quaternion.fromEulerDegrees(0, side * -28, side * 12)
     })
-    // Wingtip crystals.
-    addPart(Vector3.create(side * 1.1, 0.52, -0.38), Vector3.create(0.09, 0.2, 0.09), ALIEN_CRYSTAL, {
-      cone: true,
+    // Emissive crystal vein tracing the leading edge.
+    addPart(Vector3.create(side * 0.62, 0.56, 0.06), Vector3.create(0.52, 0.02, 0.07), ALIEN_CRYSTAL, {
       emissive: ALIEN_CRYSTAL,
       emissiveIntensity: 2.4,
-      rotation: Quaternion.fromEulerDegrees(180, 0, 0)
+      rotation: Quaternion.fromEulerDegrees(0, side * -14, side * 6)
+    })
+    // Wingtip prism pointing outward.
+    addPart(Vector3.create(side * 1.36, 0.62, -0.4), Vector3.create(0.09, 0.28, 0.09), ALIEN_CRYSTAL, {
+      cone: true,
+      emissive: ALIEN_CRYSTAL,
+      emissiveIntensity: 2.8,
+      rotation: Quaternion.fromEulerDegrees(0, 0, side * -95)
     })
   }
 
-  // Charged beam prow - spins while firing.
-  rig.spinner = addPart(Vector3.create(0, 0.48, 0.52), Vector3.create(0.16, 0.16, 0.16), glow, {
-    sphere: true,
-    emissive: glow,
-    emissiveIntensity: 3
-  })
+  // --- Twin trailing keel fins. --------------------------------------------
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.1, 0.38, -0.52), Vector3.create(0.05, 0.3, 0.4), ALIEN_DARK, {
+      rotation: Quaternion.fromEulerDegrees(-26, 0, side * 12)
+    })
+  }
 
-  // Trailing keel fin.
-  addPart(Vector3.create(0, 0.4, -0.45), Vector3.create(0.06, 0.3, 0.34), ALIEN_DARK, { rotation: Quaternion.fromEulerDegrees(-24, 0, 0) })
+  // --- Beam prow: emitter housing plus a carrier of orbiting focus shards. -
+  addPart(Vector3.create(0, 0.46, 0.62), Vector3.create(0.18, 0.14, 0.2), ALIEN_DARK)
+  const prow = engine.addEntity()
+  Transform.create(prow, { parent: rig.bodyRoot, position: Vector3.create(0, 0.46, 0.8) })
+  rig.parts.push(prow)
+  rig.spinner = prow
+  addChildPart(rig, prow, Vector3.create(0, 0, 0), Vector3.create(0.14, 0.14, 0.14), glow, { sphere: true, emissive: glow, emissiveIntensity: 3.4 })
+  for (let i = 0; i < 4; i++) {
+    const angle = (i / 4) * Math.PI * 2
+    addChildPart(rig, prow, Vector3.create(Math.cos(angle) * 0.18, 0, Math.sin(angle) * 0.18), Vector3.create(0.05, 0.16, 0.05), ALIEN_CRYSTAL, {
+      cone: true,
+      emissive: ALIEN_CRYSTAL,
+      emissiveIntensity: 2.6,
+      rotation: Quaternion.fromEulerDegrees(0, 0, 180)
+    })
+  }
+
+  // --- Energy motes circling the hull. -------------------------------------
+  for (let i = 0; i < 3; i++) {
+    const mote = addPart(Vector3.create(0, 0.62, 0), Vector3.create(0.05, 0.05, 0.05), glow, { sphere: true, emissive: glow, emissiveIntensity: 3.6 })
+    rig.fx.push({ entity: mote, mode: 'orbit', anchor: Vector3.create(0, 0.62, 0), radius: 0.72, height: 0.12, speed: 1.9, phase: (i / 3) * Math.PI * 2, size: 0.05 })
+  }
 
   rig.spinAxis = 'y'
   rig.profiles = {
-    idle: { amplitude: 0.12, speed: 1.4, tilt: 0, spin: 60, lunge: 0 },
-    walk: { amplitude: 0.08, speed: 3, tilt: 12, spin: 120, lunge: 0 },
-    talk: { amplitude: 0.09, speed: 4, tilt: 5, spin: 100, lunge: 0 },
-    attack: { amplitude: 0.05, speed: 11, tilt: 8, spin: 900, lunge: -0.07 },
-    impact: { amplitude: 0.14, speed: 16, tilt: -10, spin: 60, lunge: 0 }
+    idle: { amplitude: 0.12, speed: 1.4, tilt: 0, spin: 90, lunge: 0 },
+    walk: { amplitude: 0.08, speed: 3, tilt: 12, spin: 160, lunge: 0 },
+    talk: { amplitude: 0.09, speed: 4, tilt: 5, spin: 120, lunge: 0 },
+    attack: { amplitude: 0.05, speed: 11, tilt: 8, spin: 1000, lunge: -0.07 },
+    impact: { amplitude: 0.14, speed: 16, tilt: -10, spin: 90, lunge: 0 }
   }
 }
 
@@ -973,69 +1090,127 @@ function buildBioPlagueWeaver(rig: UnitRig, addPart: PartAdder, glow: Color4): v
   }
 }
 
-/** Bio flyer: a shrieking winged terror with beating membrane wings and a barbed tail. */
+/** Bio flyer: the Shrieker - a winged terror with a segmented body, horned
+ * four-eyed skull, truly beating two-segment membrane wings, a pulsing venom
+ * sac and a barbed three-segment tail dripping toxin. */
 function buildBioShrieker(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
-  rig.baseHeight = 1.8
+  rig.baseHeight = 1.9
+  const ACID = Color4.create(0.55, 0.85, 0.2, 1)
+  const flesh = { metallic: 0.05, roughness: 0.85 }
 
-  // Sleek body tapering to a barbed tail.
-  addPart(Vector3.create(0, 0.5, 0.1), Vector3.create(0.34, 0.3, 0.66), BIO_FLESH, { sphere: true, metallic: 0.05, roughness: 0.85 })
-  addPart(Vector3.create(0, 0.46, -0.4), Vector3.create(0.16, 0.14, 0.5), BIO_CARAPACE, { sphere: true })
-  addPart(Vector3.create(0, 0.44, -0.72), Vector3.create(0.06, 0.22, 0.06), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(105, 0, 0) })
-
-  // Head with glow eyes and a shrieking maw of bone fangs.
-  addPart(Vector3.create(0, 0.56, 0.5), Vector3.create(0.26, 0.22, 0.3), BIO_CARAPACE, { sphere: true })
-  addPart(Vector3.create(-0.08, 0.62, 0.62), Vector3.create(0.06, 0.06, 0.04), glow, { sphere: true, emissive: glow, emissiveIntensity: 3.2 })
-  addPart(Vector3.create(0.08, 0.62, 0.62), Vector3.create(0.06, 0.06, 0.04), glow, { sphere: true, emissive: glow, emissiveIntensity: 3.2 })
-  addPart(Vector3.create(-0.06, 0.44, 0.62), Vector3.create(0.04, 0.12, 0.04), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(160, 0, 6) })
-  addPart(Vector3.create(0.06, 0.44, 0.62), Vector3.create(0.04, 0.12, 0.04), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(160, 0, -6) })
-
-  // Membrane wings on a spinning flap carrier (the carrier tilts as it "beats").
-  const wingCarrier = engine.addEntity()
-  Transform.create(wingCarrier, { parent: rig.bodyRoot, position: Vector3.create(0, 0.62, 0.05) })
-  rig.parts.push(wingCarrier)
-  rig.spinner = wingCarrier
-  for (const side of [-1, 1]) {
-    const wing = engine.addEntity()
-    Transform.create(wing, {
-      parent: wingCarrier,
-      position: Vector3.create(side * 0.55, 0.08, -0.05),
-      scale: Vector3.create(0.95, 0.04, 0.55),
-      rotation: Quaternion.fromEulerDegrees(0, side * -12, side * 16)
+  // --- Segmented body: thorax, abdomen, carapace saddle, dorsal spines. ----
+  addPart(Vector3.create(0, 0.52, 0.15), Vector3.create(0.42, 0.34, 0.52), BIO_FLESH, { sphere: true, ...flesh })
+  addPart(Vector3.create(0, 0.48, -0.24), Vector3.create(0.32, 0.27, 0.46), BIO_FLESH, { sphere: true, ...flesh })
+  addPart(Vector3.create(0, 0.66, 0), Vector3.create(0.36, 0.16, 0.54), BIO_CARAPACE, { sphere: true })
+  for (const [sz, sx] of [[0.16, 0], [-0.04, 0.04], [-0.24, -0.04]] as const) {
+    addPart(Vector3.create(sx, 0.79, sz), Vector3.create(0.055, 0.2, 0.055), BIO_BONE, {
+      cone: true,
+      rotation: Quaternion.fromEulerDegrees(-24, 0, sx * 90)
     })
-    MeshRenderer.setBox(wing)
-    Material.setPbrMaterial(wing, {
-      albedoColor: Color4.create(BIO_FLESH.r, BIO_FLESH.g, BIO_FLESH.b, 0.85),
-      emissiveColor: Color4.create(0.4, 0.1, 0.1, 1),
-      emissiveIntensity: 0.5,
-      metallic: 0.05,
-      roughness: 0.8,
-      castShadows: false
-    })
-    rig.parts.push(wing)
-    // Bone wing fingers.
-    const finger = engine.addEntity()
-    Transform.create(finger, {
-      parent: wingCarrier,
-      position: Vector3.create(side * 0.5, 0.1, 0.18),
-      scale: Vector3.create(0.05, 0.05, 0.6),
-      rotation: Quaternion.fromEulerDegrees(0, side * -16, 0)
-    })
-    MeshRenderer.setBox(finger)
-    Material.setPbrMaterial(finger, { albedoColor: BIO_BONE, metallic: 0.1, roughness: 0.6, castShadows: false })
-    rig.parts.push(finger)
   }
 
-  // Dangling talons.
-  addPart(Vector3.create(-0.1, 0.28, 0.2), Vector3.create(0.05, 0.18, 0.05), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(170, 0, 8) })
-  addPart(Vector3.create(0.1, 0.28, 0.2), Vector3.create(0.05, 0.18, 0.05), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(170, 0, -8) })
+  // --- Pulsing venom sac slung under the thorax. ---------------------------
+  const sac = addPart(Vector3.create(0, 0.33, 0.08), Vector3.create(0.24, 0.18, 0.28), ACID, {
+    sphere: true,
+    emissive: ACID,
+    emissiveIntensity: 1.8,
+    ...flesh
+  })
+  rig.fx.push({ entity: sac, mode: 'pulse', anchor: Vector3.create(0, 0.33, 0.08), radius: 0, height: 0, speed: 3.2, phase: 0, size: 0.24 })
+  // Toxin drip falling from the sac.
+  const drip = addPart(Vector3.create(0, 0.26, 0.08), Vector3.create(0.05, 0.05, 0.05), ACID, { sphere: true, emissive: ACID, emissiveIntensity: 2.8 })
+  rig.fx.push({ entity: drip, mode: 'ember', anchor: Vector3.create(0, 0.26, 0.08), radius: 0.03, height: -0.4, speed: 1.3, phase: 0, size: 0.05 })
+
+  // --- Horned skull: four glow eyes, jaw, fangs, swept crest horns. --------
+  addPart(Vector3.create(0, 0.6, 0.55), Vector3.create(0.3, 0.26, 0.34), BIO_CARAPACE, { sphere: true })
+  addPart(Vector3.create(0, 0.48, 0.66), Vector3.create(0.2, 0.1, 0.24), BIO_FLESH, { sphere: true, ...flesh })
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.09, 0.66, 0.68), Vector3.create(0.06, 0.06, 0.04), glow, { sphere: true, emissive: glow, emissiveIntensity: 3.4 })
+    addPart(Vector3.create(side * 0.16, 0.62, 0.62), Vector3.create(0.035, 0.035, 0.03), glow, { sphere: true, emissive: glow, emissiveIntensity: 3 })
+    addPart(Vector3.create(side * 0.05, 0.42, 0.72), Vector3.create(0.035, 0.12, 0.035), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(165, 0, side * 6) })
+    addPart(Vector3.create(side * 0.11, 0.44, 0.68), Vector3.create(0.03, 0.09, 0.03), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(165, 0, side * 10) })
+    // Crest horns sweeping back over the shoulders.
+    addPart(Vector3.create(side * 0.12, 0.76, 0.42), Vector3.create(0.05, 0.3, 0.05), BIO_BONE, {
+      cone: true,
+      rotation: Quaternion.fromEulerDegrees(-125, 0, side * 14)
+    })
+  }
+
+  // --- Beating wings: pivot per side driven by the flap FX mode. -----------
+  for (const side of [-1, 1]) {
+    const pivot = engine.addEntity()
+    Transform.create(pivot, { parent: rig.bodyRoot, position: Vector3.create(side * 0.14, 0.68, 0.05) })
+    rig.parts.push(pivot)
+    // Inner and outer membrane panels.
+    addChildPart(rig, pivot, Vector3.create(side * 0.42, 0.05, -0.04), Vector3.create(0.8, 0.035, 0.62), BIO_FLESH, {
+      ...flesh,
+      emissive: Color4.create(0.4, 0.1, 0.1, 1),
+      emissiveIntensity: 0.5,
+      rotation: Quaternion.fromEulerDegrees(0, side * -10, 0)
+    })
+    addChildPart(rig, pivot, Vector3.create(side * 0.95, 0.1, -0.16), Vector3.create(0.6, 0.03, 0.46), BIO_FLESH, {
+      ...flesh,
+      emissive: Color4.create(0.45, 0.12, 0.1, 1),
+      emissiveIntensity: 0.6,
+      rotation: Quaternion.fromEulerDegrees(0, side * -24, side * 4)
+    })
+    // Bone wing fingers raking through the membrane.
+    addChildPart(rig, pivot, Vector3.create(side * 0.52, 0.08, 0.2), Vector3.create(0.045, 0.04, 0.6), BIO_BONE, {
+      metallic: 0.1,
+      roughness: 0.6,
+      rotation: Quaternion.fromEulerDegrees(0, side * -12, 0)
+    })
+    addChildPart(rig, pivot, Vector3.create(side * 0.62, 0.08, -0.05), Vector3.create(0.045, 0.04, 0.55), BIO_BONE, {
+      metallic: 0.1,
+      roughness: 0.6,
+      rotation: Quaternion.fromEulerDegrees(0, side * -22, 0)
+    })
+    addChildPart(rig, pivot, Vector3.create(side * 0.66, 0.08, -0.28), Vector3.create(0.04, 0.035, 0.45), BIO_BONE, {
+      metallic: 0.1,
+      roughness: 0.6,
+      rotation: Quaternion.fromEulerDegrees(0, side * -34, 0)
+    })
+    // Wing claw at the joint.
+    addChildPart(rig, pivot, Vector3.create(side * 0.5, 0.12, 0.34), Vector3.create(0.04, 0.14, 0.04), BIO_BONE, {
+      cone: true,
+      rotation: Quaternion.fromEulerDegrees(30, 0, side * -20)
+    })
+    rig.fx.push({ entity: pivot, mode: 'flap', anchor: Vector3.Zero(), radius: side * -24, height: side * 10, speed: 7.5, phase: 0, size: 0 })
+  }
+
+  // --- Barbed tail: three tapering segments, stinger, venom tip. -----------
+  addPart(Vector3.create(0, 0.44, -0.56), Vector3.create(0.16, 0.13, 0.32), BIO_CARAPACE, { sphere: true })
+  addPart(Vector3.create(0, 0.42, -0.82), Vector3.create(0.11, 0.1, 0.28), BIO_CARAPACE, { sphere: true })
+  addPart(Vector3.create(0, 0.42, -1.04), Vector3.create(0.08, 0.07, 0.22), BIO_FLESH, { sphere: true, ...flesh })
+  addPart(Vector3.create(0, 0.46, -1.2), Vector3.create(0.055, 0.24, 0.055), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(115, 0, 0) })
+  addPart(Vector3.create(0, 0.5, -1.3), Vector3.create(0.045, 0.045, 0.045), ACID, { sphere: true, emissive: ACID, emissiveIntensity: 3 })
+  // Tail barbs.
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.08, 0.5, -0.7), Vector3.create(0.035, 0.12, 0.035), BIO_BONE, {
+      cone: true,
+      rotation: Quaternion.fromEulerDegrees(-30, 0, side * 40)
+    })
+  }
+
+  // --- Dangling talons, front and rear pairs. ------------------------------
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.11, 0.28, 0.24), Vector3.create(0.05, 0.18, 0.05), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(170, 0, side * 8) })
+    addPart(Vector3.create(side * 0.09, 0.28, -0.1), Vector3.create(0.04, 0.15, 0.04), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(172, 0, side * 12) })
+  }
+
+  // Spore motes buzzing around the body.
+  for (let i = 0; i < 3; i++) {
+    const spore = addPart(Vector3.create(0, 0.55, 0), Vector3.create(0.04, 0.04, 0.04), ACID, { sphere: true, emissive: ACID, emissiveIntensity: 3 })
+    rig.fx.push({ entity: spore, mode: 'orbit', anchor: Vector3.create(0, 0.55, 0), radius: 0.6, height: 0.14, speed: 2.4, phase: (i / 3) * Math.PI * 2, size: 0.04 })
+  }
 
   rig.spinAxis = 'z'
   rig.profiles = {
-    idle: { amplitude: 0.14, speed: 3, tilt: 0, spin: 30, lunge: 0 },
-    walk: { amplitude: 0.12, speed: 6, tilt: 12, spin: 60, lunge: 0 },
-    talk: { amplitude: 0.1, speed: 6, tilt: 5, spin: 40, lunge: 0 },
-    attack: { amplitude: 0.08, speed: 14, tilt: 14, spin: 90, lunge: 0.12 },
-    impact: { amplitude: 0.16, speed: 18, tilt: -10, spin: 30, lunge: 0 }
+    idle: { amplitude: 0.14, speed: 3, tilt: 0, spin: 0, lunge: 0 },
+    walk: { amplitude: 0.12, speed: 6, tilt: 12, spin: 0, lunge: 0 },
+    talk: { amplitude: 0.1, speed: 6, tilt: 5, spin: 0, lunge: 0 },
+    attack: { amplitude: 0.08, speed: 14, tilt: 14, spin: 0, lunge: 0.12 },
+    impact: { amplitude: 0.16, speed: 18, tilt: -10, spin: 0, lunge: 0 }
   }
 }
 
@@ -1756,6 +1931,12 @@ function animateFx(fx: UnitFx, time: number): void {
       fx.anchor.y + Math.sin(t * 2.3) * fx.height,
       fx.anchor.z + Math.sin(t) * fx.radius
     )
+    return
+  }
+
+  if (fx.mode === 'flap') {
+    // Wing beat: eased sine roll around the pivot's Z, mirrored by sign.
+    transform.rotation = Quaternion.fromEulerDegrees(0, 0, fx.height + Math.sin(t) * fx.radius)
     return
   }
 
