@@ -1053,8 +1053,9 @@ function getBuildingDescription(kind: BuildableKind): string {
 }
 
 // ---------------------------------------------------------------------------
-// Control groups: numbered slots sitting on top of the minimap. Click to
-// recall the saved units, press SET to store the current selection.
+// Control groups: numbered slots sitting on top of the minimap. Click (or
+// press keys 1-4) to recall the saved units or building, press SET to store
+// the current selection.
 // ---------------------------------------------------------------------------
 
 function controlGroupsBar() {

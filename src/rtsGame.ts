@@ -145,7 +145,6 @@ let currentBuildingPreviewCanPlace = false
 let currentBuildingPreviewRotationY = 0
 let placementConfirmCooldown = 0
 let secondaryCancelWasPressed = false
-let actionCancelWasPressed = false
 const templeRallyPoints = new Map<string, Vector3>()
 const barracksRallyPoints = new Map<string, Vector3>()
 let rallyPlacementKind: 'temple' | 'barracks' | 'none' = 'none'
@@ -627,42 +626,56 @@ export function getSelectedStance(): SoldierStance | undefined {
 }
 
 // ---------------------------------------------------------------------------
-// Control groups: save the current selection to a numbered slot, recall later.
+// Control groups: save the current selection (units or a building) to a
+// numbered slot, recall later. Keyboard 1-4 recalls the matching group.
 // ---------------------------------------------------------------------------
 
-export const CONTROL_GROUP_SLOTS = [1, 2, 3, 4, 5]
+export const CONTROL_GROUP_SLOTS = [1, 2, 3, 4]
 const controlGroups = new Map<number, string[]>()
 
 export function assignControlGroup(slot: number): void {
   if (!isMatchActive()) return
 
   const units: (Worker | Soldier)[] = [...getSelectedSoldiers(), ...getSelectedWorkers()].filter((unit) => unit.alive && getTeam(unit) === 'player')
-  if (units.length === 0) {
-    setStatus('Select units first, then press SET on a group slot.')
+
+  // A selected building (your barracks, temple...) can be hotkeyed too.
+  const selected = getSelected()
+  const building = selected?.alive && isBuildableKind(selected.kind as Building['kind']) && getTeam(selected) === 'player' ? (selected as Building) : undefined
+
+  const ids = [...units.map((unit) => unit.id), ...(building ? [building.id] : [])]
+  if (ids.length === 0) {
+    setStatus('Select units or a building first, then press SET on a group slot.')
     return
   }
 
-  controlGroups.set(slot, units.map((unit) => unit.id))
-  setStatus(`Group ${slot} saved: ${units.length} unit${units.length === 1 ? '' : 's'}.`)
+  controlGroups.set(slot, ids)
+  setStatus(building && units.length === 0 ? `Group ${slot} saved: ${building.name}.` : `Group ${slot} saved: ${ids.length} unit${ids.length === 1 ? '' : 's'}.`)
 }
 
 export function recallControlGroup(slot: number): void {
   if (!isMatchActive()) return
 
   const units = getControlGroupUnits(slot)
-  if (units.length === 0) {
-    setStatus(`Group ${slot} is empty. Select units and press SET to fill it.`)
+  if (units.length > 0) {
+    // Fighting selections should command soldiers, so put them first when mixed.
+    units.sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'soldier' ? -1 : 1))
+    setUnitSelection(units)
+    setStatus(`Group ${slot}: ${units.length} unit${units.length === 1 ? '' : 's'} selected.`)
     return
   }
 
-  // Fighting selections should command soldiers, so put them first when mixed.
-  units.sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'soldier' ? -1 : 1))
-  setUnitSelection(units)
-  setStatus(`Group ${slot}: ${units.length} unit${units.length === 1 ? '' : 's'} selected.`)
+  // Building-only group: jump straight to the structure (SC-style hotkeyed barracks).
+  const building = getControlGroupBuildings(slot)[0]
+  if (building) {
+    selectObject(building)
+    return
+  }
+
+  setStatus(`Group ${slot} is empty. Select units or a building and press SET to fill it.`)
 }
 
 export function getControlGroupCount(slot: number): number {
-  return getControlGroupUnits(slot).length
+  return getControlGroupUnits(slot).length + getControlGroupBuildings(slot).length
 }
 
 function getControlGroupUnits(slot: number): (Worker | Soldier)[] {
@@ -675,6 +688,29 @@ function getControlGroupUnits(slot: number): (Worker | Soldier)[] {
     if (unit) units.push(unit)
   }
   return units
+}
+
+function getControlGroupBuildings(slot: number): Building[] {
+  const ids = controlGroups.get(slot)
+  if (!ids) return []
+  return buildings.filter((building) => building.alive && ids.includes(building.id))
+}
+
+/** Keyboard 1-4 (actions 3-6) recall groups 1-4, StarCraft style. */
+const CONTROL_GROUP_HOTKEYS: [InputAction, number][] = [
+  [InputAction.IA_ACTION_3, 1],
+  [InputAction.IA_ACTION_4, 2],
+  [InputAction.IA_ACTION_5, 3],
+  [InputAction.IA_ACTION_6, 4]
+]
+
+function updateControlGroupHotkeys(): void {
+  if (!isMatchActive()) return
+  for (const [action, slot] of CONTROL_GROUP_HOTKEYS) {
+    if (inputSystem.isTriggered(action, PointerEventType.PET_DOWN)) {
+      recallControlGroup(slot)
+    }
+  }
 }
 
 export function startWorkerBuildingPlacement(kind: BuildableKind): void {
@@ -2503,6 +2539,7 @@ function rtsTickSystem(dt: number): void {
   updatePatrolInput(dt)
   updateRepairOrderInput(dt)
   updateCancelInput()
+  updateControlGroupHotkeys()
   if (orderClickConsumedUntilRelease && !inputSystem.isPressed(InputAction.IA_POINTER)) {
     orderClickConsumedUntilRelease = false
   }
@@ -2655,19 +2692,15 @@ function updatePlacementConfirmInput(dt: number): void {
   confirmBuildingPlacement()
 }
 
+// Cancel lives on F only: the number keys 1-4 belong to control groups.
 function updateCancelInput(): void {
   const secondaryIsPressed = inputSystem.isPressed(InputAction.IA_SECONDARY)
-  const actionIsPressed = inputSystem.isPressed(InputAction.IA_ACTION_3)
   const secondaryWasTriggered =
     inputSystem.isTriggered(InputAction.IA_SECONDARY, PointerEventType.PET_DOWN) ||
     (secondaryIsPressed && !secondaryCancelWasPressed)
-  const actionWasTriggered =
-    inputSystem.isTriggered(InputAction.IA_ACTION_3, PointerEventType.PET_DOWN) ||
-    (actionIsPressed && !actionCancelWasPressed)
 
   secondaryCancelWasPressed = secondaryIsPressed
-  actionCancelWasPressed = actionIsPressed
-  if (!secondaryWasTriggered && !actionWasTriggered) return
+  if (!secondaryWasTriggered) return
 
   if (placementState.state === 'placing') {
     cancelBuildingPlacement()
