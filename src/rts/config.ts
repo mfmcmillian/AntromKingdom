@@ -329,6 +329,19 @@ export const BUILDING_DEFINITIONS: Record<BuildableKind, BuildingDefinition> = {
     completeStatus: 'Upgrade structure complete. Research weapon and speed upgrades.',
     requires: 'barracks'
   },
+  airForge: {
+    kind: 'airForge',
+    name: 'Skyharbor',
+    cost: { minerals: 150, gas: 100 },
+    hp: 220,
+    buildTime: 8,
+    supplyAdds: 0,
+    placementY: 0,
+    scale: Vector3.create(5, 5.5, 5),
+    color: Color4.create(0.45, 0.75, 1, 1),
+    completeStatus: 'Flight structure complete. Research Flight Weapons and Flight Propulsion.',
+    requires: 'techLab'
+  },
   fireplace: {
     kind: 'fireplace',
     name: 'Fireplace',

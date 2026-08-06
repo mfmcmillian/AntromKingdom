@@ -19,6 +19,7 @@ export const BUILDING_MODEL_HEIGHTS: Record<BuildableKind, number> = {
   barracks: 7,
   techLab: 8,
   forge: 6,
+  airForge: 7,
   fireplace: 3,
   turret: 5
 }
@@ -473,6 +474,38 @@ function buildHumanBuilding(kind: BuildableKind, addPart: PartAdder): void {
     return
   }
 
+  if (kind === 'airForge') {
+    // Skyharbor: flight-control tower beside a raised landing pad with hazard
+    // trim, a spinning radar, pulsing landing lights and a drone on approach.
+    addPart(Vector3.create(0, 0.25, 0), Vector3.create(5, 0.5, 5), HUMAN_DARK)
+    // Control tower with a glass band and radar mast.
+    addPart(Vector3.create(-1.5, 1.9, -1.2), Vector3.create(1.7, 3, 1.7), HUMAN_HULL, steel)
+    strip(Vector3.create(-1.5, 2.9, -0.32), Vector3.create(1.5, 0.4, 0.1), 1.8)
+    addPart(Vector3.create(-1.5, 3.6, -1.2), Vector3.create(2, 0.3, 2), HUMAN_DARK)
+    addPart(Vector3.create(-1.5, 4.4, -1.2), Vector3.create(0.14, 1.4, 0.14), HUMAN_STEEL, steel)
+    addPart(Vector3.create(-1.5, 5.1, -1.2), Vector3.create(1.5, 0.12, 0.3), HUMAN_STEEL, { ...steel, motion: { mode: 'spin', speed: 110 } })
+    blinker(Vector3.create(-1.5, 5.35, -1.2), 0.26, WARN_RED)
+    // Landing pad on four pylons, hazard-striped rim, glowing pad ring.
+    for (const [px, pz] of [[0.4, 0.2], [2.4, 0.2], [0.4, 2.2], [2.4, 2.2]]) {
+      addPart(Vector3.create(px, 1, pz), Vector3.create(0.4, 2, 0.4), HUMAN_DARK)
+    }
+    addPart(Vector3.create(1.4, 2.1, 1.2), Vector3.create(3, 0.25, 3), HUMAN_STEEL, steel)
+    addPart(Vector3.create(1.4, 2.26, 1.2), Vector3.create(3.1, 0.08, 3.1), HAZARD_YELLOW)
+    addPart(Vector3.create(1.4, 2.34, 1.2), Vector3.create(1.9, 0.06, 1.9), HUMAN_GLOW, {
+      cylinder: true,
+      emissive: HUMAN_GLOW,
+      emissiveIntensity: 2,
+      motion: { mode: 'pulse', speed: 2.6, amplitude: 0.1 }
+    })
+    // A maintenance drone hovering over the pad.
+    addPart(Vector3.create(1.4, 3.6, 1.2), Vector3.create(0.8, 0.3, 0.6), HUMAN_HULL, {
+      ...steel,
+      motion: { mode: 'bob', speed: 1.8, amplitude: 0.45 }
+    })
+    blinker(Vector3.create(1.4, 3.95, 1.2), 0.18, HUMAN_GLOW, 0.9)
+    return
+  }
+
   if (kind === 'turret') {
     // Sentry Cannon: armored pedestal, skirt plates, sweeping twin-barrel
     // head with muzzle glows and a blinking target designator.
@@ -676,6 +709,33 @@ function buildAlienBuilding(kind: BuildableKind, addPart: PartAdder): void {
         motion: { mode: 'ember', speed: 0.4, radius: 0.5, height: 3.4, phase: i / 3 }
       })
     }
+    return
+  }
+
+  if (kind === 'airForge') {
+    // Zenith Spire: a wind-carved needle crowned with tilted flight halos,
+    // a soaring diamond and a wide belt of gliding shards.
+    addPart(Vector3.create(0, 0.3, 0), Vector3.create(4.4, 0.6, 4.4), ALIEN_DARK, { cylinder: true })
+    addPart(Vector3.create(0, 0.75, 0), Vector3.create(3.2, 0.3, 3.2), ALIEN_GOLD, { cylinder: true, ...gild })
+    addPart(Vector3.create(0, 1.5, 0), Vector3.create(2, 1.6, 2), ALIEN_GOLD, gild)
+    runeBand(1.9, 2.3)
+    addPart(Vector3.create(0, 3.6, 0), Vector3.create(0.85, 3.6, 0.85), ALIEN_GOLD, { cone: true, ...gild })
+    // Tilted flight halos, like banked contrails around the needle.
+    addPart(Vector3.create(0, 4.2, 0), Vector3.create(3, 0.12, 0.4), ALIEN_CRYSTAL, {
+      emissive: ALIEN_CRYSTAL,
+      emissiveIntensity: 1.7,
+      rotation: Quaternion.fromEulerDegrees(0, 0, 14),
+      motion: { mode: 'spin', speed: 75 }
+    })
+    addPart(Vector3.create(0, 5, 0), Vector3.create(2.2, 0.12, 0.32), ALIEN_CRYSTAL, {
+      emissive: ALIEN_CRYSTAL,
+      emissiveIntensity: 1.9,
+      rotation: Quaternion.fromEulerDegrees(12, 0, 0),
+      motion: { mode: 'spin', speed: -95 }
+    })
+    // The soaring diamond and a wide glide belt.
+    crystalDiamond(0, 6.2, 0, 0.8)
+    shardBelt(5.6, 1.9, 4, 2.2, 0.12)
     return
   }
 
@@ -948,6 +1008,45 @@ function buildBioBuilding(kind: BuildableKind, addPart: PartAdder): void {
     spores(0, 4.2, 0, 3, 1.8)
     tendril(-1.9, 1.6, -1.1, 2.1, -12, 26, 1.1)
     sac(1.9, 1.2, 1.4, 0.9, 0.7)
+    return
+  }
+
+  if (kind === 'airForge') {
+    // Wind Roost: a tall perch stalk with membrane wings that flex in the
+    // wind, hatching sacs, and spores streaming off the crown.
+    creepSkirt(2.6, 4)
+    addPart(Vector3.create(0, 0.8, 0), Vector3.create(3.6, 1.9, 3.6), BIO_FLESH, {
+      sphere: true,
+      roughness: 0.85,
+      motion: { mode: 'pulse', speed: 1.6, amplitude: 0.03 }
+    })
+    // The perch stalk, leaning slightly into the wind.
+    addPart(Vector3.create(0, 2.9, 0), Vector3.create(1.1, 3.4, 1.1), BIO_FLESH, {
+      cone: true,
+      roughness: 0.85,
+      rotation: Quaternion.fromEulerDegrees(0, 0, 6)
+    })
+    teethRing(1.7, 1.5, 6, 0.7)
+    // Membrane wings: thin carapace vanes that sway like sails.
+    for (const side of [-1, 1]) {
+      addPart(Vector3.create(side * 1.15, 3.9, 0), Vector3.create(1.9, 1.5, 0.08), BIO_CARAPACE, {
+        roughness: 0.55,
+        rotation: Quaternion.fromEulerDegrees(0, side * 18, side * 26),
+        motion: { mode: 'pulse', speed: 1.4, amplitude: 0.08, phase: side > 0 ? 0 : 1.5 }
+      })
+    }
+    // Hatching sacs clinging to the stalk and the glowing crown.
+    sac(0.85, 2.4, 0.6, 0.8, 0.4)
+    sac(-0.8, 1.9, -0.7, 0.7, 1.2)
+    addPart(Vector3.create(0, 4.9, 0), Vector3.create(1, 1, 1), BIO_ACID, {
+      sphere: true,
+      emissive: BIO_ACID,
+      emissiveIntensity: 2,
+      roughness: 0.6,
+      motion: { mode: 'pulse', speed: 2.6, amplitude: 0.12 }
+    })
+    spores(0, 5.3, 0, 3, 1.9)
+    tendril(1.6, 1.4, -1.2, 1.9, -14, -22, 0.6)
     return
   }
 

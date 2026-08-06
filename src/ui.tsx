@@ -97,6 +97,7 @@ const BUILDING_ICON_FILES: Record<BuildableKind, string> = {
   barracks: 'icon-building-barracks',
   techLab: 'icon-building-techlab',
   forge: 'icon-building-forge',
+  airForge: 'icon-building-airforge',
   fireplace: 'icon-building-fireplace',
   turret: 'icon-building-turret'
 }
@@ -129,7 +130,9 @@ function unitIcon(unit: SoldierVariant | 'worker', team?: Team): string {
 const ICON = {
   upgrade: {
     damage: 'images/icons/icon-upgrade-damage.jpg',
-    speed: 'images/icons/icon-upgrade-speed.jpg'
+    speed: 'images/icons/icon-upgrade-speed.jpg',
+    airDamage: 'images/icons/icon-upgrade-airdamage.jpg',
+    airSpeed: 'images/icons/icon-upgrade-airspeed.jpg'
   } as Record<UpgradeKind, string>,
   resource: {
     minerals: 'images/icons/icon-res-minerals.jpg',
@@ -510,10 +513,14 @@ function infoPanel(selected: SelectedSummary) {
         ) : null}
 
         <Label value={selected.detail} fontSize={14} color={UI.dim} textAlign="middle-left" uiTransform={{ margin: { top: 8 } }} />
-        {selected.kind === 'soldier' ? upgradeBadgesRow(selected.team ?? 'player') : null}
-        {selected.kind === 'forge' && !isEnemy ? (
+        {selected.kind === 'soldier' ? upgradeBadgesRow(selected.team ?? 'player', selected.variant) : null}
+        {(selected.kind === 'forge' || selected.kind === 'airForge') && !isEnemy ? (
           <Label
-            value={`${UPGRADE_INFO.damage.name} Lv${getUpgradeLevel('player', 'damage')}  |  ${UPGRADE_INFO.speed.name} Lv${getUpgradeLevel('player', 'speed')}`}
+            value={
+              selected.kind === 'forge'
+                ? `${UPGRADE_INFO.damage.name} Lv${getUpgradeLevel('player', 'damage')}  |  ${UPGRADE_INFO.speed.name} Lv${getUpgradeLevel('player', 'speed')}`
+                : `${UPGRADE_INFO.airDamage.name} Lv${getUpgradeLevel('player', 'airDamage')}  |  ${UPGRADE_INFO.airSpeed.name} Lv${getUpgradeLevel('player', 'airSpeed')}`
+            }
             fontSize={14}
             color={race.accent}
             textAlign="middle-left"
@@ -522,17 +529,18 @@ function infoPanel(selected: SelectedSummary) {
         ) : null}
       </UiEntity>
 
-      {multi ? wireframeGrid(units) : selected.kind === 'forge' ? researchQueuePanel(selected) : productionQueuePanel(selected)}
+      {multi ? wireframeGrid(units) : selected.kind === 'forge' || selected.kind === 'airForge' ? researchQueuePanel(selected) : productionQueuePanel(selected)}
     </UiEntity>
   )
 }
 
-/** Research readout for the forge, mirroring the unit production panel:
+/** Research readout for the forge / air forge, mirroring the unit production panel:
  * upgrade icon, progress bar, and the level being researched. */
 function researchQueuePanel(selected: SelectedSummary) {
   if (selected.team !== undefined && selected.team !== 'player') return null
 
-  const active = (['damage', 'speed'] as UpgradeKind[])
+  const kinds: UpgradeKind[] = selected.kind === 'airForge' ? ['airDamage', 'airSpeed'] : ['damage', 'speed']
+  const active = kinds
     .map((kind) => ({ kind, progress: getUpgradeProgress('player', kind) }))
     .filter((entry) => entry.progress !== undefined)
   if (active.length === 0) return null
@@ -563,10 +571,11 @@ function researchQueuePanel(selected: SelectedSummary) {
   )
 }
 
-/** SC-style upgrade icons under the unit details: the team's researched
- * Weapons / Propulsion levels as icon badges with a level number. */
-function upgradeBadgesRow(team: Team) {
-  const upgrades = (['damage', 'speed'] as UpgradeKind[])
+/** SC-style upgrade icons under the unit details: the researched weapon /
+ * propulsion levels that apply to this unit (air tracks for flyers). */
+function upgradeBadgesRow(team: Team, variant?: SoldierVariant) {
+  const kinds: UpgradeKind[] = variant === 'flyer' ? ['airDamage', 'airSpeed'] : ['damage', 'speed']
+  const upgrades = kinds
     .map((kind) => ({ kind, level: getUpgradeLevel(team, kind) }))
     .filter((upgrade) => upgrade.level > 0)
   if (upgrades.length === 0) return null
@@ -790,7 +799,7 @@ function getCommandSlots(selected: SelectedSummary): CommandSlot[] {
   if (!isPlayerSelection) return slots
 
   if (selected.kind === 'worker') {
-    const buildOrder: BuildableKind[] = ['temple', 'supplyHouse', 'barracks', 'techLab', 'forge', 'turret', 'fireplace']
+    const buildOrder: BuildableKind[] = ['temple', 'supplyHouse', 'barracks', 'techLab', 'forge', 'airForge', 'turret', 'fireplace']
     for (const kind of buildOrder) {
       const definition = BUILDING_DEFINITIONS[kind]
       const displayName = getBuildingDisplayName(kind, 'player')
@@ -852,6 +861,11 @@ function getCommandSlots(selected: SelectedSummary): CommandSlot[] {
   if (selected.kind === 'forge') {
     slots.push(upgradeSlot('damage'))
     slots.push(upgradeSlot('speed'))
+  }
+
+  if (selected.kind === 'airForge') {
+    slots.push(upgradeSlot('airDamage'))
+    slots.push(upgradeSlot('airSpeed'))
   }
 
   if (selected.kind === 'soldier') {
@@ -964,7 +978,7 @@ function upgradeSlot(kind: UpgradeKind): CommandSlot {
     icon: ICON.upgrade[kind],
     name: `Research ${info.name} Lv${level + 1}`,
     cost,
-    description: `${info.effect}. Applies to every fighter instantly.`,
+    description: `${info.effect}. Applies instantly to every matching fighter.`,
     badge: level > 0 ? `Lv${level}` : undefined,
     onClick: () => startUpgradeResearch(kind)
   }
@@ -984,7 +998,8 @@ function getBuildingDescription(kind: BuildableKind): string {
   if (kind === 'supplyHouse') return 'Raises your supply cap so you can field more units.'
   if (kind === 'barracks') return `Tier 1 production: ${race.melee.name}s and ${race.ranged.name}s.`
   if (kind === 'techLab') return `Tier 2 production: ${race.caster.name}s, ${race.flyer.name}s and ${race.titan.name}s.`
-  if (kind === 'forge') return 'Researches Weapons and Propulsion upgrades. Unlocks the titan.'
+  if (kind === 'forge') return 'Researches ground Weapons and Propulsion upgrades. Unlocks the titan.'
+  if (kind === 'airForge') return `Researches Flight Weapons and Flight Propulsion for your ${race.flyer.name}s.`
   if (kind === 'turret') return 'Automated defense tower. Fires on hostile units in range.'
   return 'A camp utility building.'
 }
@@ -2191,6 +2206,7 @@ function getCommandTitle(kind: string): string {
   if (kind === 'barracks') return 'TIER 1 PRODUCTION'
   if (kind === 'techLab') return 'TIER 2 PRODUCTION'
   if (kind === 'forge') return 'RESEARCH'
+  if (kind === 'airForge') return 'AIR RESEARCH'
   if (kind === 'turret') return 'DEFENSE'
   if (kind === 'fireplace') return 'UTILITY'
   if (kind === 'soldier') return 'FIGHTER'

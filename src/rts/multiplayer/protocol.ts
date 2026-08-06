@@ -97,7 +97,8 @@ export type RepairCommand = {
 export type ResearchCommand = {
   type: 'research'
   buildingId: string
-  upgrade: 'damage' | 'speed'
+  /** Ground tracks (forge) or air tracks (air forge). */
+  upgrade: 'damage' | 'speed' | 'airDamage' | 'airSpeed'
 }
 
 export type StanceCommand = {

@@ -56,6 +56,7 @@ export const RACES: Record<RaceId, RaceDefinition> = {
       barracks: 'Armory',
       techLab: 'Starforge',
       forge: 'Foundry',
+      airForge: 'Skyharbor',
       fireplace: 'Beacon',
       turret: 'Sentry Cannon'
     }
@@ -80,6 +81,7 @@ export const RACES: Record<RaceId, RaceDefinition> = {
       barracks: 'Rift Gate',
       techLab: 'Sanctum',
       forge: 'Ascension Spire',
+      airForge: 'Zenith Spire',
       fireplace: 'Obelisk',
       turret: 'Arc Spire'
     }
@@ -104,6 +106,7 @@ export const RACES: Record<RaceId, RaceDefinition> = {
       barracks: 'Spawning Pit',
       techLab: 'Grand Nest',
       forge: 'Mutation Den',
+      airForge: 'Wind Roost',
       fireplace: 'Spore Mound',
       turret: 'Thorn Mound'
     }

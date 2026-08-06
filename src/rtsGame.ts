@@ -83,6 +83,7 @@ import { playAcknowledge, playExplosion, playLaser, playUnderAttackAlert, startA
 import {
   getDamageMultiplier,
   getNextUpgradeCost,
+  getUpgradeKindsFor,
   getUpgradeLevel,
   isUpgradeInProgress,
   resetUpgrades,
@@ -128,6 +129,7 @@ import type {
   SoldierStance,
   SoldierVariant,
   Team,
+  UpgradeKind,
   Worker
 } from './rts/types'
 export type { SelectedSummary } from './rts/types'
@@ -761,13 +763,15 @@ export function queueSoldier(variant: SoldierVariant = 'melee'): void {
   setStatus(`${soldierDef.name} queued at the ${trainerName}.`)
 }
 
-/** Starts researching the next level of a team-wide upgrade at the selected forge. */
-export function startUpgradeResearch(kind: 'damage' | 'speed'): void {
+/** Starts researching the next level of a team-wide upgrade at the selected forge / air forge. */
+export function startUpgradeResearch(kind: UpgradeKind): void {
   if (!isMatchActive()) return
 
+  // Ground tracks research at the forge, air tracks at the air forge.
+  const labKind: BuildableKind = kind === 'airDamage' || kind === 'airSpeed' ? 'airForge' : 'forge'
   const selected = getSelected()
-  const forge = selected?.kind === 'forge' ? (selected as Building) : undefined
-  const forgeName = getBuildingDisplayName('forge', 'player')
+  const forge = selected?.kind === labKind ? (selected as Building) : undefined
+  const forgeName = getBuildingDisplayName(labKind, 'player')
   const info = UPGRADE_INFO[kind]
 
   if (!forge?.alive || !forge.isComplete || getTeam(forge) !== 'player') {
@@ -1434,8 +1438,10 @@ function createSoldier(position: Vector3, team: Team = 'player', variant: Soldie
   soldier.stance = 'defensive'
   soldier.attackTimer = 0
   soldier.activeAnimation = 'idle'
-  // Fresh recruits wear whatever rank their team has already researched.
-  setUnitUpgradeInsignia(soldier.entity, getUpgradeLevel(team, 'damage'), getUpgradeLevel(team, 'speed'))
+  // Fresh recruits wear whatever rank their team has already researched
+  // (flyers wear the air tracks, everyone else the ground tracks).
+  const tracks = getUpgradeKindsFor(variant)
+  setUnitUpgradeInsignia(soldier.entity, getUpgradeLevel(team, tracks.damage), getUpgradeLevel(team, tracks.speed))
   return soldier
 }
 
@@ -1562,6 +1568,7 @@ const BEACON_HEIGHTS: Record<BuildableKind, number> = {
   barracks: 7.5,
   techLab: 8.5,
   forge: 6.5,
+  airForge: 7.5,
   fireplace: 3.5,
   turret: 5.5
 }
@@ -2122,16 +2129,16 @@ const upgradeSystemDeps = {
     const forge = getBuildingById(forgeId)
     return !!forge?.alive && forge.isComplete
   },
-  onUpgradeComplete: (team: Team, kind: 'damage' | 'speed', newLevel: number) => {
+  onUpgradeComplete: (team: Team, kind: UpgradeKind, newLevel: number) => {
     if (team === 'player') {
       setStatus(`${UPGRADE_INFO[kind].name} level ${newLevel} research complete (${UPGRADE_INFO[kind].effect}).`)
     }
-    // Pin the new rank on every fighter already in the field.
-    const damageLevel = getUpgradeLevel(team, 'damage')
-    const speedLevel = getUpgradeLevel(team, 'speed')
+    // Pin the new rank on every fighter already in the field, each wearing
+    // the tracks that apply to it (air vs ground).
     for (const soldier of soldiers) {
       if (soldier.alive && getTeam(soldier) === team) {
-        setUnitUpgradeInsignia(soldier.entity, damageLevel, speedLevel)
+        const tracks = getUpgradeKindsFor(soldier.variant)
+        setUnitUpgradeInsignia(soldier.entity, getUpgradeLevel(team, tracks.damage), getUpgradeLevel(team, tracks.speed))
       }
     }
   }
@@ -2999,7 +3006,7 @@ function damageCombatTarget(target: Building | Soldier | Worker, amount: number,
   const targetPosition = cloneVector(Transform.get(target.entity).position)
   // Weapon upgrades scale every fighter's damage team-wide the moment research lands,
   // and the VANGUARD hero's banner boosts anyone fighting beside him.
-  const damage = attacker.kind === 'soldier' ? Math.round(amount * getDamageMultiplier(attackerTeam) * getHeroAuraMultiplier(attacker)) : amount
+  const damage = attacker.kind === 'soldier' ? Math.round(amount * getDamageMultiplier(attackerTeam, attacker.variant) * getHeroAuraMultiplier(attacker)) : amount
 
   if (attacker.kind === 'soldier' && attacker.alive && target.alive) {
     const accent = getRace(attackerTeam).accent
@@ -3208,7 +3215,7 @@ function castCasterAbility(caster: Soldier, target: Building | Soldier | Worker,
   if (race === 'human') {
     // Chain Lightning: arc from the impact point to the nearest extra enemies.
     const arcs = getHostileUnitsNear(targetPosition, CHAIN_LIGHTNING_ARC_RANGE, team, target.id).slice(0, CHAIN_LIGHTNING_MAX_ARCS)
-    const arcDamage = Math.max(1, Math.round(caster.damage * getDamageMultiplier(team) * 0.7))
+    const arcDamage = Math.max(1, Math.round(caster.damage * getDamageMultiplier(team, caster.variant) * 0.7))
     for (const unit of arcs) {
       const unitPosition = cloneVector(Transform.get(unit.entity).position)
       fireProjectile(targetPosition, unitPosition, team)
@@ -3344,7 +3351,7 @@ function updateConstructionVisual(site: Building): void {
 }
 
 function isBuildableKind(kind: Building['kind']): kind is BuildableKind {
-  return kind === 'temple' || kind === 'supplyHouse' || kind === 'barracks' || kind === 'techLab' || kind === 'forge' || kind === 'fireplace' || kind === 'turret'
+  return kind === 'temple' || kind === 'supplyHouse' || kind === 'barracks' || kind === 'techLab' || kind === 'forge' || kind === 'airForge' || kind === 'fireplace' || kind === 'turret'
 }
 
 function isCancellableConstruction(selectable: Selectable | undefined): selectable is Building & { kind: BuildableKind } {
@@ -3479,7 +3486,12 @@ function getBuildingDetail(building: Building): string {
   if (building.kind === 'forge') {
     const damageLevel = getUpgradeLevel(getTeam(building), 'damage')
     const speedLevel = getUpgradeLevel(getTeam(building), 'speed')
-    return `Complete: researches upgrades. Weapons Lv${damageLevel}, Propulsion Lv${speedLevel}.`
+    return `Complete: researches ground upgrades. Weapons Lv${damageLevel}, Propulsion Lv${speedLevel}.`
+  }
+  if (building.kind === 'airForge') {
+    const damageLevel = getUpgradeLevel(getTeam(building), 'airDamage')
+    const speedLevel = getUpgradeLevel(getTeam(building), 'airSpeed')
+    return `Complete: researches flyer upgrades. Flight Weapons Lv${damageLevel}, Flight Propulsion Lv${speedLevel}.`
   }
   if (building.kind === 'turret') return `Automated defense: fires on hostile units within ${TURRET_STATS.range}m.`
   if (building.kind === 'fireplace') return 'Complete: camp utility building.'

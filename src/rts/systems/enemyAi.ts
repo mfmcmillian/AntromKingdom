@@ -117,6 +117,13 @@ function runEnemyBuildOrder(ai: EnemyAi, deps: EnemyAiDeps): void {
       tryStartEnemyConstruction(ai, 'forge', deps)
       return
     }
+
+    // Air research follows once the ground forge is working: flyers are a
+    // steady part of the advanced army mix, so the upgrades pay off.
+    if (ai.settings.research && getCompletedTeamBuildings(team, 'forge').length > 0 && getTeamBuildings(team, 'airForge').length === 0) {
+      tryStartEnemyConstruction(ai, 'airForge', deps)
+      return
+    }
   }
 
   // Base defense: ring the main with turrets once fighter production is up.
@@ -199,11 +206,25 @@ function queueEnemyAdvancedProduction(ai: EnemyAi): void {
 function queueEnemyResearch(ai: EnemyAi): void {
   if (!ai.settings.research) return
   const team = ai.team
-  const forge = getCompletedTeamBuildings(team, 'forge')[0]
-  if (!forge) return
-  if (isUpgradeInProgress(team, 'damage') || isUpgradeInProgress(team, 'speed')) return
 
-  const kind: UpgradeKind = getUpgradeLevel(team, 'damage') <= getUpgradeLevel(team, 'speed') ? 'damage' : 'speed'
+  const forge = getCompletedTeamBuildings(team, 'forge')[0]
+  if (forge) {
+    tryStartResearchTrack(team, 'damage', 'speed', forge.id)
+  }
+
+  // Air tracks only matter once the AI actually fields flyers.
+  const airForge = getCompletedTeamBuildings(team, 'airForge')[0]
+  const hasFlyers = soldiers.some((soldier) => soldier.alive && getTeam(soldier) === team && soldier.variant === 'flyer')
+  if (airForge && hasFlyers) {
+    tryStartResearchTrack(team, 'airDamage', 'airSpeed', airForge.id)
+  }
+}
+
+/** Researches whichever of the two tracks is lower, if the bank stays healthy after paying. */
+function tryStartResearchTrack(team: EnemyTeam, damageKind: UpgradeKind, speedKind: UpgradeKind, labId: string): void {
+  if (isUpgradeInProgress(team, damageKind) || isUpgradeInProgress(team, speedKind)) return
+
+  const kind: UpgradeKind = getUpgradeLevel(team, damageKind) <= getUpgradeLevel(team, speedKind) ? damageKind : speedKind
   const cost = getNextUpgradeCost(team, kind)
   if (!cost) return
 
@@ -211,7 +232,7 @@ function queueEnemyResearch(ai: EnemyAi): void {
   if (getResourceAmount(team, 'gas') < (cost.gas ?? 0) + 50) return
 
   if (spendResources(team, cost)) {
-    startUpgradeResearchOrder(team, kind, forge.id)
+    startUpgradeResearchOrder(team, kind, labId)
   }
 }
 
@@ -412,6 +433,14 @@ function getEnemyBuildOffsets(kind: BuildableKind): Vector3[] {
       Vector3.create(8, 0, -14),
       Vector3.create(-12, 0, -12),
       Vector3.create(16, 0, 12)
+    ]
+  }
+
+  if (kind === 'airForge') {
+    return [
+      Vector3.create(-6, 0, -18),
+      Vector3.create(20, 0, -2),
+      Vector3.create(-20, 0, 10)
     ]
   }
 

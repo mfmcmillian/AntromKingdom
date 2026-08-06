@@ -9,7 +9,7 @@ export type Difficulty = 'easy' | 'medium' | 'hard'
 /** team: computers can join the player's side; ffa: every faction fights everyone. */
 export type GameMode = 'team' | 'ffa'
 export type RaceId = 'human' | 'alien' | 'bio'
-export type SelectableKind = 'temple' | 'worker' | 'resource' | 'supplyHouse' | 'barracks' | 'techLab' | 'forge' | 'fireplace' | 'turret' | 'soldier' | 'enemyBuilding'
+export type SelectableKind = 'temple' | 'worker' | 'resource' | 'supplyHouse' | 'barracks' | 'techLab' | 'forge' | 'airForge' | 'fireplace' | 'turret' | 'soldier' | 'enemyBuilding'
 export type WorkerState =
   | 'idle'
   | 'movingToResource'
@@ -27,8 +27,9 @@ export type SoldierState = 'idle' | 'movingToAttack' | 'attacking' | 'movingToRa
 /** aggressive: chase forever; defensive: chase a short leash then return; hold: never move, only fire in range. */
 export type SoldierStance = 'aggressive' | 'defensive' | 'hold'
 export type SoldierVariant = 'melee' | 'ranged' | 'caster' | 'flyer' | 'titan' | 'hero'
-export type BuildableKind = 'temple' | 'supplyHouse' | 'barracks' | 'techLab' | 'forge' | 'fireplace' | 'turret'
-export type UpgradeKind = 'damage' | 'speed'
+export type BuildableKind = 'temple' | 'supplyHouse' | 'barracks' | 'techLab' | 'forge' | 'airForge' | 'fireplace' | 'turret'
+/** damage/speed are ground-only (forge); airDamage/airSpeed apply to flyers (air forge). */
+export type UpgradeKind = 'damage' | 'speed' | 'airDamage' | 'airSpeed'
 export type ConstructionState = 'none' | 'placing' | 'movingBuilder' | 'building' | 'paused' | 'complete'
 
 export type BoxConfig = {
