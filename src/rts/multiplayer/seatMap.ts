@@ -21,6 +21,8 @@ export type LocalMatchPlan = {
   humanTeams: Team[]
   /** Lobby display names for human-held teams (scoreboard labels). */
   names: Partial<Record<Team, string>>
+  /** Wallet addresses for human-held teams (leaver detection). */
+  addresses: Partial<Record<Team, string>>
   gameMode: GameMode
   seed: number
 }
@@ -70,6 +72,7 @@ export function buildLocalMatchPlan(config: LobbyConfig, myAddress: string): Loc
   const alliances = { player: 0, enemy1: 1, enemy2: 2, enemy3: 3 } as Record<Team, number>
   const humanTeams: Team[] = []
   const names: Partial<Record<Team, string>> = {}
+  const addresses: Partial<Record<Team, string>> = {}
 
   for (const { seat, index } of activeSeats) {
     const team = seatToTeam[index]
@@ -80,6 +83,7 @@ export function buildLocalMatchPlan(config: LobbyConfig, myAddress: string): Loc
     if (seat.kind === 'human') {
       humanTeams.push(team)
       names[team] = seat.name ?? (seat.address ? `${seat.address.slice(0, 6)}..` : 'Player')
+      if (seat.address) addresses[team] = seat.address.toLowerCase()
     }
     if (team !== 'player') difficulties[team as EnemyTeam] = seat.difficulty
   }
@@ -94,6 +98,7 @@ export function buildLocalMatchPlan(config: LobbyConfig, myAddress: string): Loc
     activeEnemyTeams,
     humanTeams,
     names,
+    addresses,
     gameMode: config.gameMode,
     seed: config.seed
   }

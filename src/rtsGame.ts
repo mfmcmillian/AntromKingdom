@@ -68,6 +68,7 @@ import { updateUnitSeparation } from './rts/systems/separation'
 import { updateWorkers as updateWorkersSystem } from './rts/systems/workers'
 import { mulberry32, type LocalMatchPlan } from './rts/multiplayer/seatMap'
 import { broadcastMyCommand, isRelayActive, stopCommandRelay } from './rts/multiplayer/commandRelay'
+import { isPlayerPresent } from './rts/multiplayer/session'
 import type { MatchCommand } from './rts/multiplayer/protocol'
 import { updateDragSelect } from './rts/dragSelect'
 import { initFogOfWar, resetFogOfWar } from './rts/fogOfWar'
@@ -121,6 +122,7 @@ import type {
   Building,
   BuildingDefinition,
   ConstructionState,
+  EnemyTeam,
   ModelConfig,
   PlacementState,
   ResourceCost,
@@ -584,6 +586,52 @@ function updateAttackMoveInput(dt: number): void {
   showMoveMarker(ground)
   playAcknowledge()
   setStatus(`${attackers.length} fighter${attackers.length === 1 ? '' : 's'} attack-moving.`)
+}
+
+/** Halt a single unit in its tracks, clearing every standing order. */
+function haltUnit(unit: Soldier | Worker): void {
+  if (unit.kind === 'soldier') {
+    const soldier = unit as Soldier
+    soldier.state = 'idle'
+    soldier.targetId = undefined
+    soldier.attackPosition = undefined
+    soldier.attackMovePoint = undefined
+    soldier.patrolPointA = undefined
+    soldier.patrolPointB = undefined
+    soldier.rallyPoint = undefined
+    soldier.autoEngaged = false
+    soldier.guardPoint = cloneVector(Transform.get(soldier.entity).position)
+    setSoldierAnimation(soldier, 'idle')
+    return
+  }
+
+  const worker = unit as Worker
+  // Builders and repair crews finish what they're doing; stop only interrupts fighting/walking.
+  if (worker.state === 'constructing' || worker.state === 'repairing') return
+  worker.state = 'idle'
+  worker.targetResourceId = undefined
+  worker.buildSiteId = undefined
+  worker.repairTargetId = undefined
+  worker.attackTargetId = undefined
+  worker.rallyPoint = undefined
+  worker.timer = 0
+  setWorkerAnimation(worker, 'idle')
+}
+
+/** StarCraft Stop: selected units drop every order and stand where they are. */
+export function stopSelectedUnits(): void {
+  if (!isMatchActive()) return
+
+  const units: (Soldier | Worker)[] = [...getSelectedSoldiers(), ...getSelectedWorkers()].filter((unit) => unit.alive && getTeam(unit) === 'player')
+  if (units.length === 0) {
+    setStatus('Select units first.')
+    return
+  }
+
+  for (const unit of units) haltUnit(unit)
+  playAcknowledge()
+  setStatus(`${units.length} unit${units.length === 1 ? '' : 's'} stopped.`)
+  if (isRelayActive()) broadcastMyCommand({ type: 'stop', unitIds: units.map((unit) => unit.id), x: 0, z: 0 })
 }
 
 // ---------------------------------------------------------------------------
@@ -2464,9 +2512,15 @@ export function applyRemoteCommand(team: Team, command: MatchCommand): void {
     }
 
     case 'stop':
-    case 'hold':
-      // Reserved order types; no dedicated local UI issues these yet.
+    case 'hold': {
+      for (const id of command.unitIds) {
+        const unit = getRemoteUnit(id, team)
+        if (!unit) continue
+        haltUnit(unit)
+        if (command.type === 'hold' && unit.kind === 'soldier') (unit as Soldier).stance = 'hold'
+      }
       break
+    }
   }
 }
 
@@ -2570,6 +2624,7 @@ function rtsTickSystem(dt: number): void {
   updateWorkerProductionSystem(dt, productionDeps)
   updateSoldierProductionSystem(dt, productionDeps)
   updateUpgradeResearch(dt, upgradeSystemDeps)
+  updateLeaverTakeover(dt)
   for (const ai of enemyAis) updateEnemyAiSystem(ai, dt, enemyAiDeps)
   updateWorkersSystem(dt, workerSystemDeps)
   updateWorkerCargoVisuals()
@@ -3163,6 +3218,36 @@ function damageBuilding(building: Building, amount: number, attacker?: Soldier |
 
   setStatus(`${building.name} destroyed.`)
   updateMatchEndState()
+}
+
+/** Multiplayer surrender: broadcast the concession, then fall on your sword locally. */
+export function surrenderMatch(): void {
+  if (!isMatchActive() || !isMultiplayerMatch()) return
+  if (isRelayActive()) broadcastMyCommand({ type: 'surrender' })
+  setStatus('You surrendered the match.')
+  eliminateTeam('player', false)
+}
+
+// Leaver handling: if a human player disappears from the scene mid-match,
+// every remaining client hands their team to a local computer so the match
+// can be finished instead of fighting a frozen ghost army.
+let leaverCheckTimer = 0
+
+function updateLeaverTakeover(dt: number): void {
+  if (!multiplayerPlan) return
+  leaverCheckTimer += dt
+  if (leaverCheckTimer < 2) return
+  leaverCheckTimer = 0
+
+  for (const team of multiplayerPlan.humanTeams.slice()) {
+    if (team === 'player') continue
+    const address = multiplayerPlan.addresses[team]
+    if (!address || isPlayerPresent(address)) continue
+
+    multiplayerPlan.humanTeams = multiplayerPlan.humanTeams.filter((humanTeam) => humanTeam !== team)
+    enemyAis.push(createEnemyAi(team as EnemyTeam, 'medium'))
+    setStatus(`${getMultiplayerTeamName(team) ?? 'A commander'} left the match. A computer took over their forces.`)
+  }
 }
 
 /** Wipe a team from the field: units die, buildings collapse, elimination check runs. */

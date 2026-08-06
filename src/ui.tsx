@@ -40,6 +40,8 @@ import {
   startPatrol,
   startRepairOrder,
   startRtsMatch,
+  stopSelectedUnits,
+  surrenderMatch,
   startMultiplayerRtsMatch,
   startUpgradeResearch,
   startWorkerBuildingPlacement
@@ -953,6 +955,13 @@ function getCommandSlots(selected: SelectedSummary): CommandSlot[] {
       description: 'Walk back and forth between here and a point, engaging hostiles on the way. Click ground after pressing.',
       onClick: startPatrol
     })
+    slots.push({
+      id: 'stop',
+      icon: ICON.action.cancel,
+      name: 'Stop',
+      description: 'Halt immediately and drop every standing order.',
+      onClick: stopSelectedUnits
+    })
     const stance = getSelectedStance() ?? 'defensive'
     slots.push({
       id: 'stance',
@@ -1255,14 +1264,16 @@ function settingsOverlay() {
           }}
         />
         <Button
-          value="END GAME"
+          value={isMultiplayerMatch() ? 'SURRENDER' : 'END GAME'}
           variant="primary"
           fontSize={18}
           uiTransform={{ width: 240, height: 48, margin: { top: 18 } }}
           uiBackground={{ color: UI.red }}
           onMouseDown={() => {
             showSettingsMenu = false
-            endRtsMatch()
+            // Multiplayer concessions are networked: everyone sees the team fall.
+            if (isMultiplayerMatch()) surrenderMatch()
+            else endRtsMatch()
           }}
         />
         <Button

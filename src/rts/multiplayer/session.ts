@@ -112,6 +112,11 @@ export function getPresentPlayerCount(): number {
   return presentPlayers.size
 }
 
+/** Is this wallet currently in the scene? Drives mid-match leaver detection. */
+export function isPlayerPresent(address: string): boolean {
+  return presentPlayers.has(address.toLowerCase())
+}
+
 export function onLobbyChanged(listener: LobbyListener): void {
   lobbyListeners.push(listener)
 }
