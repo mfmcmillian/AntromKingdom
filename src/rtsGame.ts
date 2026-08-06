@@ -1587,7 +1587,9 @@ function getResourceFieldsForMatch(): ResourceField[] {
   const random = multiplayerPlan ? mulberry32(multiplayerPlan.seed ^ 0x5eed) : Math.random
 
   return RESOURCE_FIELDS.map((field, index) => {
-    if (index < 6) return field
+    // The six mains (3 entries each: crystal line + two vents) never move -
+    // every start must be identical. Naturals and contested fields shuffle.
+    if (index < 18) return field
 
     const jitter = () => (random() - 0.5) * 10
     const countShift = field.count > 1 ? (random() < 0.3 ? -1 : random() > 0.7 ? 1 : 0) : 0
