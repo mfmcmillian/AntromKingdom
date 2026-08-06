@@ -37,7 +37,9 @@ const MINIMAP_COLORS = {
   enemy: {
     enemy1: Color4.create(0.95, 0.2, 0.2, 1),
     enemy2: Color4.create(1, 0.6, 0.12, 1),
-    enemy3: Color4.create(0.82, 0.3, 0.95, 1)
+    enemy3: Color4.create(0.82, 0.3, 0.95, 1),
+    enemy4: Color4.create(0.35, 0.9, 0.25, 1),
+    enemy5: Color4.create(1, 0.35, 0.7, 1)
   } as Record<EnemyTeam, Color4>,
   ally: Color4.create(0.95, 0.85, 0.3, 1),
   minerals: Color4.create(0.45, 0.7, 1, 1),

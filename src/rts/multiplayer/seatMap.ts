@@ -27,7 +27,7 @@ export type LocalMatchPlan = {
   seed: number
 }
 
-const ENEMY_SLOTS: EnemyTeam[] = ['enemy1', 'enemy2', 'enemy3']
+const ENEMY_SLOTS: EnemyTeam[] = ['enemy1', 'enemy2', 'enemy3', 'enemy4', 'enemy5']
 const RACES: RaceId[] = ['human', 'alien', 'bio']
 
 /** Deterministic RNG so every client rolls identical "random" races. */
@@ -59,7 +59,7 @@ export function buildLocalMatchPlan(config: LobbyConfig, myAddress: string): Loc
   for (const { index } of activeSeats) {
     if (index === mine.index) continue
     const team = ENEMY_SLOTS[slot]
-    if (!team) break // more than 4 active seats can't happen (MAX_SEATS = 4)
+    if (!team) break // more active seats than engine team slots can't happen (MAX_SEATS)
     seatToTeam[index] = team
     teamToSeat[team] = index
     activeEnemyTeams.push(team)
@@ -68,8 +68,8 @@ export function buildLocalMatchPlan(config: LobbyConfig, myAddress: string): Loc
 
   // Roll shared "random" races off the match seed so all clients agree.
   const races = {} as Record<Team, RaceId>
-  const difficulties = { enemy1: 'medium', enemy2: 'medium', enemy3: 'medium' } as Record<EnemyTeam, Difficulty>
-  const alliances = { player: 0, enemy1: 1, enemy2: 2, enemy3: 3 } as Record<Team, number>
+  const difficulties = { enemy1: 'medium', enemy2: 'medium', enemy3: 'medium', enemy4: 'medium', enemy5: 'medium' } as Record<EnemyTeam, Difficulty>
+  const alliances = { player: 0, enemy1: 1, enemy2: 2, enemy3: 3, enemy4: 4, enemy5: 5 } as Record<Team, number>
   const humanTeams: Team[] = []
   const names: Partial<Record<Team, string>> = {}
   const addresses: Partial<Record<Team, string>> = {}

@@ -1382,7 +1382,7 @@ function raceCard(raceId: RaceId) {
 }
 
 // -----------------------------------------------------------------------------
-// Opponents panel: 1-3 computers, each with a race and difficulty picker.
+// Opponents panel: 1-5 computers, each with a race and difficulty picker.
 // -----------------------------------------------------------------------------
 
 const OPPONENT_RACE_OPTIONS: (RaceId | 'random')[] = ['random', 'human', 'alien', 'bio']
@@ -1727,7 +1727,7 @@ function matchSetupOverlay() {
         <Label value={GAME_MODES.find((mode) => mode.id === gameState.gameMode)?.hint ?? ''} fontSize={12} color={Color4.create(0.55, 0.58, 0.66, 0.9)} textAlign="middle-left" uiTransform={{ margin: { bottom: 18 } }} />
         <Label value="COMPUTERS" fontSize={14} color={Color4.create(0.75, 0.78, 0.85, 0.9)} textAlign="middle-left" uiTransform={{ margin: { bottom: 10 } }} />
         {gameState.opponents.map((_, index) => opponentRow(index))}
-        {gameState.opponents.length < 3 ? (
+        {gameState.opponents.length < 5 ? (
           <UiEntity
             uiTransform={{ width: 180, height: 34, margin: { top: 6 }, justifyContent: 'center', alignItems: 'center' }}
             uiBackground={{ color: Color4.create(0.12, 0.3, 0.16, 0.95) }}
@@ -1795,7 +1795,9 @@ const LOBBY_SEAT_COLORS = [
   Color4.create(0.35, 0.65, 1, 1),
   Color4.create(0.95, 0.3, 0.25, 1),
   Color4.create(1, 0.62, 0.15, 1),
-  Color4.create(0.82, 0.35, 0.95, 1)
+  Color4.create(0.82, 0.35, 0.95, 1),
+  Color4.create(0.35, 0.9, 0.25, 1),
+  Color4.create(1, 0.35, 0.7, 1)
 ]
 
 function lobbyRaceLabel(race: RaceId | 'random'): string {
@@ -1840,7 +1842,7 @@ function lobbySeatRow(seat: LobbySeat, index: number) {
     )
     chips.push(
       opponentChip(`seat-team-${index}`, `TEAM ${seat.allianceId + 1}`, 92, () => {
-        if (isMine) setMyAlliance((seat.allianceId + 1) % 4)
+        if (isMine) setMyAlliance((seat.allianceId + 1) % 6)
       })
     )
     chips.push(
@@ -1862,7 +1864,7 @@ function lobbySeatRow(seat: LobbySeat, index: number) {
     )
     chips.push(
       opponentChip(`seat-team-${index}`, `TEAM ${seat.allianceId + 1}`, 92, () => {
-        if (iAmHost) hostSetSeat(index, { allianceId: (seat.allianceId + 1) % 4 })
+        if (iAmHost) hostSetSeat(index, { allianceId: (seat.allianceId + 1) % 6 })
       })
     )
     chips.push(

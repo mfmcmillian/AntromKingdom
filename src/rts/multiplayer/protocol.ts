@@ -10,10 +10,10 @@ import type { Difficulty, GameMode, RaceId } from '../types'
 // locally, everyone else fills enemy1..3) and applies the command to its sim.
 
 /** Bump when the protocol changes shape; mismatched clients refuse to join. */
-export const PROTOCOL_VERSION = 1
+export const PROTOCOL_VERSION = 2
 
 /** Maximum seats per match: one per engine team. */
-export const MAX_SEATS = 4
+export const MAX_SEATS = 6
 
 export type SeatKind = 'human' | 'computer' | 'closed'
 
@@ -177,7 +177,7 @@ export function createDefaultLobby(): LobbyConfig {
     hostAddress: '',
     phase: 'lobby',
     gameMode: 'team',
-    seats: [createDefaultSeat(0), createDefaultSeat(1), createDefaultSeat(2), createDefaultSeat(3)],
+    seats: [createDefaultSeat(0), createDefaultSeat(1), createDefaultSeat(2), createDefaultSeat(3), createDefaultSeat(4), createDefaultSeat(5)],
     seed: 0,
     revision: 0
   }

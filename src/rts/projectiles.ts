@@ -24,7 +24,9 @@ const TEAM_BOLT_COLORS: Record<Team, Color4> = {
   player: Color4.create(0.3, 0.9, 1, 1),
   enemy1: Color4.create(1, 0.35, 0.2, 1),
   enemy2: Color4.create(1, 0.62, 0.15, 1),
-  enemy3: Color4.create(0.85, 0.3, 0.95, 1)
+  enemy3: Color4.create(0.85, 0.3, 0.95, 1),
+  enemy4: Color4.create(0.4, 0.95, 0.3, 1),
+  enemy5: Color4.create(1, 0.4, 0.75, 1)
 }
 const ALLY_BOLT_COLOR = Color4.create(0.98, 0.85, 0.35, 1)
 

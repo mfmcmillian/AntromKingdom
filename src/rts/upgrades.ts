@@ -51,7 +51,9 @@ const levels: Record<Team, Record<UpgradeKind, number>> = {
   player: createLevels(),
   enemy1: createLevels(),
   enemy2: createLevels(),
-  enemy3: createLevels()
+  enemy3: createLevels(),
+  enemy4: createLevels(),
+  enemy5: createLevels()
 }
 
 export const upgradeResearchQueue: UpgradeResearch[] = []

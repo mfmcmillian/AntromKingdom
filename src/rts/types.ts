@@ -2,8 +2,8 @@ import type { Entity } from '@dcl/sdk/ecs'
 import type { Color4, Vector3 } from '@dcl/sdk/math'
 
 export type ResourceKind = 'minerals' | 'gas'
-/** Computer opponent slots. Every enemy team is allied with the others against the player. */
-export type EnemyTeam = 'enemy1' | 'enemy2' | 'enemy3'
+/** Non-player team slots (computers or remote humans), up to five opponents. */
+export type EnemyTeam = 'enemy1' | 'enemy2' | 'enemy3' | 'enemy4' | 'enemy5'
 export type Team = 'player' | EnemyTeam
 export type Difficulty = 'easy' | 'medium' | 'hard'
 /** team: computers can join the player's side; ffa: every faction fights everyone. */

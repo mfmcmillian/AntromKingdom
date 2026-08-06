@@ -201,19 +201,22 @@ export const DIFFICULTY_IDS: Difficulty[] = ['easy', 'medium', 'hard']
 
 /**
  * Computer start locations, ordered far-to-near from the player's SW corner:
- * the mirrored NE main, the NE gas expansion, then the SW gas expansion.
+ * NE corner, north mid-edge, NW corner, SE corner, then south mid-edge.
  * Hostile computers fill seats from the front (far side); allied computers
  * fill from the back so they start next to the player they're defending.
+ * Every start sits on the map rim with ~70m+ to its nearest neighbor.
  */
 export const COMPUTER_SEATS: { temple: Vector3; rotationY: number }[] = [
   { temple: Vector3.create(142.89, 5, 136.75), rotationY: 180 },
-  { temple: Vector3.create(137, 5, 114), rotationY: 200 },
-  { temple: Vector3.create(23, 5, 46), rotationY: 160 }
+  { temple: Vector3.create(80, 5, 148), rotationY: 180 },
+  { temple: Vector3.create(12, 5, 146), rotationY: 135 },
+  { temple: Vector3.create(148, 5, 12), rotationY: -45 },
+  { temple: Vector3.create(80, 5, 12), rotationY: 0 }
 ]
 
 /**
- * All four base anchors for multiplayer, indexed by lobby seat: seat 0 is the
- * classic SW player start, seats 1..3 mirror COMPUTER_SEATS. Every client
+ * All six base anchors for multiplayer, indexed by lobby seat: seat 0 is the
+ * classic SW player start, seats 1..5 mirror COMPUTER_SEATS. Every client
  * places each lobby seat at the same anchor, so the shared world lines up.
  */
 export const MAP_ANCHORS: { temple: Vector3; rotationY: number }[] = [
@@ -242,25 +245,65 @@ export type ResourceField = {
   radius: number
 }
 
-// StarCraft-style layout: each base gets a mineral line plus two gas geysers,
-// with mirrored expansions and a contested cluster in the middle of the map.
+// StarCraft-style layout scaled for six starts: every base anchor gets a main
+// (7-crystal line + two plasma vents) and its own natural expansion a short
+// march toward the middle (6 crystals + one vent). Two contested mid-edge
+// expansions (west/east) and the center cluster round it out, so every player
+// has room for multiple expansions without stepping on a neighbor.
 export const RESOURCE_FIELDS: ResourceField[] = [
-  // Player main (base in the south-west corner).
+  // --- Mains (matching MAP_ANCHORS order) ---
+  // SW player main.
   { kind: 'minerals', center: Vector3.create(21, 0, 13), count: 7, radius: 4.5 },
   { kind: 'gas', center: Vector3.create(9, 0, 22), count: 1, radius: 0 },
   { kind: 'gas', center: Vector3.create(29, 0, 5), count: 1, radius: 0 },
-  // Enemy main (base in the north-east corner), mirrored.
+  // NE main.
   { kind: 'minerals', center: Vector3.create(139, 0, 147), count: 7, radius: 4.5 },
   { kind: 'gas', center: Vector3.create(151, 0, 138), count: 1, radius: 0 },
   { kind: 'gas', center: Vector3.create(131, 0, 155), count: 1, radius: 0 },
-  // Mirrored expansions.
+  // North mid-edge main.
+  { kind: 'minerals', center: Vector3.create(68, 0, 142), count: 7, radius: 4.5 },
+  { kind: 'gas', center: Vector3.create(93, 0, 152), count: 1, radius: 0 },
+  { kind: 'gas', center: Vector3.create(60, 0, 131), count: 1, radius: 0 },
+  // NW main.
+  { kind: 'minerals', center: Vector3.create(24, 0, 137), count: 7, radius: 4.5 },
+  { kind: 'gas', center: Vector3.create(10, 0, 128), count: 1, radius: 0 },
+  { kind: 'gas', center: Vector3.create(32, 0, 150), count: 1, radius: 0 },
+  // SE main.
+  { kind: 'minerals', center: Vector3.create(135, 0, 21), count: 7, radius: 4.5 },
+  { kind: 'gas', center: Vector3.create(150, 0, 30), count: 1, radius: 0 },
+  { kind: 'gas', center: Vector3.create(127, 0, 8), count: 1, radius: 0 },
+  // South mid-edge main.
+  { kind: 'minerals', center: Vector3.create(92, 0, 18), count: 7, radius: 4.5 },
+  { kind: 'gas', center: Vector3.create(67, 0, 8), count: 1, radius: 0 },
+  { kind: 'gas', center: Vector3.create(100, 0, 29), count: 1, radius: 0 },
+
+  // --- Naturals (one per start, a short march toward the center) ---
+  // SW natural.
   { kind: 'minerals', center: Vector3.create(12, 0, 54), count: 6, radius: 4 },
   { kind: 'gas', center: Vector3.create(21, 0, 63), count: 1, radius: 0 },
+  // NE natural.
   { kind: 'minerals', center: Vector3.create(148, 0, 106), count: 6, radius: 4 },
   { kind: 'gas', center: Vector3.create(139, 0, 97), count: 1, radius: 0 },
-  { kind: 'minerals', center: Vector3.create(110, 0, 32), count: 6, radius: 4 },
-  { kind: 'minerals', center: Vector3.create(50, 0, 128), count: 6, radius: 4 },
-  // Contested center.
+  // North mid-edge natural.
+  { kind: 'minerals', center: Vector3.create(82, 0, 114), count: 6, radius: 4 },
+  { kind: 'gas', center: Vector3.create(92, 0, 120), count: 1, radius: 0 },
+  // NW natural.
+  { kind: 'minerals', center: Vector3.create(40, 0, 118), count: 6, radius: 4 },
+  { kind: 'gas', center: Vector3.create(49, 0, 125), count: 1, radius: 0 },
+  // SE natural.
+  { kind: 'minerals', center: Vector3.create(120, 0, 42), count: 6, radius: 4 },
+  { kind: 'gas', center: Vector3.create(111, 0, 35), count: 1, radius: 0 },
+  // South mid-edge natural.
+  { kind: 'minerals', center: Vector3.create(78, 0, 46), count: 6, radius: 4 },
+  { kind: 'gas', center: Vector3.create(68, 0, 40), count: 1, radius: 0 },
+
+  // --- Contested free expansions on the west/east rims ---
+  { kind: 'minerals', center: Vector3.create(10, 0, 84), count: 6, radius: 4 },
+  { kind: 'gas', center: Vector3.create(18, 0, 92), count: 1, radius: 0 },
+  { kind: 'minerals', center: Vector3.create(150, 0, 76), count: 6, radius: 4 },
+  { kind: 'gas', center: Vector3.create(142, 0, 68), count: 1, radius: 0 },
+
+  // --- Contested center ---
   { kind: 'minerals', center: Vector3.create(80, 0, 80), count: 7, radius: 5 },
   { kind: 'gas', center: Vector3.create(70, 0, 90), count: 1, radius: 0 },
   { kind: 'gas', center: Vector3.create(90, 0, 70), count: 1, radius: 0 }

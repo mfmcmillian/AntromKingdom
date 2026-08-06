@@ -1246,7 +1246,7 @@ function applyOpponentSetup(): void {
   // Anchors are ordered far-to-near from the player (anchor 0 is the player's
   // own SW corner): hostiles take the far ones first, allies claim the near
   // ones so they actually cover the player's flank.
-  const openAnchors = [1, 2, 3]
+  const openAnchors = [1, 2, 3, 4, 5]
 
   for (let i = 0; i < gameState.activeEnemyTeams.length; i++) {
     const team = gameState.activeEnemyTeams[i]

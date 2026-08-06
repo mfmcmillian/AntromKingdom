@@ -1,7 +1,7 @@
 import { AI_DIFFICULTY, CONFIG } from './config'
 import type { BuildableKind, Difficulty, EnemyTeam, GameMode, PlacementState, RaceId, SelectableKind, Team } from './types'
 
-export const ENEMY_TEAMS: EnemyTeam[] = ['enemy1', 'enemy2', 'enemy3']
+export const ENEMY_TEAMS: EnemyTeam[] = ['enemy1', 'enemy2', 'enemy3', 'enemy4', 'enemy5']
 
 export type TeamEconomy = {
   minerals: number
@@ -44,24 +44,26 @@ function createStats(): TeamStats {
 export const gameState = {
   playerRace: 'human' as RaceId,
   gameMode: 'team' as GameMode,
-  // Match setup chosen on the title screen: 1-3 computers, each with a race, difficulty and side.
+  // Match setup chosen on the title screen: 1-5 computers, each with a race, difficulty and side.
   opponents: [{ race: 'random', difficulty: 'medium', ally: false }] as OpponentSetup[],
   // Resolved at match start from `opponents` (random races rolled here).
   activeEnemyTeams: ['enemy1'] as EnemyTeam[],
-  enemyRaces: { enemy1: 'alien', enemy2: 'alien', enemy3: 'alien' } as Record<EnemyTeam, RaceId>,
-  enemyDifficulties: { enemy1: 'medium', enemy2: 'medium', enemy3: 'medium' } as Record<EnemyTeam, Difficulty>,
+  enemyRaces: { enemy1: 'alien', enemy2: 'alien', enemy3: 'alien', enemy4: 'alien', enemy5: 'alien' } as Record<EnemyTeam, RaceId>,
+  enemyDifficulties: { enemy1: 'medium', enemy2: 'medium', enemy3: 'medium', enemy4: 'medium', enemy5: 'medium' } as Record<EnemyTeam, Difficulty>,
   // Alliance ids: teams sharing an id never fight each other. Team mode puts
   // allied computers on id 0 with the player; FFA gives every faction its own id.
-  alliances: { player: 0, enemy1: 1, enemy2: 2, enemy3: 3 } as Record<Team, number>,
+  alliances: { player: 0, enemy1: 1, enemy2: 2, enemy3: 3, enemy4: 4, enemy5: 5 } as Record<Team, number>,
   // Which map anchor each active enemy team starts on (index into MAP_ANCHORS,
   // where anchor 0 is the classic SW player start). Single-player: allies get
   // anchors near the player, hostiles the far side. Multiplayer: lobby seats.
-  enemySeatIndex: { enemy1: 1, enemy2: 2, enemy3: 3 } as Record<EnemyTeam, number>,
+  enemySeatIndex: { enemy1: 1, enemy2: 2, enemy3: 3, enemy4: 4, enemy5: 5 } as Record<EnemyTeam, number>,
   economies: {
     player: createEconomy(),
     enemy1: createEconomy(),
     enemy2: createEconomy(),
-    enemy3: createEconomy()
+    enemy3: createEconomy(),
+    enemy4: createEconomy(),
+    enemy5: createEconomy()
   } as Record<Team, TeamEconomy>,
   selectedId: '',
   selectedKind: '' as SelectableKind | '',
@@ -78,14 +80,18 @@ export const gameState = {
     player: createStats(),
     enemy1: createStats(),
     enemy2: createStats(),
-    enemy3: createStats()
+    enemy3: createStats(),
+    enemy4: createStats(),
+    enemy5: createStats()
   } as Record<Team, TeamStats>,
   // Cumulative resources gathered, sampled every few seconds for the end-screen graph.
   incomeHistory: {
     player: [] as number[],
     enemy1: [] as number[],
     enemy2: [] as number[],
-    enemy3: [] as number[]
+    enemy3: [] as number[],
+    enemy4: [] as number[],
+    enemy5: [] as number[]
   } as Record<Team, number[]>,
   placementMode: 'none' as PlacementState['state'],
   placementBuildingKind: '' as BuildableKind | '',

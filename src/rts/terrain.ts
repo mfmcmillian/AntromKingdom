@@ -1,6 +1,6 @@
 import { GltfContainer, Material, MeshRenderer, TextureWrapMode, Transform, engine, type Entity } from '@dcl/sdk/ecs'
 import { Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
-import { POSITIONS, RESOURCE_FIELDS, SCENE } from './config'
+import { MAP_ANCHORS, POSITIONS, RESOURCE_FIELDS, SCENE } from './config'
 
 // Terrain pass: one textured ground sheet, large tinted decals that break the
 // tiling and mark zones (center basin, worn tracks between the bases), border
@@ -176,10 +176,9 @@ function createZoneDecals(): void {
 // Border highlands.
 // ---------------------------------------------------------------------------
 
-/** Zones the highlands must not spill into: the two base corners and edge-adjacent resources. */
+/** Zones the highlands must not spill into: every base anchor and edge-adjacent resources. */
 const PROTECTED_POINTS: { x: number; z: number; radius: number }[] = [
-  { x: POSITIONS.base.x, z: POSITIONS.base.z, radius: 22 },
-  { x: POSITIONS.enemyTemple.x, z: POSITIONS.enemyTemple.z, radius: 22 },
+  ...MAP_ANCHORS.map((anchor) => ({ x: anchor.temple.x, z: anchor.temple.z, radius: 22 })),
   ...RESOURCE_FIELDS.map((field) => ({ x: field.center.x, z: field.center.z, radius: field.radius + 7 }))
 ]
 
