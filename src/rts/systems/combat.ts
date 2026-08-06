@@ -289,6 +289,8 @@ function updateSoldierRallyMovement(soldier: Soldier, dt: number, deps: CombatSy
 
 /** Nearest hostile within acquisition range: enemy fighters first, then workers, then buildings. */
 function findNearestEnemyInRange(soldier: Soldier, range: number): CombatTarget | undefined {
+  // Healers never engage; their own system chases wounded allies instead.
+  if (soldier.variant === 'healer') return undefined
   const team = getTeam(soldier)
   const position = Transform.get(soldier.entity).position
 

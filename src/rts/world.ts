@@ -20,11 +20,13 @@ const MIN_ANTI_AIR_RANGE = 4
 
 /**
  * Flyers can only be hit by ranged weapons or titans (big enough to swat them):
- * melee fighters, close-combat heroes and workers can't touch them.
+ * melee fighters, close-combat heroes and workers can't touch them. Siege
+ * artillery arcs along the ground and can't elevate; healers never attack.
  */
 export function canAttackTarget(attacker: Soldier | Worker, target: Building | Soldier | Worker): boolean {
+  if (attacker.kind === 'soldier' && attacker.variant === 'healer') return false
   if (target.kind !== 'soldier' || target.variant !== 'flyer') return true
-  if (attacker.kind !== 'soldier') return false
+  if (attacker.kind !== 'soldier' || attacker.variant === 'siege') return false
   return attacker.variant === 'titan' || attacker.attackRange >= MIN_ANTI_AIR_RANGE
 }
 

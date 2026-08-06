@@ -60,6 +60,7 @@ import { formatNumber, formatPosition, formatVectorForPaste } from './rts/format
 import { clamp, cloneVector, distanceToPoint, distanceToPosition, getFormationPosition, offsetSpawn } from './rts/math'
 import { ENEMY_TEAMS, areHostile, gameState, isHostileToPlayer, isPlayerAlly, resetTeamStats } from './rts/state'
 import { updateSoldiers as updateSoldiersSystem } from './rts/systems/combat'
+import { updateHealers } from './rts/systems/healers'
 import { createEnemyAi, updateEnemyAi as updateEnemyAiSystem, type EnemyAi } from './rts/systems/enemyAi'
 import { updateSoldierProduction as updateSoldierProductionSystem, updateWorkerProduction as updateWorkerProductionSystem } from './rts/systems/production'
 import { addAttackPing, clearAttackPings, updateAttackPings } from './rts/minimap'
@@ -816,8 +817,8 @@ export function cancelBuildingPlacement(): void {
 export function queueSoldier(variant: SoldierVariant = 'melee'): void {
   if (!isMatchActive()) return
 
-  // Melee/ranged train at the barracks; caster/flyer/titan need the advanced structure.
-  const trainerKind: BuildableKind = variant === 'melee' || variant === 'ranged' ? 'barracks' : 'techLab'
+  // Melee/ranged/healer train at the barracks; caster/flyer/siege/titan need the advanced structure.
+  const trainerKind: BuildableKind = variant === 'melee' || variant === 'ranged' || variant === 'healer' ? 'barracks' : 'techLab'
   const selected = getSelected()
   const trainer = selected?.kind === trainerKind ? (selected as Building) : undefined
   const soldierDef = getSoldierDefinition('player', variant)
@@ -1278,8 +1279,11 @@ export function getSelectedSummary(): SelectedSummary {
     // A lone hero or caster shows its signature perk so it's discoverable in-game.
     const heroLine = selectedUnitCount <= 1 && soldier.variant === 'hero' ? `${getRace(getTeam(soldier)).heroTrait} ` : ''
     const casterLine = selectedUnitCount <= 1 && soldier.variant === 'caster' ? `${CASTER_ABILITY[getRace(getTeam(soldier)).id].describe} ` : ''
-    // Close-quarters units can't reach flyers - surface that in the panel.
-    const airLine = selectedUnitCount <= 1 && !canAttackTarget(soldier, { kind: 'soldier', variant: 'flyer' } as Soldier) ? 'Cannot attack air. ' : ''
+    const healerLine = selectedUnitCount <= 1 && soldier.variant === 'healer' ? `${getHealerTraitLine(soldier)} ` : ''
+    const siegeLine = selectedUnitCount <= 1 && soldier.variant === 'siege' ? `Siege artillery: outranges defense towers. ` : ''
+    // Close-quarters units can't reach flyers - surface that in the panel (healers never attack at all).
+    const airLine =
+      selectedUnitCount <= 1 && soldier.variant !== 'healer' && !canAttackTarget(soldier, { kind: 'soldier', variant: 'flyer' } as Soldier) ? 'Cannot attack air. ' : ''
     const killLine = selectedUnitCount <= 1 ? ` · Kills: ${soldier.kills ?? 0}` : ''
     return {
       name: selectedUnitCount > 1 ? `${selectedUnitCount} Units` : soldier.name,
@@ -1288,7 +1292,7 @@ export function getSelectedSummary(): SelectedSummary {
       hp: soldier.hp,
       maxHp: soldier.maxHp,
       variant: soldier.variant,
-      detail: `${getGroupSelectionPrefix()}${heroLine}${casterLine}${airLine}State: ${soldier.state}${killLine}`
+      detail: `${getGroupSelectionPrefix()}${heroLine}${casterLine}${healerLine}${siegeLine}${airLine}State: ${soldier.state}${killLine}`
     }
   }
 
@@ -1525,6 +1529,7 @@ function createSoldier(position: Vector3, team: Team = 'player', variant: Soldie
   soldier.attackRange = definition.attackRange ?? CONFIG.soldierAttackRange
   soldier.attackRate = definition.attackRate ?? CONFIG.soldierAttackRate
   soldier.splashRadius = definition.splashRadius ?? 0
+  soldier.healRate = definition.healRate
   soldier.state = 'idle'
   soldier.stance = 'defensive'
   soldier.attackTimer = 0
@@ -1541,7 +1546,16 @@ function getSoldierColliderScale(variant: SoldierVariant): Vector3 {
   if (variant === 'hero') return Vector3.create(3, 4.2, 3)
   if (variant === 'titan') return Vector3.create(2.4, 3.2, 2.4)
   if (variant === 'flyer') return Vector3.create(1.8, 3.2, 1.8)
+  if (variant === 'siege') return Vector3.create(2, 2.4, 2)
   return Vector3.create(1.4, 2, 1.4)
+}
+
+/** Info-panel blurb for the race's support unit (each heals differently). */
+function getHealerTraitLine(soldier: Soldier): string {
+  const race = getRace(getTeam(soldier)).id
+  if (race === 'bio') return `Regeneration aura: heals all nearby allies ${soldier.healRate ?? 3} HP/s.`
+  if (race === 'alien') return `Heal beam: mends wounded fighters and structures ${soldier.healRate ?? 7} HP/s.`
+  return `Heal beam: mends a wounded fighter ${soldier.healRate ?? 9} HP/s.`
 }
 
 /** Units are procedurally built per race (no GLBs), so this replaces createSelectableModel for them. */
@@ -2629,6 +2643,7 @@ function rtsTickSystem(dt: number): void {
   updateWorkersSystem(dt, workerSystemDeps)
   updateWorkerCargoVisuals()
   updateSoldiersSystem(dt, combatSystemDeps)
+  updateHealers(dt, { setSoldierAnimation })
   updateUnitSeparation(dt)
   updateFireplaceAuras(dt)
   updateStatusEffects(dt)
@@ -3134,6 +3149,7 @@ function damageCombatTarget(target: Building | Soldier | Worker, amount: number,
       attacker.variant === 'ranged' ||
       attacker.variant === 'caster' ||
       attacker.variant === 'flyer' ||
+      attacker.variant === 'siege' ||
       (attacker.variant === 'hero' && attacker.attackRange > 3)
 
     if (isRangedShot) {
@@ -3161,6 +3177,14 @@ function damageCombatTarget(target: Building | Soldier | Worker, amount: number,
   // off cooldown - no micro needed, the skill fires as part of normal combat.
   if (attacker.kind === 'soldier' && attacker.variant === 'caster' && (attacker.abilityTimer ?? 0) <= 0) {
     castCasterAbility(attacker, target, targetPosition)
+  }
+
+  // Acidmaw shells coat their victims in lingering acid (MYRIAD siege flavor).
+  if (attacker.kind === 'soldier' && attacker.variant === 'siege' && getRace(attackerTeam).id === 'bio' && (target.kind === 'soldier' || target.kind === 'worker')) {
+    target.poisonRemaining = Math.max(target.poisonRemaining ?? 0, 4)
+    target.poisonDamagePerSecond = Math.max(target.poisonDamagePerSecond ?? 0, 4)
+    target.poisonAttackerId = attacker.id
+    target.poisonTick = target.poisonTick ?? 0
   }
 
   // Area damage: splash hits every enemy unit near the impact at reduced power.
@@ -3287,7 +3311,8 @@ function damageSoldier(soldier: Soldier, amount: number, attacker?: Soldier | Wo
   }
 
   creditUnitKill(attacker, soldier)
-  const deathScale = soldier.variant === 'hero' ? 2.6 : soldier.variant === 'titan' ? 2.2 : soldier.variant === 'flyer' || soldier.variant === 'caster' ? 1.2 : 1
+  const deathScale =
+    soldier.variant === 'hero' ? 2.6 : soldier.variant === 'titan' ? 2.2 : soldier.variant === 'siege' ? 1.6 : soldier.variant === 'flyer' || soldier.variant === 'caster' ? 1.2 : 1
   spawnDeathBurst(cloneVector(Transform.get(soldier.entity).position), getRace(getTeam(soldier)).accent, deathScale)
   playExplosion(Transform.get(soldier.entity).position)
   if (soldier.variant === 'hero') {

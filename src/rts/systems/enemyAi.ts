@@ -164,10 +164,10 @@ function queueEnemyProduction(ai: EnemyAi): void {
   queueEnemyAdvancedProduction(ai)
 
   if (barracks && guardCount < ai.settings.targetGuards) {
-    // Roughly one ranged unit for every two melee; fall back to melee if gas is short.
-    let variant: SoldierVariant = guardCount % 3 === 2 ? 'ranged' : 'melee'
+    // Roughly one ranged per two melee, one medic per six units; fall back to melee if gas is short.
+    let variant: SoldierVariant = guardCount % 6 === 5 ? 'healer' : guardCount % 3 === 2 ? 'ranged' : 'melee'
     let soldierDef = getSoldierDefinition(team, variant)
-    if (variant === 'ranged' && !hasResources(team, soldierDef.cost)) {
+    if (variant !== 'melee' && !hasResources(team, soldierDef.cost)) {
       variant = 'melee'
       soldierDef = getSoldierDefinition(team, variant)
     }
@@ -186,13 +186,17 @@ function queueEnemyAdvancedProduction(ai: EnemyAi): void {
   if (!techLab) return
 
   const advancedCount = soldiers.filter(
-    (soldier) => soldier.alive && getTeam(soldier) === team && (soldier.variant === 'caster' || soldier.variant === 'flyer' || soldier.variant === 'titan')
+    (soldier) =>
+      soldier.alive &&
+      getTeam(soldier) === team &&
+      (soldier.variant === 'caster' || soldier.variant === 'flyer' || soldier.variant === 'siege' || soldier.variant === 'titan')
   ).length
   if (advancedCount >= ai.settings.maxAdvancedUnits) return
 
-  // Every fourth advanced unit is a titan (tech-gated behind the forge); the rest alternate caster / flyer.
+  // Forge-gated cycle: caster, flyer, siege, titan (siege/titan downgrade until the forge stands).
   const hasForge = getCompletedTeamBuildings(team, 'forge').length > 0
-  const variant: SoldierVariant = hasForge && advancedCount % 4 === 3 ? 'titan' : advancedCount % 2 === 0 ? 'caster' : 'flyer'
+  const slot = advancedCount % 4
+  const variant: SoldierVariant = slot === 3 ? (hasForge ? 'titan' : 'flyer') : slot === 2 ? (hasForge ? 'siege' : 'caster') : slot === 0 ? 'caster' : 'flyer'
   const soldierDef = getSoldierDefinition(team, variant)
 
   if (!canQueueUnit(team, soldierDef.supply) || !hasResources(team, soldierDef.cost)) return
@@ -288,8 +292,19 @@ function sendEnemyAttackWave(ai: EnemyAi, deps: EnemyAiDeps): void {
     .sort((a, b) => distanceToPoint(Transform.get(a.entity).position, ai.home) - distanceToPoint(Transform.get(b.entity).position, ai.home))
 
   const targets = [...turrets, ...temples]
-  for (let i = 0; i < attackers.length; i++) {
-    deps.assignSoldierToAttack(attackers[i], targets[i % targets.length], i)
+  let slot = 0
+  for (const attacker of attackers) {
+    // Healers can't take attack orders - they escort the wave via attack-move
+    // and their own system doctors the wounded once they arrive.
+    if (attacker.variant === 'healer') {
+      const escortTo = Transform.get(targets[0].entity).position
+      attacker.state = 'attackMoving'
+      attacker.attackMovePoint = { x: escortTo.x, y: escortTo.y, z: escortTo.z }
+      attacker.targetId = undefined
+      continue
+    }
+    deps.assignSoldierToAttack(attacker, targets[slot % targets.length], slot)
+    slot++
   }
 
   if (targetTeam === 'player') {

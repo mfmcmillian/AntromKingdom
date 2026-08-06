@@ -68,7 +68,7 @@ export type AttackTargetCommand = {
 export type TrainCommand = {
   type: 'train'
   buildingId: string
-  unit: 'worker' | 'melee' | 'ranged' | 'caster' | 'flyer' | 'titan' | 'hero'
+  unit: 'worker' | 'melee' | 'ranged' | 'healer' | 'caster' | 'flyer' | 'siege' | 'titan' | 'hero'
 }
 
 export type BuildCommand = {

@@ -8,7 +8,7 @@ import { RaceId, ResourceKind, Team } from './types'
 // per-state motion (hover bob, tilt, spinners, attack lunges) to mirror the
 // animation clips the game logic requests (idle / walk / talk / attack / impact).
 
-export type UnitRole = 'worker' | 'melee' | 'ranged' | 'caster' | 'flyer' | 'titan' | 'hero'
+export type UnitRole = 'worker' | 'melee' | 'ranged' | 'caster' | 'flyer' | 'titan' | 'hero' | 'healer' | 'siege'
 
 type UnitAnimState = 'idle' | 'walk' | 'talk' | 'attack' | 'impact'
 
@@ -210,6 +210,8 @@ export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team:
     else if (role === 'caster') buildHumanStormcaller(rig, addPart, glow)
     else if (role === 'flyer') buildHumanRaptor(rig, addPart, glow)
     else if (role === 'hero') buildHumanHero(rig, addPart, glow)
+    else if (role === 'healer') buildHumanMedic(rig, addPart, glow)
+    else if (role === 'siege') buildHumanThunderhead(rig, addPart, glow)
     else buildHumanColossus(rig, addPart, glow)
   } else if (race === 'alien') {
     if (role === 'worker') buildAlienProbe(rig, addPart, glow)
@@ -218,6 +220,8 @@ export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team:
     else if (role === 'caster') buildAlienOracle(rig, addPart, glow)
     else if (role === 'flyer') buildAlienTempest(rig, addPart, glow)
     else if (role === 'hero') buildAlienHero(rig, addPart, glow)
+    else if (role === 'healer') buildAlienLightmender(rig, addPart, glow)
+    else if (role === 'siege') buildAlienSunlance(rig, addPart, glow)
     else buildAlienAvatar(rig, addPart, glow)
   } else {
     if (role === 'worker') buildBioDrone(rig, addPart, glow)
@@ -226,6 +230,8 @@ export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team:
     else if (role === 'caster') buildBioPlagueWeaver(rig, addPart, glow)
     else if (role === 'flyer') buildBioShrieker(rig, addPart, glow)
     else if (role === 'hero') buildBioHero(rig, addPart, glow)
+    else if (role === 'healer') buildBioBroodtender(rig, addPart, glow)
+    else if (role === 'siege') buildBioAcidmaw(rig, addPart, glow)
     else buildBioBehemoth(rig, addPart, glow)
   }
 
@@ -250,8 +256,10 @@ const TEAM_RING_SIZE: Record<UnitRole, number> = {
   worker: 0.95,
   melee: 1.15,
   ranged: 1.15,
+  healer: 1.15,
   caster: 1.25,
   flyer: 1.25,
+  siege: 1.6,
   titan: 1.9,
   hero: 2.2
 }
@@ -1861,6 +1869,372 @@ export function disposeUnit(root: Entity, removeParts: boolean): void {
     for (const pip of rig.insignia) engine.removeEntity(pip)
   }
   rigs.delete(root)
+}
+
+// ---------------------------------------------------------------------------
+// Support and siege units (healer / siege roles), one flavor per race.
+// ---------------------------------------------------------------------------
+
+const HEAL_GREEN = Color4.create(0.35, 1, 0.55, 1)
+const MEDIC_WHITE = Color4.create(0.85, 0.87, 0.9, 1)
+
+/** Human healer: a hover-drone field medic - white chassis, glowing cross, syringe arm. */
+function buildHumanMedic(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  // Hover pad glow.
+  addPart(Vector3.create(0, 0.16, 0), Vector3.create(0.44, 0.05, 0.44), HEAL_GREEN, { cylinder: true, emissive: HEAL_GREEN, emissiveIntensity: 1.8 })
+
+  // White medical chassis with dark trim.
+  addPart(Vector3.create(0, 0.52, 0), Vector3.create(0.44, 0.4, 0.5), MEDIC_WHITE, { roughness: 0.3 })
+  addPart(Vector3.create(0, 0.3, 0), Vector3.create(0.36, 0.12, 0.42), METAL_DARK)
+  addPart(Vector3.create(0, 0.78, 0), Vector3.create(0.34, 0.14, 0.4), METAL_LIGHT)
+
+  // Medical cross on both flanks.
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.23, 0.54, 0), Vector3.create(0.02, 0.22, 0.08), HEAL_GREEN, { emissive: HEAL_GREEN, emissiveIntensity: 2.6 })
+    addPart(Vector3.create(side * 0.23, 0.54, 0), Vector3.create(0.02, 0.08, 0.22), HEAL_GREEN, { emissive: HEAL_GREEN, emissiveIntensity: 2.6 })
+  }
+
+  // Optic visor in the team color.
+  addPart(Vector3.create(0, 0.6, 0.26), Vector3.create(0.26, 0.07, 0.05), glow, { emissive: glow, emissiveIntensity: 2.8 })
+
+  // Syringe arm: hinge, boom, needle and a green serum vial.
+  addPart(Vector3.create(0.26, 0.46, 0.18), Vector3.create(0.09, 0.09, 0.09), METAL_DARK, { sphere: true })
+  addPart(Vector3.create(0.3, 0.44, 0.36), Vector3.create(0.05, 0.05, 0.32), METAL_LIGHT, { cylinder: true, rotation: Quaternion.fromEulerDegrees(90, 0, 0) })
+  addPart(Vector3.create(0.3, 0.44, 0.56), Vector3.create(0.02, 0.14, 0.02), BLADE_STEEL, { cone: true, rotation: Quaternion.fromEulerDegrees(90, 0, 0) })
+  addPart(Vector3.create(0.3, 0.52, 0.3), Vector3.create(0.07, 0.1, 0.07), HEAL_GREEN, { cylinder: true, emissive: HEAL_GREEN, emissiveIntensity: 2.2 })
+
+  // Supply canisters on the back.
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.12, 0.6, -0.28), Vector3.create(0.1, 0.24, 0.1), MEDIC_WHITE, { cylinder: true, roughness: 0.35 })
+    addPart(Vector3.create(side * 0.12, 0.74, -0.28), Vector3.create(0.06, 0.04, 0.06), HEAL_GREEN, { cylinder: true, emissive: HEAL_GREEN, emissiveIntensity: 2 })
+  }
+
+  // Rotating rescue beacon.
+  rig.spinner = addPart(Vector3.create(0, 0.92, 0), Vector3.create(0.16, 0.04, 0.05), HEAL_GREEN, { emissive: HEAL_GREEN, emissiveIntensity: 3 })
+
+  // Serum motes drifting up while it works.
+  for (let i = 0; i < 2; i++) {
+    const mote = addPart(Vector3.create(0.3, 0.5, 0.4), Vector3.create(0.035, 0.035, 0.035), HEAL_GREEN, { sphere: true, emissive: HEAL_GREEN, emissiveIntensity: 3 })
+    rig.fx.push({ entity: mote, mode: 'ember', anchor: Vector3.create(0.3, 0.5, 0.4), radius: 0.05, height: 0.4, speed: 0.9, phase: i * 1.7, size: 0.035 })
+  }
+
+  rig.spinAxis = 'y'
+  rig.profiles = {
+    idle: { amplitude: 0.06, speed: 1.8, tilt: 0, spin: 160, lunge: 0 },
+    walk: { amplitude: 0.05, speed: 6, tilt: 8, spin: 240, lunge: 0 },
+    talk: { amplitude: 0.04, speed: 8, tilt: 4, spin: 320, lunge: 0 },
+    attack: { amplitude: 0.03, speed: 6, tilt: 6, spin: 420, lunge: 0.05 },
+    impact: { amplitude: 0.08, speed: 16, tilt: -8, spin: 160, lunge: 0 }
+  }
+}
+
+/** Human siege: the Thunderhead - a tracked howitzer with a long elevated barrel. */
+function buildHumanThunderhead(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  // Tread blocks with drive wheels.
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.42, 0.22, 0), Vector3.create(0.3, 0.3, 1.05), METAL_DARK)
+    for (const off of [-0.35, 0, 0.35]) {
+      addPart(Vector3.create(side * 0.58, 0.2, off), Vector3.create(0.18, 0.18, 0.08), METAL_LIGHT, {
+        cylinder: true,
+        rotation: Quaternion.fromEulerDegrees(0, 0, 90)
+      })
+    }
+  }
+
+  // Hull deck and armored glacis.
+  addPart(Vector3.create(0, 0.46, 0), Vector3.create(0.85, 0.22, 1.1), HUMAN_HULL)
+  addPart(Vector3.create(0, 0.5, 0.5), Vector3.create(0.7, 0.16, 0.3), METAL_LIGHT, { rotation: Quaternion.fromEulerDegrees(-24, 0, 0) })
+
+  // Turret with crew hatch.
+  addPart(Vector3.create(0, 0.72, -0.15), Vector3.create(0.6, 0.3, 0.62), METAL_LIGHT)
+  addPart(Vector3.create(0.18, 0.9, -0.2), Vector3.create(0.16, 0.05, 0.16), METAL_DARK, { cylinder: true })
+
+  // Long howitzer barrel, elevated for the arcing shot, with muzzle brake.
+  addPart(Vector3.create(0, 0.86, 0.45), Vector3.create(0.1, 0.1, 1.15), METAL_DARK, {
+    cylinder: true,
+    rotation: Quaternion.fromEulerDegrees(78, 0, 0)
+  })
+  addPart(Vector3.create(0, 1.02, 0.98), Vector3.create(0.13, 0.13, 0.14), METAL_LIGHT, {
+    cylinder: true,
+    rotation: Quaternion.fromEulerDegrees(78, 0, 0)
+  })
+  addPart(Vector3.create(0, 1.06, 1.1), Vector3.create(0.1, 0.1, 0.04), glow, {
+    cylinder: true,
+    emissive: glow,
+    emissiveIntensity: 2.6,
+    rotation: Quaternion.fromEulerDegrees(78, 0, 0)
+  })
+
+  // Recoil spade dug in at the rear plus shell rack.
+  addPart(Vector3.create(0, 0.3, -0.62), Vector3.create(0.5, 0.24, 0.12), METAL_DARK, { rotation: Quaternion.fromEulerDegrees(30, 0, 0) })
+  for (const off of [-0.12, 0, 0.12]) {
+    addPart(Vector3.create(off, 0.62, -0.5), Vector3.create(0.06, 0.06, 0.2), DRILL_STEEL, {
+      cylinder: true,
+      rotation: Quaternion.fromEulerDegrees(90, 0, 0)
+    })
+  }
+
+  // Warning light and radar dish spinning on the turret.
+  rig.spinner = addPart(Vector3.create(-0.18, 0.94, -0.28), Vector3.create(0.2, 0.03, 0.08), METAL_LIGHT)
+  addPart(Vector3.create(-0.18, 0.9, -0.28), Vector3.create(0.04, 0.06, 0.04), METAL_DARK, { cylinder: true })
+  addPart(Vector3.create(0, 0.6, 0.56), Vector3.create(0.07, 0.07, 0.07), glow, { sphere: true, emissive: glow, emissiveIntensity: 2.8 })
+
+  rig.spinAxis = 'y'
+  rig.profiles = {
+    idle: { amplitude: 0.015, speed: 1.2, tilt: 0, spin: 60, lunge: 0 },
+    walk: { amplitude: 0.04, speed: 5, tilt: 3, spin: 100, lunge: 0 },
+    talk: { amplitude: 0.02, speed: 6, tilt: 2, spin: 80, lunge: 0 },
+    attack: { amplitude: 0.05, speed: 10, tilt: -6, spin: 200, lunge: -0.14 },
+    impact: { amplitude: 0.05, speed: 16, tilt: -5, spin: 60, lunge: 0 }
+  }
+}
+
+/** Alien healer: the Lightmender - a floating white-gold acolyte with a halo and orbiting light prisms. */
+function buildAlienLightmender(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  const gild = { metallic: 0.8, roughness: 0.25 }
+
+  // Levitation glow.
+  addPart(Vector3.create(0, 0.16, 0), Vector3.create(0.5, 0.04, 0.5), HEAL_GREEN, { cylinder: true, emissive: HEAL_GREEN, emissiveIntensity: 1.8 })
+
+  // White floating robe with gold bands.
+  addPart(Vector3.create(0, 0.64, 0), Vector3.create(0.48, 0.85, 0.48), MEDIC_WHITE, {
+    cone: true,
+    roughness: 0.4,
+    rotation: Quaternion.fromEulerDegrees(180, 0, 0)
+  })
+  addPart(Vector3.create(0, 0.92, 0), Vector3.create(0.38, 0.07, 0.38), ALIEN_GOLD, { cylinder: true, ...gild })
+  addPart(Vector3.create(0, 1.16, 0), Vector3.create(0.3, 0.3, 0.26), MEDIC_WHITE, { roughness: 0.4 })
+
+  // Hooded head with a healing third eye and golden halo.
+  addPart(Vector3.create(0, 1.46, 0), Vector3.create(0.24, 0.24, 0.24), ALIEN_DARK, { sphere: true })
+  addPart(Vector3.create(0, 1.5, 0.12), Vector3.create(0.08, 0.08, 0.05), HEAL_GREEN, { sphere: true, emissive: HEAL_GREEN, emissiveIntensity: 3.2 })
+  addPart(Vector3.create(0, 1.72, 0), Vector3.create(0.34, 0.02, 0.34), ALIEN_GOLD, { cylinder: true, ...gild, emissive: ALIEN_GOLD, emissiveIntensity: 1.4 })
+
+  // Mending staff topped with a green focus crystal.
+  addPart(Vector3.create(0.3, 0.95, 0.1), Vector3.create(0.04, 1, 0.04), ALIEN_GOLD, { cylinder: true, ...gild })
+  addPart(Vector3.create(0.3, 1.5, 0.1), Vector3.create(0.09, 0.2, 0.09), HEAL_GREEN, { cone: true, emissive: HEAL_GREEN, emissiveIntensity: 2.8 })
+
+  // Orbiting light prisms on a spinning carrier.
+  const carrier = engine.addEntity()
+  Transform.create(carrier, { parent: rig.bodyRoot, position: Vector3.create(0, 1.1, 0) })
+  rig.parts.push(carrier)
+  rig.spinner = carrier
+  for (let i = 0; i < 3; i++) {
+    const angle = (i / 3) * Math.PI * 2
+    addChildPart(rig, carrier, Vector3.create(Math.cos(angle) * 0.5, 0, Math.sin(angle) * 0.5), Vector3.create(0.07, 0.2, 0.07), MEDIC_WHITE, {
+      emissive: HEAL_GREEN,
+      emissiveIntensity: 1.8,
+      rotation: Quaternion.fromEulerDegrees(0, 0, 14)
+    })
+  }
+
+  rig.spinAxis = 'y'
+  rig.profiles = {
+    idle: { amplitude: 0.08, speed: 1.4, tilt: 0, spin: 60, lunge: 0 },
+    walk: { amplitude: 0.05, speed: 4.5, tilt: 7, spin: 110, lunge: 0 },
+    talk: { amplitude: 0.04, speed: 7, tilt: 4, spin: 180, lunge: 0 },
+    attack: { amplitude: 0.04, speed: 6, tilt: 4, spin: 500, lunge: 0.04 },
+    impact: { amplitude: 0.08, speed: 16, tilt: -8, spin: 60, lunge: 0 }
+  }
+}
+
+/** Alien siege: the Sunlance - a hovering tripod platform aiming one immense crystal lance. */
+function buildAlienSunlance(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  const gild = { metallic: 0.8, roughness: 0.25 }
+
+  // Antigrav base disc and three landing prongs.
+  addPart(Vector3.create(0, 0.2, 0), Vector3.create(1, 0.06, 1), ALIEN_CRYSTAL, { cylinder: true, emissive: ALIEN_CRYSTAL, emissiveIntensity: 1.6 })
+  for (let i = 0; i < 3; i++) {
+    const angle = (i / 3) * Math.PI * 2 + Math.PI / 6
+    addPart(Vector3.create(Math.cos(angle) * 0.5, 0.34, Math.sin(angle) * 0.5), Vector3.create(0.1, 0.5, 0.1), ALIEN_DARK, {
+      rotation: Quaternion.fromEulerDegrees(Math.sin(angle) * 24, 0, -Math.cos(angle) * 24)
+    })
+  }
+
+  // Core platform and armored crown.
+  addPart(Vector3.create(0, 0.66, 0), Vector3.create(0.72, 0.3, 0.72), ALIEN_GOLD, { cylinder: true, ...gild })
+  addPart(Vector3.create(0, 0.88, -0.1), Vector3.create(0.42, 0.3, 0.5), ALIEN_DARK)
+  addPart(Vector3.create(0, 1.02, -0.28), Vector3.create(0.2, 0.2, 0.2), glow, { sphere: true, emissive: glow, emissiveIntensity: 2.8 })
+
+  // The lance: a long crystal beam cannon angled slightly upward.
+  addPart(Vector3.create(0, 0.98, 0.5), Vector3.create(0.12, 0.12, 1.5), ALIEN_GOLD, {
+    cylinder: true,
+    ...gild,
+    rotation: Quaternion.fromEulerDegrees(82, 0, 0)
+  })
+  addPart(Vector3.create(0, 1.08, 1.15), Vector3.create(0.08, 0.4, 0.08), ALIEN_CRYSTAL, {
+    cone: true,
+    emissive: ALIEN_CRYSTAL,
+    emissiveIntensity: 3,
+    rotation: Quaternion.fromEulerDegrees(82, 0, 0)
+  })
+
+  // Spinning charge ring around the lance mid-section.
+  const ring = engine.addEntity()
+  Transform.create(ring, { parent: rig.bodyRoot, position: Vector3.create(0, 1.0, 0.62), rotation: Quaternion.fromEulerDegrees(82, 0, 0) })
+  rig.parts.push(ring)
+  rig.spinner = ring
+  for (let i = 0; i < 3; i++) {
+    const angle = (i / 3) * Math.PI * 2
+    addChildPart(rig, ring, Vector3.create(Math.cos(angle) * 0.24, 0, Math.sin(angle) * 0.24), Vector3.create(0.07, 0.07, 0.07), ALIEN_CRYSTAL, {
+      sphere: true,
+      emissive: ALIEN_CRYSTAL,
+      emissiveIntensity: 2.8
+    })
+  }
+
+  // Counterweight fins at the rear.
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.16, 0.84, -0.5), Vector3.create(0.05, 0.3, 0.3), ALIEN_DARK, { rotation: Quaternion.fromEulerDegrees(-20, 0, side * 10) })
+  }
+
+  rig.spinAxis = 'y'
+  rig.profiles = {
+    idle: { amplitude: 0.05, speed: 1.3, tilt: 0, spin: 80, lunge: 0 },
+    walk: { amplitude: 0.05, speed: 4, tilt: 4, spin: 140, lunge: 0 },
+    talk: { amplitude: 0.03, speed: 5, tilt: 2, spin: 100, lunge: 0 },
+    attack: { amplitude: 0.04, speed: 9, tilt: -5, spin: 700, lunge: -0.12 },
+    impact: { amplitude: 0.06, speed: 15, tilt: -6, spin: 80, lunge: 0 }
+  }
+}
+
+/** Bio healer: the Broodtender - a pale grub-mother oozing regenerative spores. */
+function buildBioBroodtender(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  const PALE = Color4.create(0.78, 0.72, 0.6, 1)
+  const flesh = { metallic: 0.05, roughness: 0.85 }
+
+  // Soft segmented grub body.
+  addPart(Vector3.create(0, 0.4, 0.1), Vector3.create(0.5, 0.4, 0.55), PALE, { sphere: true, ...flesh })
+  addPart(Vector3.create(0, 0.38, -0.3), Vector3.create(0.42, 0.34, 0.45), PALE, { sphere: true, ...flesh })
+  addPart(Vector3.create(0, 0.36, -0.6), Vector3.create(0.3, 0.26, 0.35), BIO_FLESH, { sphere: true, ...flesh })
+
+  // Glowing spore sacs along the back - these pulse like a heartbeat.
+  for (const [sx, sz, size] of [[-0.16, 0, 0.16], [0.14, -0.2, 0.14], [0, -0.42, 0.12]] as const) {
+    const sac = addPart(Vector3.create(sx, 0.66, sz), Vector3.create(size, size * 0.85, size), HEAL_GREEN, {
+      sphere: true,
+      emissive: HEAL_GREEN,
+      emissiveIntensity: 1.8,
+      ...flesh
+    })
+    rig.fx.push({ entity: sac, mode: 'pulse', anchor: Vector3.create(sx, 0.66, sz), radius: 0, height: 0, speed: 2.8, phase: sx * 9, size })
+  }
+
+  // Gentle face: two calm eyes and drooping antennae.
+  addPart(Vector3.create(0, 0.5, 0.42), Vector3.create(0.26, 0.22, 0.24), BIO_CARAPACE, { sphere: true })
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.08, 0.56, 0.52), Vector3.create(0.05, 0.05, 0.04), glow, { sphere: true, emissive: glow, emissiveIntensity: 3 })
+    addPart(Vector3.create(side * 0.1, 0.68, 0.44), Vector3.create(0.03, 0.22, 0.03), PALE, {
+      cone: true,
+      rotation: Quaternion.fromEulerDegrees(-40, 0, side * 24)
+    })
+  }
+
+  // Six stubby caterpillar legs.
+  for (const side of [-1, 1]) {
+    for (const off of [-0.3, -0.05, 0.2]) {
+      addPart(Vector3.create(side * 0.26, 0.12, off), Vector3.create(0.06, 0.2, 0.06), BIO_CARAPACE, {
+        rotation: Quaternion.fromEulerDegrees(0, 0, side * 24)
+      })
+    }
+  }
+
+  // Regeneration aura ring pulsing on the ground - sells the AoE heal radius.
+  const aura = addPart(Vector3.create(0, 0.04, 0), Vector3.create(2.2, 0.02, 2.2), Color4.create(HEAL_GREEN.r, HEAL_GREEN.g, HEAL_GREEN.b, 0.18), {
+    cylinder: true,
+    emissive: HEAL_GREEN,
+    emissiveIntensity: 0.9
+  })
+  rig.fx.push({ entity: aura, mode: 'pulse', anchor: Vector3.create(0, 0.04, 0), radius: 0, height: 0, speed: 2.2, phase: 0, size: 2.2 })
+
+  // Spore motes drifting up from the sacs.
+  for (let i = 0; i < 3; i++) {
+    const spore = addPart(Vector3.create(0, 0.72, -0.12), Vector3.create(0.04, 0.04, 0.04), HEAL_GREEN, { sphere: true, emissive: HEAL_GREEN, emissiveIntensity: 3 })
+    rig.fx.push({ entity: spore, mode: 'ember', anchor: Vector3.create(0, 0.72, -0.12), radius: 0.14, height: 0.55, speed: 0.7, phase: i * 2.1, size: 0.04 })
+  }
+
+  rig.spinAxis = 'y'
+  rig.profiles = {
+    idle: { amplitude: 0.04, speed: 2.2, tilt: 0, spin: 0, lunge: 0 },
+    walk: { amplitude: 0.07, speed: 9, tilt: 4, spin: 0, lunge: 0 },
+    talk: { amplitude: 0.04, speed: 10, tilt: 4, spin: 0, lunge: 0 },
+    attack: { amplitude: 0.05, speed: 6, tilt: 3, spin: 0, lunge: 0.04 },
+    impact: { amplitude: 0.08, speed: 18, tilt: -8, spin: 0, lunge: 0 }
+  }
+}
+
+/** Bio siege: the Acidmaw - a squat beast with a dorsal lobber-maw that hurls acid. */
+function buildBioAcidmaw(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  const ACID = Color4.create(0.55, 0.85, 0.2, 1)
+  const flesh = { metallic: 0.05, roughness: 0.85 }
+
+  // Four thick legs planted wide.
+  for (const side of [-1, 1]) {
+    for (const off of [-0.3, 0.35]) {
+      addPart(Vector3.create(side * 0.42, 0.24, off), Vector3.create(0.2, 0.48, 0.2), BIO_CARAPACE, { cylinder: true })
+    }
+  }
+
+  // Low-slung armored body.
+  addPart(Vector3.create(0, 0.62, 0), Vector3.create(1.05, 0.6, 1.2), BIO_FLESH, { sphere: true, ...flesh })
+  addPart(Vector3.create(0, 0.92, -0.1), Vector3.create(0.8, 0.34, 0.9), BIO_CARAPACE, { sphere: true, metallic: 0.1, roughness: 0.7 })
+
+  // Dorsal lobber-maw: a bone mortar tube angled skyward with an acid-glow throat.
+  addPart(Vector3.create(0, 1.2, -0.2), Vector3.create(0.32, 0.7, 0.32), BIO_BONE, {
+    cylinder: true,
+    metallic: 0.1,
+    roughness: 0.6,
+    rotation: Quaternion.fromEulerDegrees(-38, 0, 0)
+  })
+  addPart(Vector3.create(0, 1.48, 0.02), Vector3.create(0.24, 0.06, 0.24), ACID, {
+    cylinder: true,
+    emissive: ACID,
+    emissiveIntensity: 3,
+    rotation: Quaternion.fromEulerDegrees(-38, 0, 0)
+  })
+  // Bone lips around the muzzle.
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.16, 1.52, 0.06), Vector3.create(0.05, 0.18, 0.05), BIO_BONE, {
+      cone: true,
+      rotation: Quaternion.fromEulerDegrees(-20, 0, side * 26)
+    })
+  }
+
+  // Acid reservoir sacs feeding the maw - pulsing.
+  for (const side of [-1, 1]) {
+    const sac = addPart(Vector3.create(side * 0.34, 0.9, -0.44), Vector3.create(0.2, 0.18, 0.2), ACID, {
+      sphere: true,
+      emissive: ACID,
+      emissiveIntensity: 1.6,
+      ...flesh
+    })
+    rig.fx.push({ entity: sac, mode: 'pulse', anchor: Vector3.create(side * 0.34, 0.9, -0.44), radius: 0, height: 0, speed: 3, phase: side, size: 0.2 })
+  }
+
+  // Head: low jaw with fangs and team-glow eyes.
+  addPart(Vector3.create(0, 0.56, 0.62), Vector3.create(0.34, 0.26, 0.3), BIO_CARAPACE, { sphere: true })
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.1, 0.62, 0.74), Vector3.create(0.05, 0.05, 0.04), glow, { sphere: true, emissive: glow, emissiveIntensity: 3 })
+    addPart(Vector3.create(side * 0.07, 0.44, 0.72), Vector3.create(0.035, 0.1, 0.035), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(165, 0, side * 8) })
+  }
+
+  // Armor spikes along the shell.
+  addPart(Vector3.create(0, 1.14, 0.3), Vector3.create(0.09, 0.34, 0.09), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(18, 0, 0) })
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.5, 1.02, 0.1), Vector3.create(0.08, 0.3, 0.08), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(0, 0, side * 30) })
+  }
+
+  // Acid drip from the maw.
+  const drip = addPart(Vector3.create(0, 1.44, 0.1), Vector3.create(0.045, 0.045, 0.045), ACID, { sphere: true, emissive: ACID, emissiveIntensity: 3 })
+  rig.fx.push({ entity: drip, mode: 'ember', anchor: Vector3.create(0, 1.44, 0.1), radius: 0.04, height: -0.5, speed: 1.1, phase: 0, size: 0.045 })
+
+  rig.spinAxis = 'y'
+  rig.profiles = {
+    idle: { amplitude: 0.03, speed: 1.8, tilt: 0, spin: 0, lunge: 0 },
+    walk: { amplitude: 0.06, speed: 7, tilt: 3, spin: 0, lunge: 0 },
+    talk: { amplitude: 0.03, speed: 8, tilt: 3, spin: 0, lunge: 0 },
+    attack: { amplitude: 0.06, speed: 10, tilt: -8, spin: 0, lunge: -0.12 },
+    impact: { amplitude: 0.07, speed: 16, tilt: -6, spin: 0, lunge: 0 }
+  }
 }
 
 function unitAnimationSystem(dt: number): void {

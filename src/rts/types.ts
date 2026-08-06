@@ -26,7 +26,7 @@ export type WorkerState =
 export type SoldierState = 'idle' | 'movingToAttack' | 'attacking' | 'movingToRally' | 'attackMoving' | 'patrolling' | 'dead'
 /** defensive: chase a short leash then return to post; hold: never move, only fire in range. */
 export type SoldierStance = 'defensive' | 'hold'
-export type SoldierVariant = 'melee' | 'ranged' | 'caster' | 'flyer' | 'titan' | 'hero'
+export type SoldierVariant = 'melee' | 'ranged' | 'caster' | 'flyer' | 'titan' | 'hero' | 'healer' | 'siege'
 export type BuildableKind = 'temple' | 'supplyHouse' | 'barracks' | 'techLab' | 'forge' | 'airForge' | 'fireplace' | 'turret'
 /** damage/speed are ground-only (forge); airDamage/airSpeed apply to flyers (air forge). */
 export type UpgradeKind = 'damage' | 'speed' | 'airDamage' | 'airSpeed'
@@ -131,6 +131,10 @@ export type Soldier = Selectable & {
   kills?: number
   /** Caster signature ability cooldown (seconds until the next auto-cast). */
   abilityTimer?: number
+  /** Healer variants: HP restored per second, current patient, and FX/scan tick. */
+  healRate?: number
+  healTargetId?: string
+  healTimer?: number
   /** Hero active ability cooldown (seconds until the button is ready again). */
   heroAbilityCooldown?: number
   /** Time Fracture slow (seconds remaining at half move speed). */
@@ -201,6 +205,8 @@ export type RaceUnitStats = {
   attackRange?: number
   attackRate?: number
   splashRadius?: number
+  /** Healer variants: HP restored per second (beam per target, aura per ally in range). */
+  healRate?: number
 }
 
 export type UpgradeResearch = {

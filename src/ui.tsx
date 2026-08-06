@@ -111,8 +111,10 @@ const UNIT_ICON_FILES: Record<SoldierVariant | 'worker', string> = {
   worker: 'icon-unit-worker',
   melee: 'icon-unit-melee',
   ranged: 'icon-unit-ranged',
+  healer: 'icon-unit-healer',
   caster: 'icon-unit-caster',
   flyer: 'icon-unit-flyer',
+  siege: 'icon-unit-siege',
   titan: 'icon-unit-titan',
   hero: 'icon-unit-hero'
 }
@@ -908,12 +910,14 @@ function getCommandSlots(selected: SelectedSummary): CommandSlot[] {
   if (selected.kind === 'barracks') {
     slots.push(trainSlot('melee', 'Frontline melee fighter.'))
     slots.push(trainSlot('ranged', 'Ranged attacker. Fires from a distance.'))
+    slots.push(trainSlot('healer', getHealerDescription()))
     slots.push(rallySlot())
   }
 
   if (selected.kind === 'techLab') {
     slots.push(trainSlot('caster', 'Spellcaster. Slow blasts that splash nearby enemies.'))
     slots.push(trainSlot('flyer', 'Fast flyer. Hovers over the battlefield.'))
+    slots.push(trainSlot('siege', getSiegeDescription()))
     slots.push(trainSlot('titan', 'Giant assault monster. Splash stomps, huge HP.'))
     slots.push(rallySlot())
   }
@@ -986,10 +990,26 @@ function getCommandSlots(selected: SelectedSummary): CommandSlot[] {
   return slots
 }
 
+/** Support unit blurb, flavored per race since each heals differently. */
+function getHealerDescription(): string {
+  const race = gameState.playerRace
+  if (race === 'bio') return 'Support. Regeneration aura heals all nearby allies.'
+  if (race === 'alien') return 'Support. Heal beam mends wounded fighters and structures.'
+  return 'Support. Heal beam mends one wounded fighter at a time.'
+}
+
+/** Siege blurb, flavored per race. */
+function getSiegeDescription(): string {
+  const race = gameState.playerRace
+  if (race === 'bio') return 'Acid artillery. Outranges towers, splash poisons victims. Cannot hit air.'
+  if (race === 'alien') return 'Beam artillery. Heaviest single hit in the game, outranges towers. Cannot hit air.'
+  return 'Splash artillery. Outranges defense towers. Cannot hit air.'
+}
+
 function trainSlot(variant: SoldierVariant, description: string): CommandSlot {
   const definition = getSoldierDefinition('player', variant)
   const unlocked = isUnitUnlocked(variant)
-  const requiredKind = variant === 'titan' ? 'forge' : undefined
+  const requiredKind = variant === 'titan' || variant === 'siege' ? 'forge' : undefined
 
   return {
     id: `train-${variant}`,
@@ -1075,8 +1095,8 @@ function getBuildingDescription(kind: BuildableKind): string {
   const race = getRace('player')
   if (kind === 'temple') return `Main base. Trains ${race.worker.name}s and receives resources. Lose all of them and you lose.`
   if (kind === 'supplyHouse') return 'Raises your supply cap so you can field more units.'
-  if (kind === 'barracks') return `Tier 1 production: ${race.melee.name}s and ${race.ranged.name}s.`
-  if (kind === 'techLab') return `Tier 2 production: ${race.caster.name}s, ${race.flyer.name}s and ${race.titan.name}s.`
+  if (kind === 'barracks') return `Tier 1 production: ${race.melee.name}s, ${race.ranged.name}s and ${race.healer.name}s.`
+  if (kind === 'techLab') return `Tier 2 production: ${race.caster.name}s, ${race.flyer.name}s, ${race.siege.name}s and ${race.titan.name}s.`
   if (kind === 'forge') return 'Researches ground Weapons and Propulsion upgrades. Unlocks the titan.'
   if (kind === 'airForge') return `Researches Flight Weapons and Flight Propulsion for your ${race.flyer.name}s.`
   if (kind === 'turret') return 'Automated defense tower. Fires on hostile units in range.'
