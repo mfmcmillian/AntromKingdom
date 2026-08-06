@@ -107,6 +107,13 @@ export type StanceCommand = {
   stance: 'defensive' | 'hold'
 }
 
+export type SiegeModeCommand = {
+  type: 'siegeMode'
+  unitIds: string[]
+  /** true = dig in (deploy the cannon), false = pack up into mobile mode. */
+  sieged: boolean
+}
+
 export type RallyCommand = {
   type: 'rally'
   buildingId: string
@@ -134,6 +141,7 @@ export type MatchCommand =
   | RepairCommand
   | ResearchCommand
   | StanceCommand
+  | SiegeModeCommand
   | RallyCommand
   | HeroAbilityCommand
   | SurrenderCommand

@@ -77,7 +77,7 @@ import { isPointerOverHud } from './rts/hud'
 import { SelectionMarkerTarget, clearSelectionMarkers, updateSelectionMarkers } from './rts/selectionMarkers'
 import { buildEnvironmentEnclosure } from './rts/environment'
 import { buildTerrain } from './rts/terrain'
-import { buildUnitModel, disposeUnit, getTeamColor, isProceduralUnit, setUnitAnimation, setUnitUpgradeInsignia, updateUnitCargo } from './rts/unitModels'
+import { buildUnitModel, disposeUnit, getTeamColor, isProceduralUnit, setSiegeDeployProgress, setUnitAnimation, setUnitUpgradeInsignia, updateUnitCargo } from './rts/unitModels'
 import { BUILDING_MODEL_HEIGHTS, buildBuildingModel, disposeBuildingModel, isProceduralBuilding, setBuildingModelDamage } from './rts/buildingModels'
 import { RACES, UNIT_REQUIREMENTS, getBuildingDisplayName, getRace, getSoldierDefinition, getWorkerDefinition, pickRandomRace } from './rts/races'
 import { buildResourceModel, disposeResourceModel, playResourceDepletion, playResourceGatherPulse } from './rts/resourceModels'
@@ -523,7 +523,7 @@ function updatePatrolInput(dt: number): void {
 
   cancelPatrol()
   orderClickConsumedUntilRelease = true
-  const patrollers = getCommandableSoldiers().filter((soldier) => soldier.alive && getTeam(soldier) === 'player')
+  const patrollers = getCommandableSoldiers().filter((soldier) => soldier.alive && getTeam(soldier) === 'player' && !isSiegeLocked(soldier))
   if (patrollers.length === 0) return
 
   const destination = Vector3.create(ground.x, 0.25, ground.z)
@@ -565,7 +565,7 @@ function updateAttackMoveInput(dt: number): void {
 
   cancelAttackMove()
   orderClickConsumedUntilRelease = true
-  const attackers = getCommandableSoldiers().filter((soldier) => soldier.alive && getTeam(soldier) === 'player')
+  const attackers = getCommandableSoldiers().filter((soldier) => soldier.alive && getTeam(soldier) === 'player' && !isSiegeLocked(soldier))
   if (attackers.length === 0) return
 
   const destination = Vector3.create(ground.x, 0.25, ground.z)
@@ -675,6 +675,152 @@ export function cycleSelectedStance(): void {
 /** Stance of the first selected fighter, for the command card label. */
 export function getSelectedStance(): SoldierStance | undefined {
   return getSelectedSoldiers().find((soldier) => soldier.alive)?.stance
+}
+
+// ---------------------------------------------------------------------------
+// Siege mode: artillery rolls around weak, then digs in on command. While the
+// transform plays the gun is locked down; once deployed the big cannon grows
+// out, damage/range jump to full strength and the unit cannot move.
+// ---------------------------------------------------------------------------
+
+const SIEGE_TRANSFORM_TIME = 2.5
+/** Mobile-mode direct fire: a fraction of the deployed cannon's punch, short range, no splash. */
+const SIEGE_MOBILE_DAMAGE_FACTOR = 0.35
+const SIEGE_MOBILE_RANGE = 5.5
+/** AI packs up after this long with no hostiles in deployed range. */
+const AI_UNSIEGE_DELAY = 6
+const AI_SIEGE_SCAN_INTERVAL = 0.6
+
+/** Dug in or mid-transform: the gun refuses movement orders. */
+function isSiegeLocked(soldier: Soldier): boolean {
+  return soldier.variant === 'siege' && (soldier.sieged === true || (soldier.siegeTransition ?? 0) > 0)
+}
+
+/** Swaps the live weapon stats between mobile pop-gun and deployed cannon. */
+function applySiegeModeStats(soldier: Soldier, sieged: boolean): void {
+  const definition = getSoldierDefinition(getTeam(soldier), 'siege')
+  if (sieged) {
+    soldier.damage = definition.damage ?? soldier.damage
+    soldier.attackRange = definition.attackRange ?? soldier.attackRange
+    soldier.splashRadius = definition.splashRadius ?? 0
+  } else {
+    soldier.damage = Math.max(1, Math.round((definition.damage ?? 10) * SIEGE_MOBILE_DAMAGE_FACTOR))
+    soldier.attackRange = SIEGE_MOBILE_RANGE
+    soldier.splashRadius = 0
+  }
+}
+
+/** Kicks off the dig-in / pack-up transform: drops every order and locks the unit down. */
+function startSiegeTransition(soldier: Soldier, sieged: boolean): void {
+  if (!soldier.alive || soldier.variant !== 'siege') return
+  if ((soldier.siegeTransition ?? 0) > 0 || soldier.sieged === sieged) return
+
+  soldier.siegeTargetMode = sieged
+  soldier.siegeTransition = SIEGE_TRANSFORM_TIME
+  soldier.siegeIdleTimer = 0
+  soldier.state = 'idle'
+  soldier.targetId = undefined
+  soldier.attackPosition = undefined
+  soldier.attackMovePoint = undefined
+  soldier.patrolPointA = undefined
+  soldier.patrolPointB = undefined
+  soldier.rallyPoint = undefined
+  soldier.autoEngaged = false
+  soldier.guardPoint = cloneVector(Transform.get(soldier.entity).position)
+  setSoldierAnimation(soldier, 'impact')
+}
+
+/** Command card toggle: digs in every mobile gun in the selection, or packs them all up. */
+export function toggleSelectedSiegeMode(): void {
+  if (!isMatchActive()) return
+
+  const siegeUnits = getSelectedSoldiers().filter((soldier) => soldier.alive && soldier.variant === 'siege' && getTeam(soldier) === 'player')
+  if (siegeUnits.length === 0) {
+    setStatus('Select siege artillery first.')
+    return
+  }
+
+  const sieged = siegeUnits.some((soldier) => !soldier.sieged)
+  const changed = siegeUnits.filter((soldier) => (soldier.siegeTransition ?? 0) <= 0 && soldier.sieged !== sieged)
+  if (changed.length === 0) return
+
+  for (const soldier of changed) startSiegeTransition(soldier, sieged)
+  if (isRelayActive()) broadcastMyCommand({ type: 'siegeMode', unitIds: changed.map((soldier) => soldier.id), sieged })
+  playAcknowledge()
+  setStatus(sieged ? `Digging in: the main cannon comes online in ${SIEGE_TRANSFORM_TIME}s.` : 'Packing up: artillery returning to mobile mode.')
+}
+
+/** Mode of the first selected siege gun, for the command card label. Undefined when none selected. */
+export function getSelectedSiegeMode(): 'mobile' | 'sieged' | 'transforming' | undefined {
+  const soldier = getSelectedSoldiers().find((unit) => unit.alive && unit.variant === 'siege')
+  if (!soldier) return undefined
+  if ((soldier.siegeTransition ?? 0) > 0) return 'transforming'
+  return soldier.sieged ? 'sieged' : 'mobile'
+}
+
+let aiSiegeScanTimer = 0
+
+/** Ticks transform timers (growing the cannon) and runs the AI's auto dig-in. */
+function updateSiegeUnits(dt: number): void {
+  aiSiegeScanTimer += dt
+  const runAiScan = aiSiegeScanTimer >= AI_SIEGE_SCAN_INTERVAL
+  if (runAiScan) aiSiegeScanTimer = 0
+
+  for (const soldier of soldiers) {
+    if (!soldier.alive || soldier.variant !== 'siege') continue
+
+    const transition = soldier.siegeTransition ?? 0
+    if (transition > 0) {
+      const remaining = transition - dt
+      soldier.siegeTransition = Math.max(0, remaining)
+      const deploying = soldier.siegeTargetMode === true
+      const progress = 1 - Math.max(0, remaining) / SIEGE_TRANSFORM_TIME
+      setSiegeDeployProgress(soldier.entity, deploying ? progress : 1 - progress)
+      if (remaining <= 0) {
+        soldier.sieged = deploying
+        applySiegeModeStats(soldier, deploying)
+        setSiegeDeployProgress(soldier.entity, deploying ? 1 : 0)
+        setSoldierAnimation(soldier, 'idle')
+      }
+      continue
+    }
+
+    // AI-owned guns manage their own mode: dig in when hostiles come into the
+    // deployed cannon's reach, pack up after the area stays quiet for a while.
+    const team = getTeam(soldier)
+    if (team === 'player' || isMultiplayerHumanTeam(team) || !runAiScan) continue
+
+    const deployedRange = getSoldierDefinition(team, 'siege').attackRange ?? 11
+    const hostileNear = hasHostileWithinRange(soldier, deployedRange - 0.5)
+    if (!soldier.sieged) {
+      if (hostileNear) startSiegeTransition(soldier, true)
+    } else if (hostileNear) {
+      soldier.siegeIdleTimer = 0
+    } else {
+      soldier.siegeIdleTimer = (soldier.siegeIdleTimer ?? 0) + AI_SIEGE_SCAN_INTERVAL
+      if (soldier.siegeIdleTimer >= AI_UNSIEGE_DELAY) startSiegeTransition(soldier, false)
+    }
+  }
+}
+
+/** Any enemy ground unit or building inside the radius (air doesn't count: siege can't hit it). */
+function hasHostileWithinRange(soldier: Soldier, range: number): boolean {
+  const team = getTeam(soldier)
+  const position = Transform.get(soldier.entity).position
+
+  for (const other of soldiers) {
+    if (!other.alive || other.variant === 'flyer' || !areHostile(team, getTeam(other))) continue
+    if (distanceToPoint(position, Transform.get(other.entity).position) <= range) return true
+  }
+  for (const worker of workers) {
+    if (!worker.alive || !areHostile(team, getTeam(worker))) continue
+    if (distanceToPoint(position, Transform.get(worker.entity).position) <= range) return true
+  }
+  for (const building of buildings) {
+    if (!building.alive || !areHostile(team, getTeam(building))) continue
+    if (distanceToPoint(position, Transform.get(building.entity).position) <= range) return true
+  }
+  return false
 }
 
 // ---------------------------------------------------------------------------
@@ -1280,7 +1426,7 @@ export function getSelectedSummary(): SelectedSummary {
     const heroLine = selectedUnitCount <= 1 && soldier.variant === 'hero' ? `${getRace(getTeam(soldier)).heroTrait} ` : ''
     const casterLine = selectedUnitCount <= 1 && soldier.variant === 'caster' ? `${CASTER_ABILITY[getRace(getTeam(soldier)).id].describe} ` : ''
     const healerLine = selectedUnitCount <= 1 && soldier.variant === 'healer' ? `${getHealerTraitLine(soldier)} ` : ''
-    const siegeLine = selectedUnitCount <= 1 && soldier.variant === 'siege' ? `Siege artillery: outranges defense towers. ` : ''
+    const siegeLine = selectedUnitCount <= 1 && soldier.variant === 'siege' ? `${getSiegeModeLine(soldier)} ` : ''
     // Close-quarters units can't reach flyers - surface that in the panel (healers never attack at all).
     const airLine =
       selectedUnitCount <= 1 && soldier.variant !== 'healer' && !canAttackTarget(soldier, { kind: 'soldier', variant: 'flyer' } as Soldier) ? 'Cannot attack air. ' : ''
@@ -1530,6 +1676,11 @@ function createSoldier(position: Vector3, team: Team = 'player', variant: Soldie
   soldier.attackRate = definition.attackRate ?? CONFIG.soldierAttackRate
   soldier.splashRadius = definition.splashRadius ?? 0
   soldier.healRate = definition.healRate
+  // Artillery rolls off the line in mobile mode: weak pop-gun until it digs in.
+  if (variant === 'siege') {
+    soldier.sieged = false
+    applySiegeModeStats(soldier, false)
+  }
   soldier.state = 'idle'
   soldier.stance = 'defensive'
   soldier.attackTimer = 0
@@ -1548,6 +1699,13 @@ function getSoldierColliderScale(variant: SoldierVariant): Vector3 {
   if (variant === 'flyer') return Vector3.create(1.8, 3.2, 1.8)
   if (variant === 'siege') return Vector3.create(2, 2.4, 2)
   return Vector3.create(1.4, 2, 1.4)
+}
+
+/** Info-panel blurb for siege artillery, reflecting its current mode. */
+function getSiegeModeLine(soldier: Soldier): string {
+  if ((soldier.siegeTransition ?? 0) > 0) return soldier.siegeTargetMode ? 'Transforming: digging in...' : 'Transforming: packing up...'
+  if (soldier.sieged) return 'DUG IN: main cannon online, outranges defense towers. Immobile.'
+  return 'Mobile: weak pop-gun. Dig in to unleash the main cannon.'
 }
 
 /** Info-panel blurb for the race's support unit (each heals differently). */
@@ -2008,6 +2166,11 @@ function sendWorkerToRally(worker: Worker, rallyPoint: Vector3): void {
 }
 
 function sendSoldierToRally(soldier: Soldier, rallyPoint: Vector3): void {
+  // Dug-in artillery is bolted down: it must pack up before it can move.
+  if (isSiegeLocked(soldier)) {
+    if (getTeam(soldier) === 'player') setStatus(`${soldier.name} is dug in: switch to mobile mode to move.`)
+    return
+  }
   soldier.state = 'movingToRally'
   soldier.targetId = undefined
   soldier.attackPosition = undefined
@@ -2367,6 +2530,7 @@ export function applyRemoteCommand(team: Team, command: MatchCommand): void {
         const unit = getRemoteUnit(id, team)
         if (unit?.kind !== 'soldier') continue
         const soldier = unit as Soldier
+        if (isSiegeLocked(soldier)) continue
         const slotPosition = getFormationPosition(destination, slot++, SOLDIER_MOVE_FORMATION_RADIUS)
         soldier.state = 'attackMoving'
         soldier.targetId = undefined
@@ -2388,6 +2552,7 @@ export function applyRemoteCommand(team: Team, command: MatchCommand): void {
         const unit = getRemoteUnit(id, team)
         if (unit?.kind !== 'soldier') continue
         const soldier = unit as Soldier
+        if (isSiegeLocked(soldier)) continue
         const here = Transform.get(soldier.entity).position
         const slotPosition = getFormationPosition(destination, slot++, SOLDIER_MOVE_FORMATION_RADIUS)
         soldier.state = 'patrolling'
@@ -2520,6 +2685,15 @@ export function applyRemoteCommand(team: Team, command: MatchCommand): void {
       break
     }
 
+    case 'siegeMode': {
+      for (const id of command.unitIds) {
+        const unit = getRemoteUnit(id, team)
+        if (unit?.kind !== 'soldier') continue
+        startSiegeTransition(unit as Soldier, command.sieged)
+      }
+      break
+    }
+
     case 'surrender': {
       eliminateTeam(team, true)
       break
@@ -2644,6 +2818,7 @@ function rtsTickSystem(dt: number): void {
   updateWorkerCargoVisuals()
   updateSoldiersSystem(dt, combatSystemDeps)
   updateHealers(dt, { setSoldierAnimation })
+  updateSiegeUnits(dt)
   updateUnitSeparation(dt)
   updateFireplaceAuras(dt)
   updateStatusEffects(dt)

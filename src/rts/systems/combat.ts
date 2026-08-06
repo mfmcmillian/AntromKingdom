@@ -33,6 +33,10 @@ export function updateSoldiers(dt: number, deps: CombatSystemDeps): void {
   for (const soldier of soldiers) {
     if (!soldier.alive) continue
 
+    // Mid siege-transform: the unit is locked down until the cannon finishes
+    // growing or retracting (the timer itself ticks in the siege system).
+    if ((soldier.siegeTransition ?? 0) > 0) continue
+
     if (soldier.state === 'movingToRally') {
       updateSoldierRallyMovement(soldier, dt, deps)
       continue
@@ -49,8 +53,8 @@ export function updateSoldiers(dt: number, deps: CombatSystemDeps): void {
     }
 
     if (scanForTargets && soldier.state === 'idle') {
-      // Hold-stance units only fire at what is already in weapon range; others scan wider and chase.
-      const acquireRange = soldier.stance === 'hold' ? soldier.attackRange : AUTO_ACQUIRE_RANGE
+      // Hold-stance and dug-in units only fire at what is already in weapon range; others scan wider and chase.
+      const acquireRange = holdsGround(soldier) ? soldier.attackRange : AUTO_ACQUIRE_RANGE
       const target = findNearestEnemyInRange(soldier, acquireRange)
       if (target) autoEngage(soldier, target, deps)
     }
@@ -166,8 +170,8 @@ function clonePosition(position: { x: number; y: number; z: number }): { x: numb
  * target as the point slid around them. Buildings keep a fixed approach-side spot.
  */
 function updateMovingToAttack(soldier: Soldier, target: CombatTarget, dt: number, deps: CombatSystemDeps): void {
-  // Hold-stance units never leave their spot: fire if in range, otherwise drop the target.
-  if (soldier.stance === 'hold') {
+  // Hold-stance and dug-in siege units never leave their spot: fire if in range, otherwise drop the target.
+  if (holdsGround(soldier)) {
     if (distanceToPosition(soldier.entity, Transform.get(target.entity).position) <= soldier.attackRange) {
       startAttacking(soldier, deps)
       faceTarget(soldier, Transform.get(target.entity).position)
@@ -220,7 +224,7 @@ function updateAttacking(soldier: Soldier, target: CombatTarget, dt: number, dep
     const targetPosition = Transform.get(target.entity).position
     // Re-chase with a small hysteresis buffer so units don't stutter on the range edge.
     if (distanceToPosition(soldier.entity, targetPosition) > soldier.attackRange + 0.6) {
-      if (soldier.stance === 'hold') {
+      if (holdsGround(soldier)) {
         soldier.targetId = undefined
         soldier.attackPosition = undefined
         soldier.state = 'idle'
@@ -242,8 +246,15 @@ function updateAttacking(soldier: Soldier, target: CombatTarget, dt: number, dep
   }
 }
 
+/** Hold-stance fighters and dug-in siege guns stand their ground: fire in range, never chase. */
+function holdsGround(soldier: Soldier): boolean {
+  return soldier.stance === 'hold' || soldier.sieged === true
+}
+
 /** Propulsion research speeds up the matching fighters (ground or air); Time Fracture halves it, Obelisk haste boosts it. */
 function getUpgradedMoveSpeed(soldier: Soldier): number {
+  // Dug-in siege guns are bolted to the ground until they transform back.
+  if (soldier.sieged) return 0
   const slowFactor = (soldier.slowRemaining ?? 0) > 0 ? 0.5 : 1
   const hasteFactor = (soldier.hasteRemaining ?? 0) > 0 ? 1.25 : 1
   return soldier.moveSpeed * getSpeedMultiplier(getTeam(soldier), soldier.variant) * slowFactor * hasteFactor

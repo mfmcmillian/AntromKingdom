@@ -135,6 +135,12 @@ export type Soldier = Selectable & {
   healRate?: number
   healTargetId?: string
   healTimer?: number
+  /** Siege variants: deployed (dug in) state, transform countdown with the
+   * mode being transitioned into, and the AI's out-of-combat un-siege timer. */
+  sieged?: boolean
+  siegeTransition?: number
+  siegeTargetMode?: boolean
+  siegeIdleTimer?: number
   /** Hero active ability cooldown (seconds until the button is ready again). */
   heroAbilityCooldown?: number
   /** Time Fracture slow (seconds remaining at half move speed). */

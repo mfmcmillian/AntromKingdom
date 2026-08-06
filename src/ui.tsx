@@ -9,6 +9,8 @@ import {
   canCancelSelectedConstruction,
   castSelectedHeroAbility,
   getSelectedHeroAbility,
+  getSelectedSiegeMode,
+  toggleSelectedSiegeMode,
   CONTROL_GROUP_SLOTS,
   cycleSelectedStance,
   endRtsMatch,
@@ -153,6 +155,7 @@ const ICON = {
     attackMove: 'images/icons/icon-action-attackmove.jpg',
     patrol: 'images/icons/icon-action-patrol.jpg',
     stance: 'images/icons/icon-action-stance.jpg',
+    siegeMode: 'images/icons/icon-action-siegemode.jpg',
     repair: 'images/icons/icon-action-repair.jpg',
     build: 'images/icons/icon-action-build.jpg',
     buildAdvanced: 'images/icons/icon-action-buildadvanced.jpg'
@@ -974,6 +977,20 @@ function getCommandSlots(selected: SelectedSummary): CommandSlot[] {
       description: 'Toggle stance. Defensive: short chase, returns to post. Hold: never moves, fires in range.',
       onClick: cycleSelectedStance
     })
+    // Artillery in the selection gets the dig-in / pack-up transform toggle.
+    const siegeMode = getSelectedSiegeMode()
+    if (siegeMode) {
+      slots.push({
+        id: 'siege-mode',
+        icon: ICON.action.siegeMode,
+        name: siegeMode === 'sieged' ? 'Pack Up' : siegeMode === 'transforming' ? 'Transforming...' : 'Siege Mode',
+        description:
+          siegeMode === 'sieged'
+            ? 'Retract the main cannon and return to mobile mode so the artillery can move.'
+            : 'Dig in and grow the main cannon: huge damage and range, but the gun cannot move.',
+        onClick: toggleSelectedSiegeMode
+      })
+    }
     slots.push(selectAllSlot('all fighters'))
   }
 
@@ -1001,9 +1018,9 @@ function getHealerDescription(): string {
 /** Siege blurb, flavored per race. */
 function getSiegeDescription(): string {
   const race = gameState.playerRace
-  if (race === 'bio') return 'Acid artillery. Outranges towers, splash poisons victims. Cannot hit air.'
-  if (race === 'alien') return 'Beam artillery. Heaviest single hit in the game, outranges towers. Cannot hit air.'
-  return 'Splash artillery. Outranges defense towers. Cannot hit air.'
+  if (race === 'bio') return 'Acid artillery. Weak while mobile; dig in to grow the mortar: outranges towers, splash poisons victims. Cannot hit air.'
+  if (race === 'alien') return 'Beam artillery. Weak while mobile; dig in to grow the lance: heaviest single hit in the game, outranges towers. Cannot hit air.'
+  return 'Splash artillery. Weak while mobile; dig in to grow the cannon: outranges defense towers. Cannot hit air.'
 }
 
 function trainSlot(variant: SoldierVariant, description: string): CommandSlot {

@@ -63,6 +63,8 @@ interface UnitRig {
   /** Ground rings/discs under hero feet - hidden on the map, shown as a showcase pedestal. */
   groundFx: Entity[]
   groundFxVisible: boolean
+  /** Siege units: the deployed-mode cannon group, grown from scale 0 while digging in. */
+  siegeCannon?: Entity
   state: UnitAnimState
   time: number
   profiles: Record<UnitAnimState, MotionProfile>
@@ -1737,6 +1739,23 @@ export function setUnitBodyTilt(root: Entity, tilt: number | undefined): void {
 }
 
 /** Maps animation clip names onto the rig's procedural motion profiles. */
+/** Grows (or retracts) a siege unit's deployed cannon: 0 = mobile, 1 = fully dug in. */
+export function setSiegeDeployProgress(root: Entity, progress: number): void {
+  const rig = rigs.get(root)
+  if (!rig?.siegeCannon) return
+  const clamped = Math.max(0.0001, Math.min(1, progress))
+  Transform.getMutable(rig.siegeCannon).scale = Vector3.create(clamped, clamped, clamped)
+}
+
+/** Creates the (initially retracted) deployed-mode group for a siege builder. */
+function createSiegeCannonGroup(rig: UnitRig): Entity {
+  const group = engine.addEntity()
+  Transform.create(group, { parent: rig.bodyRoot, position: Vector3.create(0, 0, 0), scale: Vector3.create(0.0001, 0.0001, 0.0001) })
+  rig.parts.push(group)
+  rig.siegeCannon = group
+  return group
+}
+
 export function setUnitAnimation(root: Entity, clipName: string): void {
   const rig = rigs.get(root)
   if (!rig) return
@@ -1979,6 +1998,31 @@ function buildHumanThunderhead(rig: UnitRig, addPart: PartAdder, glow: Color4): 
   addPart(Vector3.create(-0.18, 0.9, -0.28), Vector3.create(0.04, 0.06, 0.04), METAL_DARK, { cylinder: true })
   addPart(Vector3.create(0, 0.6, 0.56), Vector3.create(0.07, 0.07, 0.07), glow, { sphere: true, emissive: glow, emissiveIntensity: 2.8 })
 
+  // Deployed mode: a second, far bigger howitzer grows out of the turret and
+  // outrigger spades slam into the ground for the recoil.
+  const deployed = createSiegeCannonGroup(rig)
+  addChildPart(rig, deployed, Vector3.create(0, 1.15, 0.55), Vector3.create(0.17, 0.17, 2.1), METAL_DARK, {
+    cylinder: true,
+    rotation: Quaternion.fromEulerDegrees(68, 0, 0)
+  })
+  addChildPart(rig, deployed, Vector3.create(0, 1.5, 1.4), Vector3.create(0.22, 0.22, 0.24), METAL_LIGHT, {
+    cylinder: true,
+    rotation: Quaternion.fromEulerDegrees(68, 0, 0)
+  })
+  addChildPart(rig, deployed, Vector3.create(0, 1.58, 1.6), Vector3.create(0.15, 0.15, 0.05), glow, {
+    cylinder: true,
+    emissive: glow,
+    emissiveIntensity: 3,
+    rotation: Quaternion.fromEulerDegrees(68, 0, 0)
+  })
+  addChildPart(rig, deployed, Vector3.create(0, 0.9, -0.3), Vector3.create(0.3, 0.26, 0.4), METAL_LIGHT)
+  for (const side of [-1, 1]) {
+    addChildPart(rig, deployed, Vector3.create(side * 0.72, 0.22, -0.2), Vector3.create(0.14, 0.4, 0.24), METAL_DARK, {
+      rotation: Quaternion.fromEulerDegrees(0, 0, side * 35)
+    })
+    addChildPart(rig, deployed, Vector3.create(side * 0.9, 0.06, -0.2), Vector3.create(0.26, 0.08, 0.34), METAL_LIGHT)
+  }
+
   rig.spinAxis = 'y'
   rig.profiles = {
     idle: { amplitude: 0.015, speed: 1.2, tilt: 0, spin: 60, lunge: 0 },
@@ -2086,6 +2130,37 @@ function buildAlienSunlance(rig: UnitRig, addPart: PartAdder, glow: Color4): voi
   // Counterweight fins at the rear.
   for (const side of [-1, 1]) {
     addPart(Vector3.create(side * 0.16, 0.84, -0.5), Vector3.create(0.05, 0.3, 0.3), ALIEN_DARK, { rotation: Quaternion.fromEulerDegrees(-20, 0, side * 10) })
+  }
+
+  // Deployed mode: the lance extends into a colossal beam cannon with a
+  // second focusing crystal, and anchor prongs spike into the ground.
+  const deployed = createSiegeCannonGroup(rig)
+  addChildPart(rig, deployed, Vector3.create(0, 1.2, 1.1), Vector3.create(0.15, 0.15, 1.7), ALIEN_GOLD, {
+    cylinder: true,
+    metallic: 0.8,
+    roughness: 0.25,
+    rotation: Quaternion.fromEulerDegrees(78, 0, 0)
+  })
+  addChildPart(rig, deployed, Vector3.create(0, 1.45, 1.95), Vector3.create(0.14, 0.6, 0.14), ALIEN_CRYSTAL, {
+    cone: true,
+    emissive: ALIEN_CRYSTAL,
+    emissiveIntensity: 3.4,
+    rotation: Quaternion.fromEulerDegrees(78, 0, 0)
+  })
+  addChildPart(rig, deployed, Vector3.create(0, 1.3, 1.45), Vector3.create(0.34, 0.06, 0.34), ALIEN_CRYSTAL, {
+    cylinder: true,
+    emissive: ALIEN_CRYSTAL,
+    emissiveIntensity: 2.4,
+    rotation: Quaternion.fromEulerDegrees(78, 0, 0)
+  })
+  for (let i = 0; i < 3; i++) {
+    const angle = (i / 3) * Math.PI * 2 + Math.PI / 6
+    addChildPart(rig, deployed, Vector3.create(Math.cos(angle) * 0.62, 0.14, Math.sin(angle) * 0.62), Vector3.create(0.1, 0.5, 0.1), ALIEN_CRYSTAL, {
+      cone: true,
+      emissive: ALIEN_CRYSTAL,
+      emissiveIntensity: 1.8,
+      rotation: Quaternion.fromEulerDegrees(180 + Math.sin(angle) * 14, 0, Math.cos(angle) * 14)
+    })
   }
 
   rig.spinAxis = 'y'
@@ -2226,6 +2301,35 @@ function buildBioAcidmaw(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
   // Acid drip from the maw.
   const drip = addPart(Vector3.create(0, 1.44, 0.1), Vector3.create(0.045, 0.045, 0.045), ACID, { sphere: true, emissive: ACID, emissiveIntensity: 3 })
   rig.fx.push({ entity: drip, mode: 'ember', anchor: Vector3.create(0, 1.44, 0.1), radius: 0.04, height: -0.5, speed: 1.1, phase: 0, size: 0.045 })
+
+  // Deployed mode: the maw erupts into a towering bone mortar and root spurs
+  // burrow into the soil to brace the recoil.
+  const deployed = createSiegeCannonGroup(rig)
+  addChildPart(rig, deployed, Vector3.create(0, 1.75, 0.15), Vector3.create(0.4, 0.85, 0.4), BIO_BONE, {
+    cylinder: true,
+    metallic: 0.1,
+    roughness: 0.6,
+    rotation: Quaternion.fromEulerDegrees(-32, 0, 0)
+  })
+  addChildPart(rig, deployed, Vector3.create(0, 2.14, 0.42), Vector3.create(0.34, 0.08, 0.34), ACID, {
+    cylinder: true,
+    emissive: ACID,
+    emissiveIntensity: 3.4,
+    rotation: Quaternion.fromEulerDegrees(-32, 0, 0)
+  })
+  for (const side of [-1, 1]) {
+    addChildPart(rig, deployed, Vector3.create(side * 0.24, 2.1, 0.5), Vector3.create(0.06, 0.24, 0.06), BIO_BONE, {
+      cone: true,
+      rotation: Quaternion.fromEulerDegrees(-16, 0, side * 30)
+    })
+  }
+  for (let i = 0; i < 4; i++) {
+    const angle = (i / 4) * Math.PI * 2 + Math.PI / 4
+    addChildPart(rig, deployed, Vector3.create(Math.cos(angle) * 0.7, 0.16, Math.sin(angle) * 0.7), Vector3.create(0.12, 0.45, 0.12), BIO_CARAPACE, {
+      cone: true,
+      rotation: Quaternion.fromEulerDegrees(180 + Math.sin(angle) * 20, 0, Math.cos(angle) * 20)
+    })
+  }
 
   rig.spinAxis = 'y'
   rig.profiles = {
