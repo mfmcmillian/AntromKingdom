@@ -17,8 +17,14 @@
 //                    "wins": 3, "losses": 1 } ] }
 // ---------------------------------------------------------------------------
 
-/** Point at the endpoint that receives the server's ladder pushes. */
-const LADDER_ENDPOINT = ''
+/**
+ * Endpoint that receives the game server's ladder pushes. '/api/ladder' is
+ * the bundled Vercel serverless function (website/api/ladder.js) — it just
+ * works when this site is deployed on Vercel. If the site is hosted elsewhere
+ * (e.g. GitHub Pages), set this to the full Vercel URL instead:
+ * 'https://<project>.vercel.app/api/ladder'.
+ */
+const LADDER_ENDPOINT = '/api/ladder'
 
 ;(function initLadder() {
   const table = document.getElementById('ladderTable')

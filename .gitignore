@@ -2,9 +2,12 @@ package-lock.json
 *.js
 # The promo/wiki site's scripts are source, not build output.
 !website/js/*.js
+!website/api/*.js
 !scripts/*.mjs
 node_modules
 bin/
+# Server env vars for local dev (LEADERBOARD_PUSH_URL etc.)
+.env
 .DS_Store
 **/.DS_Store
 npm-debug.log*
