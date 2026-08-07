@@ -1,0 +1,269 @@
+/* ==========================================================================
+   DecentraCraft site - dark sci-fi RTS aesthetic
+   ========================================================================== */
+
+:root {
+  --bg: #070a12;
+  --bg-soft: #0c1020;
+  --panel: #10162a;
+  --panel-2: #161d36;
+  --line: #232c4a;
+  --text: #e8edf7;
+  --dim: #97a2bd;
+  --cyan: #35d4e9;
+  --gold: #f2c14e;
+  --play: #21c063;
+  --human: #73b3ff;
+  --alien: #d9a6ff;
+  --bio: #ff7350;
+  --min: #5aa0ff;
+  --gas: #3ddb5a;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Rajdhani', 'Segoe UI', sans-serif;
+  font-size: 17px;
+  line-height: 1.55;
+  overflow-x: hidden;
+}
+
+h1, h2, h3, .btn, .nav-brand span { font-family: 'Orbitron', 'Rajdhani', sans-serif; }
+a { color: var(--cyan); text-decoration: none; }
+img { max-width: 100%; display: block; }
+
+.c-human { color: var(--human); }
+.c-alien { color: var(--alien); }
+.c-bio { color: var(--bio); }
+.c-min { color: var(--min); }
+.c-gas { color: var(--gas); }
+
+/* ------------------------------ Nav ------------------------------ */
+.nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  display: flex; align-items: center; gap: 28px;
+  padding: 10px 28px;
+  background: rgba(7, 10, 18, 0.82);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+.nav-brand { display: flex; align-items: center; gap: 10px; color: var(--text); }
+.nav-brand img { width: 34px; height: 34px; object-fit: contain; }
+.nav-brand span { font-weight: 900; font-size: 17px; letter-spacing: 1px; }
+.nav-brand em, h1 em { font-style: normal; color: var(--cyan); }
+.nav-links { display: flex; gap: 22px; margin-left: auto; }
+.nav-links a {
+  color: var(--dim); font-weight: 600; letter-spacing: 1.5px; font-size: 14px;
+  text-transform: uppercase; transition: color .15s;
+}
+.nav-links a:hover { color: var(--text); }
+.nav-burger { display: none; background: none; border: none; color: var(--text); font-size: 24px; cursor: pointer; }
+
+/* ------------------------------ Buttons ------------------------------ */
+.btn {
+  display: inline-block; padding: 12px 26px; font-size: 14px; font-weight: 700;
+  letter-spacing: 1.5px; border-radius: 4px; cursor: pointer; border: 1px solid transparent;
+  transition: transform .12s, box-shadow .12s, background .12s;
+}
+.btn:hover { transform: translateY(-2px); }
+.btn-play { background: var(--play); color: #04170b; box-shadow: 0 0 24px rgba(33, 192, 99, .35); }
+.btn-play:hover { box-shadow: 0 0 34px rgba(33, 192, 99, .55); }
+.btn-ghost { border-color: var(--line); color: var(--text); background: rgba(255,255,255,.04); }
+.btn-ghost:hover { border-color: var(--cyan); color: var(--cyan); }
+.btn-big { font-size: 16px; padding: 16px 34px; }
+.nav-play { padding: 9px 18px; font-size: 12px; }
+
+/* ------------------------------ Hero ------------------------------ */
+.hero { position: relative; min-height: 92vh; display: flex; align-items: center; justify-content: center; text-align: center; }
+.hero-bg {
+  position: absolute; inset: 0;
+  background-size: cover; background-position: center 30%;
+  filter: brightness(.42) saturate(1.1);
+}
+.hero-fade {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 180px;
+  background: linear-gradient(transparent, var(--bg));
+}
+.hero-content { position: relative; z-index: 2; padding: 120px 20px 60px; max-width: 900px; }
+.hero-logo { width: 130px; height: 130px; object-fit: contain; margin: 0 auto 18px; filter: drop-shadow(0 0 30px rgba(53, 212, 233, .4)); }
+.hero h1 { font-size: clamp(38px, 7vw, 72px); font-weight: 900; letter-spacing: 4px; text-shadow: 0 4px 30px rgba(0,0,0,.8); }
+.hero-tag { margin: 18px auto 30px; font-size: clamp(17px, 2.4vw, 22px); color: #cfd8ea; font-weight: 500; }
+.hero-cta { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+.hero-facts { display: flex; gap: 38px; justify-content: center; margin-top: 52px; flex-wrap: wrap; }
+.hero-facts div { display: flex; flex-direction: column; }
+.hero-facts strong { font-family: 'Orbitron'; font-size: 30px; color: var(--cyan); }
+.hero-facts span { color: var(--dim); font-size: 13px; letter-spacing: 2px; text-transform: uppercase; }
+
+/* ------------------------------ Sections ------------------------------ */
+.section { max-width: 1180px; margin: 0 auto; padding: 90px 24px 30px; }
+.section-title {
+  font-size: clamp(24px, 4vw, 36px); font-weight: 900; letter-spacing: 3px; margin-bottom: 34px;
+  display: flex; align-items: baseline; gap: 14px;
+}
+.section-title span { color: var(--cyan); font-size: .55em; opacity: .8; }
+.section-sub { color: var(--dim); max-width: 760px; margin: -18px 0 30px; font-size: 18px; }
+
+/* ------------------------------ Lore ------------------------------ */
+.lore-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
+.lore-block {
+  background: linear-gradient(160deg, var(--panel), var(--bg-soft));
+  border: 1px solid var(--line); border-radius: 8px; padding: 30px 32px;
+}
+.lore-block h3 { color: var(--gold); letter-spacing: 1.5px; font-size: 19px; margin-bottom: 14px; }
+.lore-block p { color: #c3ccdf; margin-bottom: 12px; }
+.lore-block p:last-child { margin-bottom: 0; }
+.lore-wide { grid-column: 1 / -1; }
+
+/* ------------------------------ Factions ------------------------------ */
+.faction-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.faction-card {
+  border: 1px solid var(--line); border-top: 3px solid var(--fc, var(--cyan));
+  border-radius: 8px; background: var(--panel); overflow: hidden;
+  transition: transform .15s, box-shadow .15s;
+}
+.faction-card:hover { transform: translateY(-4px); box-shadow: 0 14px 34px rgba(0,0,0,.5); }
+.faction-portrait { height: 240px; background-size: cover; background-position: center 18%; position: relative; }
+.faction-portrait::after { content: ''; position: absolute; inset: 0; background: linear-gradient(transparent 55%, var(--panel)); }
+.faction-body { padding: 20px 24px 26px; }
+.faction-body h3 { color: var(--fc, var(--cyan)); font-size: 22px; letter-spacing: 2px; }
+.faction-body .f-tag { color: var(--dim); font-weight: 600; margin: 4px 0 14px; }
+.faction-body p { color: #c3ccdf; font-size: 15.5px; margin-bottom: 10px; }
+.faction-body .f-hero { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 14px; }
+.faction-body .f-hero strong { color: var(--gold); }
+
+/* ------------------------------ Wiki ------------------------------ */
+.wiki-controls { display: flex; justify-content: space-between; gap: 18px; flex-wrap: wrap; margin-bottom: 26px; }
+.wiki-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+.race-tab, .cat-tab {
+  font-family: 'Orbitron'; font-size: 13px; font-weight: 700; letter-spacing: 1.5px;
+  padding: 10px 20px; border-radius: 4px; cursor: pointer;
+  background: var(--panel); color: var(--dim); border: 1px solid var(--line);
+  transition: all .15s;
+}
+.race-tab:hover, .cat-tab:hover { color: var(--text); border-color: #3a466e; }
+.race-tab.active[data-race="human"] { background: rgba(115,179,255,.14); color: var(--human); border-color: var(--human); }
+.race-tab.active[data-race="alien"] { background: rgba(217,166,255,.12); color: var(--alien); border-color: var(--alien); }
+.race-tab.active[data-race="bio"] { background: rgba(255,115,80,.12); color: var(--bio); border-color: var(--bio); }
+.cat-tab.active { background: rgba(53,212,233,.12); color: var(--cyan); border-color: var(--cyan); }
+
+.wiki-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 16px; }
+.wiki-card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  overflow: hidden; cursor: pointer; text-align: left;
+  transition: transform .13s, border-color .13s, box-shadow .13s;
+  padding: 0; color: inherit; font: inherit;
+}
+.wiki-card:hover { transform: translateY(-4px); border-color: var(--rc, var(--cyan)); box-shadow: 0 10px 26px rgba(0,0,0,.45); }
+.wiki-card img { width: 100%; aspect-ratio: 1; object-fit: cover; }
+.wiki-card .wc-body { padding: 10px 12px 12px; }
+.wiki-card .wc-name { font-weight: 700; font-size: 16px; letter-spacing: .4px; }
+.wiki-card .wc-role { color: var(--dim); font-size: 12.5px; text-transform: uppercase; letter-spacing: 1.2px; }
+.wiki-card .wc-cost { margin-top: 6px; font-size: 13.5px; font-weight: 600; }
+
+/* ------------------------------ Modal ------------------------------ */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(4, 6, 12, .82); backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center; padding: 22px;
+}
+.modal {
+  background: var(--panel-2); border: 1px solid #34406b; border-radius: 10px;
+  max-width: 720px; width: 100%; max-height: 88vh; overflow-y: auto;
+  position: relative; animation: pop .18s ease-out;
+}
+@keyframes pop { from { transform: scale(.94); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.modal-close {
+  position: absolute; top: 12px; right: 14px; z-index: 2;
+  background: rgba(0,0,0,.5); color: var(--text); border: 1px solid var(--line);
+  width: 36px; height: 36px; border-radius: 50%; cursor: pointer; font-size: 15px;
+}
+.modal-close:hover { border-color: var(--cyan); color: var(--cyan); }
+.modal-hero { display: flex; gap: 22px; padding: 26px 28px 6px; }
+.modal-hero img { width: 148px; height: 148px; border-radius: 8px; object-fit: cover; border: 1px solid var(--line); }
+.modal-hero .mh-role { color: var(--rc, var(--cyan)); text-transform: uppercase; letter-spacing: 2px; font-size: 13px; font-weight: 700; }
+.modal-hero h3 { font-size: 27px; letter-spacing: 1px; margin: 2px 0 8px; }
+.modal-hero .mh-blurb { color: #c3ccdf; font-size: 15.5px; }
+.modal-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; padding: 20px 28px 8px; }
+.stat {
+  background: rgba(255,255,255,.03); border: 1px solid var(--line); border-radius: 6px;
+  padding: 9px 13px;
+}
+.stat .s-label { color: var(--dim); font-size: 11.5px; text-transform: uppercase; letter-spacing: 1.4px; }
+.stat .s-value { font-family: 'Orbitron'; font-size: 17px; margin-top: 2px; }
+.modal-extra { padding: 14px 28px 26px; color: #c3ccdf; font-size: 15px; }
+.modal-extra p { margin-top: 8px; }
+.modal-extra strong { color: var(--gold); }
+.modal-races { display: flex; gap: 8px; padding: 0 28px 24px; flex-wrap: wrap; }
+.modal-races button {
+  background: var(--panel); border: 1px solid var(--line); color: var(--dim);
+  font-family: 'Rajdhani'; font-weight: 700; font-size: 13px; letter-spacing: 1px;
+  padding: 7px 14px; border-radius: 4px; cursor: pointer;
+}
+.modal-races button.active { color: var(--text); border-color: var(--rc, var(--cyan)); background: rgba(255,255,255,.05); }
+
+/* ------------------------------ Maps ------------------------------ */
+.maps-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
+.map-card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+  transition: transform .15s, box-shadow .15s;
+}
+.map-card:hover { transform: translateY(-4px); box-shadow: 0 14px 34px rgba(0,0,0,.5); }
+.map-card img { width: 100%; }
+.map-info { padding: 20px 24px 26px; }
+.map-info h3 { color: var(--cyan); letter-spacing: 2px; font-size: 20px; }
+.map-tag { color: var(--gold); font-weight: 600; margin: 4px 0 12px; }
+.map-info p:not(.map-tag) { color: #c3ccdf; font-size: 15.5px; }
+
+/* ------------------------------ How to play ------------------------------ */
+.steps-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+.step { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 22px 22px 24px; }
+.step strong { font-family: 'Orbitron'; color: var(--cyan); font-size: 15px; letter-spacing: 1px; display: block; margin-bottom: 8px; }
+.step p { color: #c3ccdf; font-size: 15px; }
+.play-cta { text-align: center; margin-top: 38px; }
+
+/* ------------------------------ Team ------------------------------ */
+.team-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.team-card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 30px 26px; text-align: center;
+  transition: transform .15s;
+}
+.team-card:hover { transform: translateY(-4px); }
+.team-avatar {
+  width: 96px; height: 96px; border-radius: 50%; margin: 0 auto 16px;
+  background-size: cover; background-position: center 20%;
+  border: 2px solid var(--line); box-shadow: 0 0 24px rgba(53,212,233,.15);
+}
+.team-card h3 { letter-spacing: 1.5px; font-size: 19px; }
+.team-role { color: var(--cyan); font-weight: 600; font-size: 14px; letter-spacing: 1px; text-transform: uppercase; margin: 4px 0 12px; }
+.team-card p:not(.team-role) { color: #c3ccdf; font-size: 15px; }
+
+/* ------------------------------ Footer ------------------------------ */
+.footer { border-top: 1px solid var(--line); margin-top: 90px; background: var(--bg-soft); }
+.footer-inner { max-width: 1180px; margin: 0 auto; padding: 44px 24px; text-align: center; color: var(--dim); }
+.footer-inner img { width: 44px; height: 44px; object-fit: contain; margin: 0 auto 12px; }
+.footer-inner p { margin-bottom: 6px; }
+.footer-fine { font-size: 13px; opacity: .7; margin-top: 14px; }
+
+/* ------------------------------ Reveal on scroll ------------------------------ */
+.reveal { opacity: 0; transform: translateY(22px); transition: opacity .5s ease, transform .5s ease; }
+.reveal.shown { opacity: 1; transform: none; }
+
+/* ------------------------------ Responsive ------------------------------ */
+@media (max-width: 980px) {
+  .faction-grid, .team-grid { grid-template-columns: 1fr; }
+  .maps-grid, .lore-grid { grid-template-columns: 1fr; }
+  .steps-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 720px) {
+  .nav-links { display: none; position: absolute; top: 100%; left: 0; right: 0; flex-direction: column; background: rgba(7,10,18,.97); border-bottom: 1px solid var(--line); padding: 16px 28px; gap: 14px; }
+  .nav-links.open { display: flex; }
+  .nav-burger { display: block; margin-left: auto; }
+  .nav-play { display: none; }
+  .steps-grid { grid-template-columns: 1fr; }
+  .modal-hero { flex-direction: column; }
+}
