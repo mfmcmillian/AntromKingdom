@@ -184,8 +184,8 @@ const BUILDING_FOOTPRINT_VALID = Color4.create(0.2, 0.95, 0.35, 0.45)
 const BUILDING_FOOTPRINT_BLOCKED = Color4.create(0.95, 0.15, 0.12, 0.5)
 const DEPLETED_GAS_HIDE_DELAY = 180
 const PLAYER_ATTACK_ALERT_DURATION = 4
-const SOLDIER_MOVE_FORMATION_RADIUS = 1.0
-const SOLDIER_ATTACK_SPACING = 0.8
+const SOLDIER_MOVE_FORMATION_RADIUS = 0.9
+const SOLDIER_ATTACK_SPACING = 0.7
 const ENEMY_DEFENSE_RADIUS = 20
 
 // One AI brain per computer opponent, rebuilt from the setup each match.
@@ -1769,7 +1769,7 @@ function createWorker(position: Vector3, team: Team = 'player'): Worker {
     position,
     team,
     // Generous click box: units are small targets from the overhead camera.
-    Vector3.create(1.6, 2.4, 1.6)
+    Vector3.create(1.5, 2.2, 1.5)
   ) as Worker
 
   worker.hp = definition.hp
@@ -1821,13 +1821,13 @@ function createSoldier(position: Vector3, team: Team = 'player', variant: Soldie
 
 /** Generous click boxes sized to each silhouette: flyers hover high, titans are huge. */
 function getSoldierColliderScale(variant: SoldierVariant): Vector3 {
-  if (variant === 'hero') return Vector3.create(3.8, 5.2, 3.8)
-  if (variant === 'titan') return Vector3.create(3.8, 5.2, 3.8)
-  if (variant === 'flyer') return Vector3.create(2.6, 4.2, 2.6)
-  if (variant === 'transport') return Vector3.create(3.4, 4.6, 3.4)
-  if (variant === 'heavyAir') return Vector3.create(4.6, 5.8, 4.6)
-  if (variant === 'siege') return Vector3.create(3.0, 3.4, 3.0)
-  return Vector3.create(2.0, 2.9, 2.0)
+  if (variant === 'hero') return Vector3.create(3.4, 4.6, 3.4)
+  if (variant === 'titan') return Vector3.create(3, 4, 3)
+  if (variant === 'flyer') return Vector3.create(2.2, 3.6, 2.2)
+  if (variant === 'transport') return Vector3.create(3, 3.8, 3)
+  if (variant === 'heavyAir') return Vector3.create(3.6, 4.6, 3.6)
+  if (variant === 'siege') return Vector3.create(2.6, 3, 2.6)
+  return Vector3.create(1.8, 2.6, 1.8)
 }
 
 /** Info-panel blurb for siege artillery, reflecting its current mode. */
@@ -2705,18 +2705,12 @@ const dragSelectDeps = {
 
 function isPointerPressOnSelectable(): boolean {
   const command = inputSystem.getInputCommand(InputAction.IA_POINTER, PointerEventType.PET_DOWN)
-  let hit = command?.hit?.entityId as Entity | undefined
-  if (hit === undefined) return false
+  const hitEntityId = command?.hit?.entityId
+  if (hitEntityId === undefined) return false
 
-  // The ray can land on a child mesh of a unit or building (GLB body part,
-  // cargo prop) instead of the registered collider box; climb the parent chain
-  // so those presses still count as "on a selectable" and never issue a move.
-  for (let hops = 0; hops < 6 && hit !== undefined; hops++) {
-    for (const selectable of selectables.values()) {
-      if (selectable.entity === hit) return true
-      if (selectable.colliderEntity === hit) return true
-    }
-    hit = Transform.getOrNull(hit)?.parent
+  for (const selectable of selectables.values()) {
+    if (selectable.entity === hitEntityId) return true
+    if (selectable.colliderEntity === hitEntityId) return true
   }
   return false
 }
@@ -3187,16 +3181,15 @@ function getSelectionMarkerTarget(selectable: Selectable): SelectionMarkerTarget
 
 /** Selection ring footprint per unit silhouette (the roots all have scale 1). */
 function getUnitSelectionFootprint(selectable: Selectable): number {
-  if (selectable.kind === 'worker') return 1.2
+  if (selectable.kind === 'worker') return 1.1
   const variant = (selectable as Soldier).variant
-  if (variant === 'hero') return 3.6
-  if (variant === 'titan') return 3.2
-  if (variant === 'heavyAir') return 3.4
-  if (variant === 'transport') return 2.7
-  if (variant === 'siege') return 2.6
-  if (variant === 'flyer') return 2.0
-  if (variant === 'caster') return 1.6
-  return 1.5
+  if (variant === 'hero') return 2.9
+  if (variant === 'titan') return 2.5
+  if (variant === 'heavyAir') return 2.6
+  if (variant === 'transport' || variant === 'siege') return 2.2
+  if (variant === 'flyer') return 1.7
+  if (variant === 'caster') return 1.4
+  return 1.3
 }
 
 function updateMatchTimer(dt: number): void {

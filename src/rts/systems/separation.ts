@@ -17,13 +17,13 @@ import { buildings, soldiers, workers } from '../world'
 type Unit = Soldier | Worker
 
 /** Two ground units closer than this (center to center) get pushed apart. */
-const GROUND_RADIUS = 1.25
-const FLYER_RADIUS = 2.0
+const GROUND_RADIUS = 1.15
+const FLYER_RADIUS = 1.8
 /** Push speed in m/s - firm enough to unstack, gentle enough not to fight orders. */
 const PUSH_SPEED = 3
 const MAP_MARGIN = 1.5
 /** Spatial hash cell; must be >= the largest separation radius. */
-const CELL_SIZE = 2.5
+const CELL_SIZE = 2
 /** Building push-out beats walk speed (3 m/s), so units slide along the wall instead of tunneling. */
 const BUILDING_PUSH_SPEED = 6
 /** Breathing room between a unit's center and a building face. */
