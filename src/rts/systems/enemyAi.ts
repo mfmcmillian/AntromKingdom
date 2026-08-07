@@ -49,6 +49,17 @@ type FerryOperation = {
   timer: number
 }
 
+/** A colonization run: a worker crew is ferried to an empty island where the
+ * first one ashore plants an expansion temple by the fresh crystal line. */
+type ExpandOperation = {
+  phase: 'boarding' | 'flying' | 'building'
+  transportId: string
+  workerIds: string[]
+  dropPoint: Vector3
+  clusterPosition: Vector3
+  timer: number
+}
+
 /** One computer opponent's brain: its own timers, seat, and difficulty tuning. */
 export type EnemyAi = {
   team: EnemyTeam
@@ -59,6 +70,7 @@ export type EnemyAi = {
   decisionTimer: number
   attackTimer: number
   ferry?: FerryOperation
+  expand?: ExpandOperation
 }
 
 export function createEnemyAi(team: EnemyTeam, difficulty: Difficulty): EnemyAi {
@@ -80,6 +92,7 @@ export function updateEnemyAi(ai: EnemyAi, dt: number, deps: EnemyAiDeps): void 
   ai.decisionTimer += dt
 
   updateFerryOperation(ai, dt, deps)
+  updateExpandOperation(ai, dt, deps)
 
   if (ai.attackTimer >= ai.settings.attackInterval) {
     ai.attackTimer = 0
@@ -131,6 +144,13 @@ function runEnemyBuildOrder(ai: EnemyAi, deps: EnemyAiDeps): void {
       return
     }
 
+    // Island maps: wings before wheels - the army lives in the air here, so
+    // air research comes straight after the tech lab.
+    if (ai.settings.research && isIslandMap() && getCompletedTeamBuildings(team, 'techLab').length > 0 && getTeamBuildings(team, 'airForge').length === 0) {
+      tryStartEnemyConstruction(ai, 'airForge', deps)
+      return
+    }
+
     if (getCompletedTeamBuildings(team, 'techLab').length > 0 && getTeamBuildings(team, 'forge').length === 0) {
       tryStartEnemyConstruction(ai, 'forge', deps)
       return
@@ -152,7 +172,10 @@ function runEnemyBuildOrder(ai: EnemyAi, deps: EnemyAiDeps): void {
 
   // Count in-progress temples too: expansions cost 300 and shouldn't stack up.
   if (workerCount >= 8 && guardCount >= ai.settings.defenderCount && getTeamBuildings(team, 'temple').length < ai.settings.maxTemples) {
-    tryStartEnemyConstruction(ai, 'temple', deps)
+    if (tryStartEnemyConstruction(ai, 'temple', deps)) return
+    // Island maps: no walkable expansion spot left means the next base is
+    // across the void - ferry a worker crew to an empty island instead.
+    if (isIslandMap() && ai.settings.expands) tryStartIslandExpansion(ai, deps)
     return
   }
 
@@ -204,12 +227,13 @@ function queueEnemyAdvancedProduction(ai: EnemyAi): void {
   if (!techLab) return
 
   // Island maps: a small carrier fleet comes before anything fancy, or the
-  // ground army can never leave home.
+  // ground army can never leave home (expanders keep a spare for colonizing).
   if (isIslandMap()) {
+    const wantTransports = ai.settings.expands ? 3 : 2
     const transportCount =
       soldiers.filter((soldier) => soldier.alive && getTeam(soldier) === team && soldier.variant === 'transport').length +
       soldierProductionOrders.filter((order) => order.team === team && order.variant === 'transport').length
-    if (transportCount < 2) {
+    if (transportCount < wantTransports) {
       const transportDef = getSoldierDefinition(team, 'transport')
       if (canQueueUnit(team, transportDef.supply) && hasResources(team, transportDef.cost) && spendResources(team, transportDef.cost)) {
         soldierProductionOrders.push({ barracksId: techLab.id, timer: 0, productionTime: transportDef.productionTime, team, variant: 'transport' })
@@ -225,12 +249,21 @@ function queueEnemyAdvancedProduction(ai: EnemyAi): void {
       getTeam(soldier) === team &&
       (soldier.variant === 'caster' || soldier.variant === 'flyer' || soldier.variant === 'siege' || soldier.variant === 'titan')
   ).length
-  if (advancedCount >= ai.settings.maxAdvancedUnits) return
+  // Island maps: air power decides the game, so the advanced army runs bigger.
+  const advancedCap = isIslandMap() ? Math.ceil(ai.settings.maxAdvancedUnits * 1.5) : ai.settings.maxAdvancedUnits
+  if (advancedCount >= advancedCap) return
 
-  // Forge-gated cycle: caster, flyer, siege, titan (siege/titan downgrade until the forge stands).
   const hasForge = getCompletedTeamBuildings(team, 'forge').length > 0
   const slot = advancedCount % 4
-  const variant: SoldierVariant = slot === 3 ? (hasForge ? 'titan' : 'flyer') : slot === 2 ? (hasForge ? 'siege' : 'caster') : slot === 0 ? 'caster' : 'flyer'
+  let variant: SoldierVariant
+  if (isIslandMap()) {
+    // Island cycle leans hard on wings: flyer, caster, flyer, titan. Flyers
+    // cross the void on their own; the occasional titan rides the ferry.
+    variant = slot === 1 ? 'caster' : slot === 3 ? (hasForge ? 'titan' : 'flyer') : 'flyer'
+  } else {
+    // Forge-gated cycle: caster, flyer, siege, titan (siege/titan downgrade until the forge stands).
+    variant = slot === 3 ? (hasForge ? 'titan' : 'flyer') : slot === 2 ? (hasForge ? 'siege' : 'caster') : slot === 0 ? 'caster' : 'flyer'
+  }
   const soldierDef = getSoldierDefinition(team, variant)
 
   if (!canQueueUnit(team, soldierDef.supply) || !hasResources(team, soldierDef.cost)) return
@@ -380,7 +413,7 @@ function sendFerriedAttackWave(ai: EnemyAi, attackers: Soldier[], targets: (Buil
   if (ai.ferry || ground.length < 3) return
 
   const transports = soldiers.filter(
-    (soldier) => soldier.alive && getTeam(soldier) === ai.team && soldier.variant === 'transport'
+    (soldier) => soldier.alive && getTeam(soldier) === ai.team && soldier.variant === 'transport' && soldier.id !== ai.expand?.transportId
   )
   if (transports.length === 0) return
 
@@ -504,6 +537,177 @@ function orderDroppedWave(ai: EnemyAi, ferry: FerryOperation, deps: EnemyAiDeps)
   }
 }
 
+// ---------------------------------------------------------------------------
+// Island colonization: when every walkable expansion spot is taken, the AI
+// ferries a worker crew to an unclaimed island and plants a temple there.
+// ---------------------------------------------------------------------------
+
+/** Kick off a colonization run if a free carrier, a crew and a target island exist. */
+function tryStartIslandExpansion(ai: EnemyAi, deps: EnemyAiDeps): void {
+  if (ai.expand) return
+  const templeDef = BUILDING_DEFINITIONS.temple
+  if (!hasResources(ai.team, templeDef.cost)) return
+
+  // A carrier that is empty and not committed to an attack ferry.
+  const transport = soldiers.find(
+    (soldier) =>
+      soldier.alive &&
+      getTeam(soldier) === ai.team &&
+      soldier.variant === 'transport' &&
+      (soldier.cargo?.length ?? 0) === 0 &&
+      !ai.ferry?.transportIds.includes(soldier.id)
+  )
+  if (!transport) return
+
+  const cluster = getRemoteExpansionCluster(ai)
+  if (!cluster) return
+  const clusterPosition = Transform.get(cluster.entity).position
+  const island = getIslandZoneAt(clusterPosition.x, clusterPosition.z)
+  if (!island) return
+
+  // Crew of up to 4: one builds, the rest staff the fresh mineral line.
+  const idle = getIdleWorkersForTeam(ai.team)
+  const extra = getAvailableWorkersForTeam(ai.team).filter((worker) => !idle.includes(worker))
+  const crew = [...idle, ...extra].slice(0, 4)
+  if (crew.length < 2) return
+
+  deps.orderBoardTransport(crew, transport)
+  const meetX = crew.reduce((sum, worker) => sum + Transform.get(worker.entity).position.x, 0) / crew.length
+  const meetZ = crew.reduce((sum, worker) => sum + Transform.get(worker.entity).position.z, 0) / crew.length
+  sendTransportTo(transport, meetX, meetZ)
+
+  // Drop pulled from the crystals toward the island's center: safe ground.
+  const towardCenterX = island.x - clusterPosition.x
+  const towardCenterZ = island.z - clusterPosition.z
+  const length = Math.sqrt(towardCenterX * towardCenterX + towardCenterZ * towardCenterZ) || 1
+  const dropDistance = Math.min(6, length)
+  const dropPoint = Vector3.create(
+    clusterPosition.x + (towardCenterX / length) * dropDistance,
+    0.25,
+    clusterPosition.z + (towardCenterZ / length) * dropDistance
+  )
+
+  ai.expand = {
+    phase: 'boarding',
+    transportId: transport.id,
+    workerIds: crew.map((worker) => worker.id),
+    dropPoint,
+    clusterPosition: Vector3.create(clusterPosition.x, clusterPosition.y, clusterPosition.z),
+    timer: 0
+  }
+}
+
+/** The nearest unclaimed crystal cluster on a different, hostile-free island. */
+function getRemoteExpansionCluster(ai: EnemyAi): ResourceNode | undefined {
+  const claimRadius = 22
+  return resources
+    .filter((node) => node.alive && node.amount > 0 && node.resource === 'minerals')
+    .filter((node) => {
+      const position = Transform.get(node.entity).position
+      if (isSameIsland(ai.home, position)) return false
+      // Never colonize an island someone is defending, and skip clusters a
+      // temple (anyone's, finished or not) has already claimed.
+      if (buildings.some((building) => building.alive && areHostile(getTeam(building), ai.team) && isSameIsland(position, Transform.get(building.entity).position))) return false
+      return !buildings.some(
+        (building) => building.alive && building.kind === 'temple' && distanceToPoint(position, Transform.get(building.entity).position) < claimRadius
+      )
+    })
+    .sort((a, b) => distanceToPoint(Transform.get(a.entity).position, ai.home) - distanceToPoint(Transform.get(b.entity).position, ai.home))[0]
+}
+
+/** Drives a colonization run: board -> fly -> drop -> plant the temple. */
+function updateExpandOperation(ai: EnemyAi, dt: number, deps: EnemyAiDeps): void {
+  const op = ai.expand
+  if (!op) return
+  op.timer += dt
+
+  const transport = soldiers.find((soldier) => soldier.id === op.transportId && soldier.alive)
+
+  if (op.phase === 'boarding') {
+    if (!transport) {
+      ai.expand = undefined
+      return
+    }
+    const stillWalking = op.workerIds.some((id) => {
+      const worker = workers.find((candidate) => candidate.id === id)
+      return worker?.alive === true && !worker.inTransportId
+    })
+    if (!stillWalking || op.timer > 30) {
+      if ((transport.cargo?.length ?? 0) === 0) {
+        // Nobody made it aboard: abandon rather than flying an empty ship out.
+        ai.expand = undefined
+        return
+      }
+      op.phase = 'flying'
+      op.timer = 0
+      sendTransportTo(transport, op.dropPoint.x, op.dropPoint.z)
+    }
+    return
+  }
+
+  if (op.phase === 'flying') {
+    if (!transport) {
+      ai.expand = undefined
+      return
+    }
+    const position = Transform.get(transport.entity).position
+    if (distanceToPoint(position, op.dropPoint) <= 6) {
+      deps.unloadTransport(transport)
+      if ((transport.cargo?.length ?? 0) === 0) {
+        sendTransportTo(transport, ai.home.x, ai.home.z)
+        op.phase = 'building'
+        op.timer = 0
+      }
+    } else if (transport.state !== 'movingToRally') {
+      // Something interrupted the flight: re-order it.
+      sendTransportTo(transport, op.dropPoint.x, op.dropPoint.z)
+    }
+    if (op.timer > 60) {
+      // Stuck: dump the crew wherever there is land and head home rather
+      // than keeping workers imprisoned aboard.
+      deps.unloadTransport(transport)
+      sendTransportTo(transport, ai.home.x, ai.home.z)
+      ai.expand = undefined
+    }
+    return
+  }
+
+  // Building: the first landed worker plants the temple by the crystals. The
+  // rest go idle and the worker system puts them on the new mineral line.
+  const crew = op.workerIds
+    .map((id) => workers.find((worker) => worker.id === id))
+    .filter((worker): worker is Worker => worker?.alive === true && !worker.inTransportId)
+  if (crew.length === 0) {
+    ai.expand = undefined
+    return
+  }
+
+  const templeDef = BUILDING_DEFINITIONS.temple
+  if (hasResources(ai.team, templeDef.cost)) {
+    const builder = crew[0]
+    for (const offset of EXPANSION_TEMPLE_OFFSETS) {
+      const position = deps.getSnappedPlacementPosition(Vector3.create(op.clusterPosition.x + offset.x, 0, op.clusterPosition.z + offset.z))
+      if (!deps.canPlaceBuildingAt(templeDef, position)) continue
+      if (!spendResources(ai.team, templeDef.cost)) break
+
+      const site = deps.createConstructionSite('temple', Vector3.create(position.x, templeDef.placementY, position.z), builder.id, ai.buildRotationY, ai.team)
+      builder.state = 'movingToBuild'
+      builder.targetResourceId = undefined
+      builder.buildSiteId = site.id
+      builder.rallyPoint = undefined
+      builder.timer = 0
+      builder.carrying = 0
+      builder.carryingResource = undefined
+      deps.setWorkerAnimation(builder, 'walk')
+      ai.expand = undefined
+      return
+    }
+  }
+
+  // Bank or ground not ready: keep waiting a while before giving up.
+  if (op.timer > 45) ai.expand = undefined
+}
+
 /** Plain fly-to order for an AI carrier. */
 function sendTransportTo(transport: Soldier, x: number, z: number): void {
   transport.state = 'movingToRally'
@@ -570,6 +774,9 @@ function getEnemyBuildPosition(ai: EnemyAi, kind: BuildableKind, deps: EnemyAiDe
   if (kind === 'temple' && ai.settings.expands) {
     const expansion = getEnemyExpansionPosition(ai, deps)
     if (expansion) return expansion
+    // Island maps: never stack macro temples at home - failing here makes the
+    // build order launch a colonization ferry to a fresh island instead.
+    if (isIslandMap()) return undefined
   }
 
   const homeTemple = deps.getNearestTemple(ai.home, ai.team)
