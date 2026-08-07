@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<!-- Dev-only viewer for the optimized unit GLBs (models/units/<race>/).
+     Serve the project root (npx http-server -p 8090) and open
+     http://localhost:8090/scripts/unit-model-preview.html?race=human
+     Each unit stands on a grid tile with a red arrow showing the game's
+     +Z forward, so orientation and ground alignment are easy to eyeball. -->
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { margin: 0; background: #202830; }
+    #labels { position: fixed; top: 8px; left: 8px; color: #cde; font: 13px monospace; white-space: pre; }
+  </style>
+</head>
+<body>
+  <div id="labels"></div>
+  <script type="importmap">
+    { "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    } }
+  </script>
+  <script type="module">
+    import * as THREE from 'three'
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+
+    const params = new URLSearchParams(location.search)
+    const race = params.get('race') || 'human'
+    // ?only=<role> renders a single model close up (orientation checks).
+    const ROLES = params.get('only')
+      ? [params.get('only')]
+      : ['worker', 'melee', 'ranged', 'healer', 'caster', 'antiAir', 'flyer', 'transport', 'heavyAir', 'siege', 'titan', 'hero']
+    const COLS = 6, SPACING = 4
+
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color(0x202830)
+    scene.add(new THREE.AmbientLight(0xffffff, 1.4))
+    const sun = new THREE.DirectionalLight(0xffffff, 2.2)
+    sun.position.set(5, 10, 7)
+    scene.add(sun)
+    scene.add(new THREE.GridHelper(COLS * SPACING + 4, COLS * SPACING + 4, 0x3a4a5a, 0x2a3642))
+
+    const loader = new GLTFLoader()
+    let loaded = 0
+    ROLES.forEach((role, i) => {
+      const x = ROLES.length === 1 ? 0 : (i % COLS - (COLS - 1) / 2) * SPACING
+      const z = ROLES.length === 1 ? 0 : (Math.floor(i / COLS) - 0.5) * SPACING
+      // Red arrow = the game's +Z forward direction.
+      scene.add(new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(x, 0.05, z), 1.6, 0xff3333, 0.4, 0.25))
+      loader.load(`../models/units/${race}/${role}.glb`, (gltf) => {
+        gltf.scene.position.set(x, 0, z)
+        scene.add(gltf.scene)
+        document.getElementById('labels').textContent += `${role} `
+        if (++loaded === ROLES.length) document.title = 'ALL LOADED'
+      }, undefined, () => { document.getElementById('labels').textContent += `${role}:FAILED ` })
+    })
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    renderer.setSize(innerWidth, innerHeight)
+    document.body.appendChild(renderer.domElement)
+
+    // High three-quarter view from +Z so model fronts should face the camera.
+    // ?top=1 switches to a straight top-down view (+Z toward screen bottom)
+    // for reading each model's facing axis.
+    const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 200)
+    if (params.get('only')) {
+      // Single model at the origin; view it from the +X/+Z quarter.
+      camera.position.set(4, 3, 4.5)
+      camera.lookAt(0, 0.6, 0)
+    } else if (params.get('top')) {
+      camera.position.set(0, 24, 0.01)
+      camera.lookAt(0, 0, 0)
+    } else {
+      camera.position.set(0, 9, 15)
+      camera.lookAt(0, 0.6, 0)
+    }
+
+    renderer.setAnimationLoop(() => renderer.render(scene, camera))
+  </script>
+</body>
+</html>

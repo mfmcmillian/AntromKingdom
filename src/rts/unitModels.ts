@@ -1,4 +1,4 @@
-import { Entity, Material, MeshRenderer, Transform, VisibilityComponent, engine } from '@dcl/sdk/ecs'
+import { Entity, GltfContainer, Material, MeshRenderer, Transform, VisibilityComponent, engine } from '@dcl/sdk/ecs'
 import { Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { isPlayerAlly } from './state'
 import { RaceId, ResourceKind, Team } from './types'
@@ -65,6 +65,8 @@ interface UnitRig {
   groundFxVisible: boolean
   /** Siege units: the deployed-mode cannon group, grown from scale 0 while digging in. */
   siegeCannon?: Entity
+  /** GLB units: model top in meters (primitive-part scan can't see inside a GLB). */
+  topYOverride?: number
   state: UnitAnimState
   time: number
   profiles: Record<UnitAnimState, MotionProfile>
@@ -167,6 +169,99 @@ function applyPartMaterial(part: Entity, color: Color4, options: PartOptions): v
   })
 }
 
+// ---------------------------------------------------------------------------
+// GLB units (Meshy AI models, optimized by scripts/optimize-unit-models.mjs).
+// When a race/role has an entry here it renders the GLB instead of the
+// procedural primitives; everything else (team disc, fog, cargo, insignia,
+// body-root motion) still runs through the same rig. Models are baked with
+// feet at y=0, centered, pre-scaled to in-game size.
+// ---------------------------------------------------------------------------
+
+type GlbUnit = {
+  src: string
+  /** Extra yaw (degrees) so the model faces the game's +Z forward. */
+  yaw: number
+  /** Model top in meters (anchors the upgrade insignia above the silhouette). */
+  topY: number
+}
+
+const GLB_UNITS: Partial<Record<RaceId, Partial<Record<UnitRole, GlbUnit>>>> = {
+  human: {
+    worker: { src: 'models/units/human/worker.glb', yaw: 0, topY: 0.95 },
+    melee: { src: 'models/units/human/melee.glb', yaw: 0, topY: 1.35 },
+    ranged: { src: 'models/units/human/ranged.glb', yaw: 0, topY: 1.35 },
+    healer: { src: 'models/units/human/healer.glb', yaw: 0, topY: 1.3 },
+    caster: { src: 'models/units/human/caster.glb', yaw: 0, topY: 1.45 },
+    antiAir: { src: 'models/units/human/antiAir.glb', yaw: 0, topY: 1.4 },
+    // Meshy vehicles came out facing -X (glTF), which mirrors to +X in DCL's
+    // left-handed space; -90 yaw turns them onto the game's +Z forward.
+    flyer: { src: 'models/units/human/flyer.glb', yaw: -90, topY: 0.75 },
+    transport: { src: 'models/units/human/transport.glb', yaw: -90, topY: 1.5 },
+    heavyAir: { src: 'models/units/human/heavyAir.glb', yaw: -90, topY: 1.6 },
+    siege: { src: 'models/units/human/siege.glb', yaw: -90, topY: 1.45 },
+    titan: { src: 'models/units/human/titan.glb', yaw: 0, topY: 2.6 },
+    hero: { src: 'models/units/human/hero.glb', yaw: 0, topY: 1.9 }
+  }
+}
+
+/** Motion templates for GLB units (procedural builders tune theirs by hand). */
+function glbProfiles(role: UnitRole): Record<UnitAnimState, MotionProfile> {
+  if (role === 'flyer' || role === 'transport' || role === 'heavyAir') {
+    const heavy = role === 'heavyAir'
+    return {
+      idle: { amplitude: heavy ? 0.06 : 0.08, speed: 1.5, tilt: 0, spin: 0, lunge: 0 },
+      walk: { amplitude: 0.1, speed: 2, tilt: heavy ? 4 : 8, spin: 0, lunge: 0 },
+      talk: { amplitude: 0.08, speed: 2, tilt: 0, spin: 0, lunge: 0 },
+      attack: { amplitude: 0.06, speed: 6, tilt: 5, spin: 0, lunge: 0.12 },
+      impact: { amplitude: 0.1, speed: 14, tilt: -6, spin: 0, lunge: 0 }
+    }
+  }
+  if (role === 'siege' || role === 'titan') {
+    return {
+      idle: { amplitude: 0.015, speed: 1.6, tilt: 0, spin: 0, lunge: 0 },
+      walk: { amplitude: 0.05, speed: 5, tilt: 4, spin: 0, lunge: 0 },
+      talk: { amplitude: 0.02, speed: 8, tilt: 3, spin: 0, lunge: 0 },
+      attack: { amplitude: 0.03, speed: 10, tilt: 6, spin: 0, lunge: 0.12 },
+      impact: { amplitude: 0.05, speed: 18, tilt: -6, spin: 0, lunge: 0 }
+    }
+  }
+  return {
+    idle: { amplitude: 0.025, speed: 2, tilt: 0, spin: 0, lunge: 0 },
+    walk: { amplitude: 0.055, speed: 7, tilt: 6, spin: 0, lunge: 0 },
+    talk: { amplitude: 0.03, speed: 10, tilt: 5, spin: 0, lunge: 0 },
+    attack: { amplitude: 0.03, speed: 12, tilt: 8, spin: 0, lunge: 0.15 },
+    impact: { amplitude: 0.05, speed: 20, tilt: -8, spin: 0, lunge: 0 }
+  }
+}
+
+function buildGlbUnit(rig: UnitRig, config: GlbUnit, role: UnitRole): void {
+  const model = engine.addEntity()
+  Transform.create(model, { parent: rig.bodyRoot, rotation: Quaternion.fromEulerDegrees(0, config.yaw, 0) })
+  GltfContainer.create(model, { src: config.src })
+  rig.parts.push(model)
+  rig.topYOverride = config.topY
+  rig.profiles = glbProfiles(role)
+
+  // Same hover altitudes as the procedural air units.
+  if (role === 'flyer') rig.baseHeight = 2.0
+  else if (role === 'transport') rig.baseHeight = 2.1
+  else if (role === 'heavyAir') rig.baseHeight = 2.6
+
+  // Siege mode still grows a deployed cannon out of the hull while dug in.
+  if (role === 'siege') {
+    const group = createSiegeCannonGroup(rig)
+    addChildPart(rig, group, Vector3.create(0, config.topY - 0.15, 0), Vector3.create(0.55, 0.18, 0.55), METAL_DARK, { cylinder: true })
+    addChildPart(rig, group, Vector3.create(0, config.topY + 0.25, 0.45), Vector3.create(0.16, 1.3, 0.16), METAL_LIGHT, {
+      cylinder: true,
+      rotation: Quaternion.fromEulerDegrees(55, 0, 0)
+    })
+    addChildPart(rig, group, Vector3.create(0, config.topY + 0.62, 0.98), Vector3.create(0.2, 0.12, 0.2), BLADE_STEEL, {
+      cylinder: true,
+      rotation: Quaternion.fromEulerDegrees(55, 0, 0)
+    })
+  }
+}
+
 export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team: Team): void {
   const bodyRoot = engine.addEntity()
   Transform.create(bodyRoot, { parent: root })
@@ -207,7 +302,10 @@ export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team:
 
   const glow = getTeamGlow(team)
 
-  if (race === 'human') {
+  const glbConfig = GLB_UNITS[race]?.[role]
+  if (glbConfig) {
+    buildGlbUnit(rig, glbConfig, role)
+  } else if (race === 'human') {
     if (role === 'worker') buildHumanMiner(rig, addPart, glow)
     else if (role === 'melee') buildHumanVanguard(rig, addPart, glow)
     else if (role === 'ranged') buildHumanGunner(rig, addPart, glow)
@@ -2431,6 +2529,7 @@ export function setUnitUpgradeInsignia(root: Entity, damageLevel: number, speedL
 
 /** Approximate top of the model in bodyRoot-local space, so pips sit above any silhouette. */
 function getRigTopY(rig: UnitRig): number {
+  if (rig.topYOverride !== undefined) return rig.topYOverride
   let top = 1.2
   for (const part of rig.parts) {
     const transform = Transform.getOrNull(part)
