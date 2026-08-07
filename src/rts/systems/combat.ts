@@ -10,6 +10,9 @@ type CombatTarget = Building | Soldier | Worker
 
 /** Idle combat units engage anything hostile that wanders inside this radius. */
 const AUTO_ACQUIRE_RANGE = 12
+/** Buildings are spotted from farther out (their center sits deep inside a big
+ * footprint), so an army parked in an enemy base razes it without hand-holding. */
+const BUILDING_ACQUIRE_RANGE = 18
 const AUTO_ACQUIRE_INTERVAL = 0.5
 /** Defensive units abandon an auto-acquired chase once this far from their guard point. */
 const DEFENSIVE_LEASH_RANGE = 15
@@ -305,11 +308,15 @@ function findNearestEnemyInRange(soldier: Soldier, range: number): CombatTarget 
   const team = getTeam(soldier)
   const position = Transform.get(soldier.entity).position
 
+  // Hold-stance / dug-in units only ever fire at what's in weapon range; everyone
+  // else spots buildings from farther out so idle armies keep razing the base.
+  const buildingRange = holdsGround(soldier) ? range : Math.max(range, BUILDING_ACQUIRE_RANGE)
+
   return (
     // Melee scanners skip flyers they could never reach instead of chasing them.
     nearestInRange(position, soldiers, range, (candidate) => candidate.alive && areHostile(getTeam(candidate), team) && canAttackTarget(soldier, candidate)) ??
     nearestInRange(position, workers, range, (candidate) => candidate.alive && areHostile(getTeam(candidate), team)) ??
-    nearestInRange(position, buildings, range, (candidate) => candidate.alive && areHostile(getTeam(candidate), team))
+    nearestInRange(position, buildings, buildingRange, (candidate) => candidate.alive && areHostile(getTeam(candidate), team))
   )
 }
 

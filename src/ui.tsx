@@ -21,6 +21,7 @@ import {
   getSelectedStance,
   getSelectedSummary,
   getSelectedUnitsInfo,
+  getMatchRoster,
   getMultiplayerTeamName,
   isBuildingUnlocked,
   isMultiplayerHumanTeam,
@@ -55,6 +56,7 @@ import {
   getMyAddress,
   getMySeatIndex,
   getPresentPlayerCount,
+  getPresentPlayers,
   requestLobbyReset,
   hostSetMap,
   hostSetSeat,
@@ -296,6 +298,7 @@ export const uiMenu = () => {
       {gameState.matchStatus === 'active' ? bottomConsole(selected) : null}
       {gameState.matchStatus === 'active' ? idleWorkerButton() : null}
       {gameState.matchStatus === 'active' ? controlGroupsBar() : null}
+      {gameState.matchStatus === 'active' ? matchRosterPanel() : null}
 
       {minimapPanel()}
       {dragSelectionRect()}
@@ -432,6 +435,44 @@ function attackAlertBanner() {
       uiBackground={{ color: Color4.create(0.12, 0.02, 0.02, 0.9) }}
     >
       <Label value={gameState.attackAlert} fontSize={28} color={UI.red} textAlign="middle-center" uiTransform={{ width: '100%', height: '100%' }} />
+    </UiEntity>
+  )
+}
+
+/**
+ * Slim commanders roster under the resource bar: everyone in the match, their
+ * seat color, ally tags, and OUT the moment their last building falls.
+ */
+function matchRosterPanel() {
+  const roster = getMatchRoster()
+  if (roster.length < 2) return null
+
+  return (
+    <UiEntity
+      uiTransform={{
+        positionType: 'absolute',
+        position: { top: 64, right: 12 },
+        width: 250,
+        flexDirection: 'column',
+        padding: { top: 8, bottom: 8, left: 12, right: 12 }
+      }}
+      uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.7) }}
+    >
+      <Label value="COMMANDERS" fontSize={11} color={Color4.create(0.55, 0.58, 0.66, 0.9)} textAlign="middle-left" uiTransform={{ width: '100%', height: 14, margin: { bottom: 4 } }} />
+      {roster.map((entry) => (
+        <UiEntity key={`roster-${entry.team}`} uiTransform={{ width: '100%', height: 20, flexDirection: 'row', alignItems: 'center' }}>
+          <UiEntity uiTransform={{ width: 10, height: 10, margin: { right: 8 } }} uiBackground={{ color: LOBBY_SEAT_COLORS[entry.seat] ?? UI.dim }} />
+          <Label
+            value={`${entry.name}${entry.team !== 'player' && entry.ally ? '  · ally' : ''}`}
+            fontSize={12}
+            color={entry.eliminated ? Color4.create(0.5, 0.38, 0.38, 0.85) : UI.text}
+            textAlign="middle-left"
+            textWrap="nowrap"
+            uiTransform={{ width: 172, height: '100%' }}
+          />
+          {entry.eliminated ? <Label value="OUT" fontSize={11} color={UI.red} textAlign="middle-right" uiTransform={{ width: 34, height: '100%' }} /> : null}
+        </UiEntity>
+      ))}
     </UiEntity>
   )
 }
@@ -2026,6 +2067,45 @@ function lobbyMapRow(iAmHost: boolean) {
   )
 }
 
+/** Who's in the world right now, docked to the left of the seats box. */
+function lobbyOnlinePlayersPanel() {
+  const players = getPresentPlayers()
+  const myAddress = getMyAddress()
+
+  return (
+    <UiEntity
+      uiTransform={{
+        positionType: 'absolute',
+        position: { top: 240, left: '50%' },
+        margin: { left: -710 },
+        width: 260,
+        flexDirection: 'column',
+        padding: { top: 24, bottom: 24, left: 20, right: 20 }
+      }}
+      uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.9) }}
+    >
+      <Label value={`ONLINE (${players.length})`} fontSize={18} color={UI.text} textAlign="middle-left" uiTransform={{ width: '100%', height: 22, margin: { bottom: 12 } }} />
+      {players.slice(0, 14).map((player) => (
+        <UiEntity key={`online-${player.address}`} uiTransform={{ width: '100%', height: 26, flexDirection: 'row', alignItems: 'center', margin: { bottom: 4 } }}>
+          <UiEntity uiTransform={{ width: 8, height: 8, margin: { right: 10 } }} uiBackground={{ color: Color4.create(0.35, 0.9, 0.45, 1) }} />
+          <Label
+            value={player.address === myAddress ? `${player.name} (you)` : player.name}
+            fontSize={14}
+            color={player.address === myAddress ? UI.gold : UI.text}
+            textAlign="middle-left"
+            textWrap="nowrap"
+            uiTransform={{ width: 190, height: '100%' }}
+          />
+        </UiEntity>
+      ))}
+      {players.length > 14 ? (
+        <Label value={`+ ${players.length - 14} more`} fontSize={12} color={UI.dim} textAlign="middle-left" uiTransform={{ width: '100%', height: 16 }} />
+      ) : null}
+      {players.length === 0 ? <Label value="Connecting..." fontSize={13} color={UI.dim} textAlign="middle-left" uiTransform={{ width: '100%', height: 18 }} /> : null}
+    </UiEntity>
+  )
+}
+
 function multiplayerLobbyOverlay() {
   const lobby = getLobby()
   const connected = getMyAddress() !== ''
@@ -2059,6 +2139,9 @@ function multiplayerLobbyOverlay() {
           uiTransform={{ width: '100%', height: 22, margin: { top: 8 } }}
         />
       </UiEntity>
+
+      {/* Everyone currently in the world, so you know who you're waiting on. */}
+      {lobbyOnlinePlayersPanel()}
 
       <UiEntity
         uiTransform={{

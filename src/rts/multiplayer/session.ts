@@ -112,6 +112,13 @@ export function getPresentPlayerCount(): number {
   return presentPlayers.size
 }
 
+/** Everyone currently in the world (address + display name), for the lobby roster. */
+export function getPresentPlayers(): { address: string; name: string }[] {
+  return [...presentPlayers.entries()]
+    .map(([address, name]) => ({ address, name }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+}
+
 /** Is this wallet currently in the scene? Drives mid-match leaver detection. */
 export function isPlayerPresent(address: string): boolean {
   return presentPlayers.has(address.toLowerCase())

@@ -20,6 +20,7 @@ import {
 } from '@dcl/sdk/ecs'
 import { Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import {
+  AI_DIFFICULTY,
   ASSETS,
   BUILDING_DEFINITIONS,
   COLORS,
@@ -556,6 +557,9 @@ function updateAttackMoveInput(dt: number): void {
   if (attackMoveCooldown > 0) return
   if (!inputSystem.isTriggered(InputAction.IA_POINTER, PointerEventType.PET_DOWN)) return
   if (isPointerOverHud()) return
+  // Presses on units/buildings resolve in handleSelectableClick: clicking an
+  // enemy while the order is armed target-locks the army instead of a-moving.
+  if (isPointerPressOnSelectable()) return
 
   const ground = getPointerGroundPosition()
   if (!ground) {
@@ -850,15 +854,30 @@ export function assignControlGroup(slot: number): void {
   setStatus(building && units.length === 0 ? `Group ${slot} saved: ${building.name}.` : `Group ${slot} saved: ${ids.length} unit${ids.length === 1 ? '' : 's'}.`)
 }
 
+/** Recalling the same group twice quickly (key or button) also snaps the camera to it. */
+const GROUP_RECALL_DOUBLE_MS = 450
+let lastGroupRecallSlot = 0
+let lastGroupRecallTime = 0
+
 export function recallControlGroup(slot: number): void {
   if (!isMatchActive()) return
+
+  const now = Date.now()
+  const doubleTap = slot === lastGroupRecallSlot && now - lastGroupRecallTime <= GROUP_RECALL_DOUBLE_MS
+  lastGroupRecallSlot = slot
+  lastGroupRecallTime = now
 
   const units = getControlGroupUnits(slot)
   if (units.length > 0) {
     // Fighting selections should command soldiers, so put them first when mixed.
     units.sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'soldier' ? -1 : 1))
     setUnitSelection(units)
-    setStatus(`Group ${slot}: ${units.length} unit${units.length === 1 ? '' : 's'} selected.`)
+    if (doubleTap) {
+      jumpCameraToUnits(units)
+      setStatus(`Group ${slot}: camera on ${units.length} unit${units.length === 1 ? '' : 's'}.`)
+    } else {
+      setStatus(`Group ${slot}: ${units.length} unit${units.length === 1 ? '' : 's'} selected. Tap again to jump the camera.`)
+    }
     return
   }
 
@@ -866,10 +885,27 @@ export function recallControlGroup(slot: number): void {
   const building = getControlGroupBuildings(slot)[0]
   if (building) {
     selectObject(building)
+    if (doubleTap) {
+      const position = Transform.get(building.entity).position
+      setCameraFocus(position.x, position.z)
+    }
     return
   }
 
   setStatus(`Group ${slot} is empty. Select units or a building and press SET to fill it.`)
+}
+
+/** Center the top-down camera on the group's average position. */
+function jumpCameraToUnits(units: (Worker | Soldier)[]): void {
+  if (units.length === 0) return
+  let x = 0
+  let z = 0
+  for (const unit of units) {
+    const position = Transform.get(unit.entity).position
+    x += position.x
+    z += position.z
+  }
+  setCameraFocus(x / units.length, z / units.length)
 }
 
 export function getControlGroupCount(slot: number): number {
@@ -1194,6 +1230,7 @@ export function resetRtsGame(): void {
   templeRallyPoints.clear()
   barracksRallyPoints.clear()
   controlGroups.clear()
+  eliminatedTeams.clear()
   turretFireTimers.clear()
   broodTimers.clear()
   incomeSampleTimer = 0
@@ -2037,8 +2074,19 @@ function handleSelectableClick(id: string): void {
     return
   }
 
-  // Pending spawn-point / attack-move / patrol clicks are handled globally; don't also run selection commands.
-  if (rallyPlacementKind !== 'none' || attackMovePending || patrolPending) return
+  // An armed attack order: clicking an enemy locks the whole army onto that
+  // exact target; clicking anything else leaves the order armed for a ground click.
+  if (attackMovePending) {
+    if (isEnemyAttackTarget(clicked)) {
+      cancelAttackMove()
+      orderClickConsumedUntilRelease = true
+      orderSelectedAttackOn(clicked)
+    }
+    return
+  }
+
+  // Pending spawn-point / patrol clicks are handled globally; don't also run selection commands.
+  if (rallyPlacementKind !== 'none' || patrolPending) return
 
   const selectedWorkers = getSelectedWorkers()
 
@@ -2055,30 +2103,13 @@ function handleSelectableClick(id: string): void {
   }
 
   if (isEnemyAttackTarget(clicked)) {
-    const attackSoldiers = getSelectedSoldiers()
-    const attackWorkers = selectedWorkers.filter((worker) => worker.alive)
+    if (orderSelectedAttackOn(clicked)) return
+  }
 
-    if (attackSoldiers.length > 0) {
-      assignCommandableSoldiersToAttack(clicked)
-    }
-    if (attackWorkers.length > 0) {
-      for (const worker of attackWorkers) {
-        assignWorkerToAttack(worker, clicked)
-      }
-      if (attackSoldiers.length === 0) {
-        setStatus(`${attackWorkers.length} worker${attackWorkers.length === 1 ? '' : 's'} attacking ${clicked.name}. They are weak fighters!`)
-      }
-    }
-    if (attackSoldiers.length + attackWorkers.length > 0) {
-      if (isRelayActive()) {
-        broadcastMyCommand({
-          type: 'attackTarget',
-          unitIds: [...attackSoldiers.map((soldier) => soldier.id), ...attackWorkers.map((worker) => worker.id)],
-          targetId: clicked.id
-        })
-      }
-      return
-    }
+  // Shift-click on your own unit toggles it in/out of the current selection.
+  if (isShiftDown() && getTeam(clicked) === 'player' && (clicked.kind === 'worker' || clicked.kind === 'soldier')) {
+    toggleUnitInSelection(clicked as Worker | Soldier)
+    return
   }
 
   // Double-clicking one of your own units grabs every unit of that type,
@@ -2099,6 +2130,55 @@ function handleSelectableClick(id: string): void {
 const DOUBLE_CLICK_MS = 400
 let lastClickedSelectableId = ''
 let lastClickedSelectableTime = 0
+
+/**
+ * Order the current selection (fighters plus any pulled workers) onto one enemy
+ * target. Returns false when nothing commandable is selected.
+ */
+function orderSelectedAttackOn(target: Building | Soldier | Worker): boolean {
+  const attackSoldiers = getSelectedSoldiers()
+  const attackWorkers = getSelectedWorkers().filter((worker) => worker.alive)
+  if (attackSoldiers.length === 0 && attackWorkers.length === 0) return false
+
+  if (attackSoldiers.length > 0) {
+    assignCommandableSoldiersToAttack(target)
+  }
+  for (const worker of attackWorkers) {
+    assignWorkerToAttack(worker, target)
+  }
+  if (attackSoldiers.length === 0) {
+    setStatus(`${attackWorkers.length} worker${attackWorkers.length === 1 ? '' : 's'} attacking ${target.name}. They are weak fighters!`)
+  }
+  if (isRelayActive()) {
+    broadcastMyCommand({
+      type: 'attackTarget',
+      unitIds: [...attackSoldiers.map((soldier) => soldier.id), ...attackWorkers.map((worker) => worker.id)],
+      targetId: target.id
+    })
+  }
+  return true
+}
+
+/** Shift-click membership toggle: add the unit to the selection, or drop it if already in. */
+function toggleUnitInSelection(unit: Worker | Soldier): void {
+  const current = getSelectedUnits().filter((selected) => selected.alive)
+  const index = current.findIndex((selected) => selected.id === unit.id)
+  const removing = index >= 0
+
+  if (removing) current.splice(index, 1)
+  else current.push(unit)
+
+  if (current.length === 0) {
+    clearSelection()
+    setStatus(`${unit.name} removed. Selection empty.`)
+    return
+  }
+
+  // Fighting selections should command soldiers, so put them first when mixed.
+  current.sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'soldier' ? -1 : 1))
+  setUnitSelection(current)
+  setStatus(removing ? `${unit.name} removed from selection (${current.length}).` : `${unit.name} added to selection (${current.length}).`)
+}
 
 function selectAllOfSameType(unit: Worker | Soldier): void {
   if (unit.kind === 'worker') {
@@ -2771,6 +2851,11 @@ function getNearestGatherableResource(position: Vector3): ResourceNode | undefin
   return nearest
 }
 
+/** DCL binds Shift to IA_WALK, which doubles as the classic add-to-selection modifier. */
+function isShiftDown(): boolean {
+  return inputSystem.isPressed(InputAction.IA_WALK)
+}
+
 function selectPlayerUnitsInRect(min: { x: number; z: number }, max: { x: number; z: number }): void {
   const unitsInRect: (Worker | Soldier)[] = []
 
@@ -2779,6 +2864,13 @@ function selectPlayerUnitsInRect(min: { x: number; z: number }, max: { x: number
   }
   for (const soldier of soldiers) {
     if (soldier.alive && getTeam(soldier) === 'player' && isInRect(soldier, min, max)) unitsInRect.push(soldier)
+  }
+
+  // Shift-drag adds the boxed units to the current selection instead of replacing it.
+  if (isShiftDown()) {
+    for (const unit of getSelectedUnits()) {
+      if (unit.alive && !unitsInRect.some((boxed) => boxed.id === unit.id)) unitsInRect.push(unit)
+    }
   }
 
   if (unitsInRect.length === 0) {
@@ -2909,8 +3001,19 @@ function updateAttackAlert(dt: number): void {
   }
 }
 
+/** Teams whose last building already fell; drives elimination announcements and the roster. */
+const eliminatedTeams = new Set<Team>()
+
 function updateMatchEndState(): void {
   if (gameState.matchStatus === MATCH_ENDED) return
+
+  // Announce factions the moment their last building falls (the roster flips to OUT too).
+  for (const team of ['player' as Team, ...gameState.activeEnemyTeams]) {
+    if (eliminatedTeams.has(team)) continue
+    if (buildings.some((building) => building.alive && getTeam(building) === team)) continue
+    eliminatedTeams.add(team)
+    if (team !== 'player') announceMatchEvent(`${getTeamDisplayName(team)} has been eliminated!`)
+  }
 
   // StarCraft elimination rule: a faction is out when it has no buildings left
   // at all - temples, production, defenses, even unfinished foundations.
@@ -2924,6 +3027,45 @@ function updateMatchEndState(): void {
   } else if (!hostileBuildingsAlive) {
     endMatch('win')
   }
+}
+
+/** Big-banner announcement (same slot as the under-attack alert) plus the console line. */
+function announceMatchEvent(message: string): void {
+  gameState.attackAlert = message
+  gameState.attackAlertTimer = PLAYER_ATTACK_ALERT_DURATION
+  setStatus(message)
+}
+
+/** Display name for a team: your lobby name, another human's name, or a CPU tag. */
+export function getTeamDisplayName(team: Team): string {
+  if (team === 'player') return multiplayerPlan?.names.player ?? 'You'
+  const humanName = getMultiplayerTeamName(team)
+  if (humanName) return humanName
+  const index = gameState.activeEnemyTeams.indexOf(team as EnemyTeam)
+  return `CPU ${index + 1} (${AI_DIFFICULTY[gameState.enemyDifficulties[team as EnemyTeam]].label})`
+}
+
+export type MatchRosterEntry = {
+  team: Team
+  name: string
+  /** Map seat, for the seat-color swatch in the HUD roster. */
+  seat: number
+  isHuman: boolean
+  ally: boolean
+  eliminated: boolean
+}
+
+/** Everyone in the match and whether they're still standing, for the HUD roster. */
+export function getMatchRoster(): MatchRosterEntry[] {
+  const teams: Team[] = ['player', ...gameState.activeEnemyTeams]
+  return teams.map((team) => ({
+    team,
+    name: getTeamDisplayName(team),
+    seat: team === 'player' ? (multiplayerPlan?.mySeatIndex ?? 0) : gameState.enemySeatIndex[team as EnemyTeam],
+    isHuman: team === 'player' || isMultiplayerHumanTeam(team),
+    ally: team !== 'player' && isPlayerAlly(team),
+    eliminated: eliminatedTeams.has(team)
+  }))
 }
 
 function endMatch(result: 'win' | 'loss'): void {
@@ -3456,13 +3598,13 @@ function updateLeaverTakeover(dt: number): void {
 
     multiplayerPlan.humanTeams = multiplayerPlan.humanTeams.filter((humanTeam) => humanTeam !== team)
     enemyAis.push(createEnemyAi(team as EnemyTeam, 'medium'))
-    setStatus(`${getMultiplayerTeamName(team) ?? 'A commander'} left the match. A computer took over their forces.`)
+    announceMatchEvent(`${getMultiplayerTeamName(team) ?? 'A commander'} left the match. A computer took over their forces.`)
   }
 }
 
 /** Wipe a team from the field: units die, buildings collapse, elimination check runs. */
 function eliminateTeam(team: Team, surrendered: boolean): void {
-  if (surrendered) setStatus(`${getMultiplayerTeamName(team) ?? 'A commander'} surrendered!`)
+  if (surrendered) announceMatchEvent(`${getTeamDisplayName(team)} surrendered!`)
   for (const soldier of soldiers) {
     if (soldier.alive && getTeam(soldier) === team) damageSoldier(soldier, soldier.hp)
   }
@@ -4064,8 +4206,19 @@ function getHoverText(selectable: Selectable): string {
     const resource = selectable as ResourceNode
     return resource.resource ? RESOURCE_DEFINITIONS[resource.resource].hoverText : `Select ${selectable.name}`
   }
-  if (isHostileToPlayer(getTeam(selectable))) return `Attack ${selectable.name}`
-  return `Select ${selectable.name}`
+  // Someone else's forces carry the owner's tag so you know whose army you're poking.
+  const owner = getTeamOwnerLabel(getTeam(selectable))
+  const ownerTag = owner ? ` [${owner}]` : ''
+  if (isHostileToPlayer(getTeam(selectable))) return `Attack ${selectable.name}${ownerTag}`
+  return `Select ${selectable.name}${ownerTag}`
+}
+
+/** Owner tag for hovers: the human's lobby name in multiplayer, or the CPU difficulty. */
+function getTeamOwnerLabel(team: Team): string | undefined {
+  if (team === 'player') return undefined
+  const humanName = getMultiplayerTeamName(team)
+  if (humanName) return humanName
+  return `CPU ${AI_DIFFICULTY[gameState.enemyDifficulties[team as EnemyTeam]].label}`
 }
 
 function formatCost(cost: ResourceCost): string {
