@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DecentraCraft — Real-Time Strategy in Decentraland</title>
+  <meta name="description" content="DecentraCraft is a StarCraft-style base-building RTS playable inside Decentraland. Three factions, two battlegrounds, up to six commanders. Learn the lore, browse the unit wiki and jump in." />
+  <link rel="icon" type="image/png" href="assets/logo-decentracraft.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <!-- ====================== NAV ====================== -->
+  <header class="nav" id="top">
+    <a class="nav-brand" href="#top">
+      <img src="assets/logo-decentracraft.png" alt="DecentraCraft logo" />
+      <span>DECENTRA<em>CRAFT</em></span>
+    </a>
+    <nav class="nav-links">
+      <a href="#lore">Lore</a>
+      <a href="#factions">Factions</a>
+      <a href="#wiki">Wiki</a>
+      <a href="#maps">Maps</a>
+      <a href="#team">Team</a>
+    </nav>
+    <a class="btn btn-play nav-play" href="https://decentraland.org/play/?position=-12%2C127" target="_blank" rel="noopener">▶ PLAY NOW</a>
+    <button class="nav-burger" id="navBurger" aria-label="Menu">☰</button>
+  </header>
+
+  <!-- ====================== HERO ====================== -->
+  <section class="hero">
+    <div class="hero-bg" style="background-image:url('assets/title-bg-decentracraft.jpg')"></div>
+    <div class="hero-content">
+      <img class="hero-logo" src="assets/logo-decentracraft.png" alt="DecentraCraft" />
+      <h1>DECENTRA<em>CRAFT</em></h1>
+      <p class="hero-tag">Build the base. Raise the army. Break the enemy.<br/>A full real-time strategy game living inside Decentraland.</p>
+      <div class="hero-cta">
+        <a class="btn btn-play" href="https://decentraland.org/play/?position=-12%2C127" target="_blank" rel="noopener">▶ PLAY IN DECENTRALAND</a>
+        <a class="btn btn-ghost" href="#wiki">OPEN THE WIKI</a>
+      </div>
+      <div class="hero-facts">
+        <div><strong>3</strong><span>Factions</span></div>
+        <div><strong>12</strong><span>Unit roles</span></div>
+        <div><strong>8</strong><span>Structures</span></div>
+        <div><strong>6</strong><span>Commanders per match</span></div>
+      </div>
+    </div>
+    <div class="hero-fade"></div>
+  </section>
+
+  <!-- ====================== LORE ====================== -->
+  <section class="section" id="lore">
+    <h2 class="section-title"><span>01</span> THE LORE</h2>
+    <div class="lore-grid">
+      <article class="lore-block">
+        <h3>The Shattering of Antrom</h3>
+        <p>
+          Antrom was a kingdom once — a whole world of crystal veins and plasma seas, ruled from a
+          crown of mountains at its heart. Then the veins woke up. The aether crystal that powered
+          the kingdom turned out to be something older than the kingdom itself, and when the deep
+          drills bit too far, the Crown Mountains shattered and the world cracked with them.
+        </p>
+        <p>
+          What is left are battlegrounds: a scarred moonscape where the Crown once stood, and archipelagos
+          of green islands scattered across a rising ocean. Every fragment is rich with the two things
+          worth fighting for — <strong class="c-min">aether crystal</strong> and
+          <strong class="c-gas">plasma</strong> — and three powers have come to claim them.
+        </p>
+      </article>
+      <article class="lore-block">
+        <h3>Three Banners Over the Ruins</h3>
+        <p>
+          The <strong class="c-human">Vanguard</strong> are the exiled colonists of old Antrom — engineers and
+          soldiers who lost their kingdom and intend to rebuild it one command post at a time. Their crews
+          weld, their fleets hold the line, and their Warmaster leads from the front.
+        </p>
+        <p>
+          The <strong class="c-alien">Aethyr</strong> were here first. The crystal is not a resource to them —
+          it is their ancestors. Their gilded war-machines assemble themselves from light, and their
+          Riftlord does not forgive the drills that woke the veins.
+        </p>
+        <p>
+          The <strong class="c-bio">Myriad</strong> are what grew in the cracks the Shattering left behind:
+          a living horde with one will and endless bodies. They do not build. They spawn. And every
+          battlefield they touch becomes a nest.
+        </p>
+      </article>
+      <article class="lore-block lore-wide">
+        <h3>The War for the Veins</h3>
+        <p>
+          No treaty survives contact with a fresh crystal field. Commanders drop onto the fragments of
+          Antrom, raise a base from nothing, and fight until every enemy banner is ash — the only victory
+          the veins recognize is a battlefield with a single flag on it. Harvest the crystal, tap the
+          plasma vents, climb the tech tree, and choose your moment: the war for Antrom is won by the
+          commander who turns resources into an army one push faster than everyone else.
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <!-- ====================== FACTIONS ====================== -->
+  <section class="section" id="factions">
+    <h2 class="section-title"><span>02</span> THE FACTIONS</h2>
+    <div class="faction-grid" id="factionGrid"><!-- built by app.js --></div>
+  </section>
+
+  <!-- ====================== WIKI ====================== -->
+  <section class="section" id="wiki">
+    <h2 class="section-title"><span>03</span> THE WIKI</h2>
+    <p class="section-sub">Every unit and structure in the game, with live stats pulled straight from the battlefield. Pick a faction, pick a category, click anything to inspect it.</p>
+
+    <div class="wiki-controls">
+      <div class="wiki-tabs" id="raceTabs">
+        <button class="race-tab active" data-race="human">VANGUARD</button>
+        <button class="race-tab" data-race="alien">AETHYR</button>
+        <button class="race-tab" data-race="bio">MYRIAD</button>
+      </div>
+      <div class="wiki-tabs" id="catTabs">
+        <button class="cat-tab active" data-cat="units">UNITS</button>
+        <button class="cat-tab" data-cat="buildings">STRUCTURES</button>
+      </div>
+    </div>
+
+    <div class="wiki-grid" id="wikiGrid"><!-- built by app.js --></div>
+  </section>
+
+  <!-- ====================== MAPS ====================== -->
+  <section class="section" id="maps">
+    <h2 class="section-title"><span>04</span> THE BATTLEGROUNDS</h2>
+    <div class="maps-grid">
+      <article class="map-card">
+        <img src="assets/maps/shattered-crown.jpg" alt="Shattered Crown map layout" loading="lazy" />
+        <div class="map-info">
+          <h3>SHATTERED CROWN</h3>
+          <p class="map-tag">The classic. One landmass, six starts, nowhere to hide.</p>
+          <p>The scarred plateau where the Crown Mountains fell. Solid ground from edge to edge means
+          every army walks to war — expansions are contested on foot and the rich gold veins in the
+          center belong to whoever dares hold the middle.</p>
+        </div>
+      </article>
+      <article class="map-card">
+        <img src="assets/maps/islands.jpg" alt="Islands map layout" loading="lazy" />
+        <div class="map-info">
+          <h3>ISLANDS</h3>
+          <p class="map-tag">No land routes. The ocean decides who lives.</p>
+          <p>Square isles scattered across open water. Ground armies are stranded without
+          transports, flyers rule the skies, and the empty isles between the starts are free
+          real estate for anyone bold enough to ferry a colony crew across the straits.</p>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ====================== HOW TO PLAY ====================== -->
+  <section class="section" id="play">
+    <h2 class="section-title"><span>05</span> HOW TO PLAY</h2>
+    <div class="steps-grid">
+      <div class="step"><strong>1. Jump in</strong><p>Open the plot in Decentraland — no install, it runs in your browser as a Decentraland scene.</p></div>
+      <div class="step"><strong>2. Pick your war</strong><p>Single player against up to five AI commanders, or multiplayer battle rooms against real people.</p></div>
+      <div class="step"><strong>3. Boom</strong><p>Train workers, harvest crystal, tap plasma vents, and climb the tech tree toward titans and capital ships.</p></div>
+      <div class="step"><strong>4. Bust</strong><p>Raze every enemy structure on the map. Last banner standing wins Antrom.</p></div>
+    </div>
+    <div class="play-cta">
+      <a class="btn btn-play btn-big" href="https://decentraland.org/play/?position=-12%2C127" target="_blank" rel="noopener">▶ ENTER THE BATTLEFIELD — GENESIS CITY (-12, 127)</a>
+    </div>
+  </section>
+
+  <!-- ====================== TEAM ====================== -->
+  <section class="section" id="team">
+    <h2 class="section-title"><span>06</span> THE TEAM</h2>
+    <div class="team-grid">
+      <div class="team-card">
+        <div class="team-avatar" style="background-image:url('assets/icons/icon-unit-hero.jpg')"></div>
+        <h3>Matt</h3>
+        <p class="team-role">Creator &amp; Game Director</p>
+        <p>Commander-in-chief. Design, direction and relentless playtesting — every unit, map and
+        mechanic goes through his war room first.</p>
+      </div>
+      <div class="team-card">
+        <div class="team-avatar" style="background-image:url('assets/icons/icon-unit-caster.jpg')"></div>
+        <h3>The Forge</h3>
+        <p class="team-role">AI Engineering Partner</p>
+        <p>Code, art pipelines and procedural models forged side by side with AI tooling —
+        the entire game is built from primitives, no downloaded assets.</p>
+      </div>
+      <div class="team-card">
+        <div class="team-avatar" style="background-image:url('assets/icons/icon-unit-melee-bio.jpg')"></div>
+        <h3>The Playtesters</h3>
+        <p class="team-role">Community</p>
+        <p>The commanders who queue up, break the balance, find the bugs and demand more units.
+        This game is shaped by every match you play.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ====================== FOOTER ====================== -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <img src="assets/logo-decentracraft.png" alt="" />
+      <p><strong>DECENTRACRAFT</strong> — a real-time strategy game built on the Decentraland SDK7.</p>
+      <p>
+        <a href="https://decentraland.org/play/?position=-12%2C127" target="_blank" rel="noopener">Play at Genesis City (-12, 127)</a>
+        · <a href="https://decentraland.org" target="_blank" rel="noopener">decentraland.org</a>
+      </p>
+      <p class="footer-fine">All game art is generated and procedural. Not affiliated with Blizzard Entertainment.</p>
+    </div>
+  </footer>
+
+  <!-- ====================== DETAIL MODAL ====================== -->
+  <div class="modal-backdrop" id="modalBackdrop" hidden>
+    <div class="modal" id="modal" role="dialog" aria-modal="true">
+      <button class="modal-close" id="modalClose" aria-label="Close">✕</button>
+      <div class="modal-body" id="modalBody"><!-- built by app.js --></div>
+    </div>
+  </div>
+
+  <script src="js/data.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
