@@ -1,5 +1,6 @@
 import { Transform } from '@dcl/sdk/ecs'
 import { SCENE } from '../config'
+import { isGroundWalkable } from '../maps'
 import type { Soldier, Worker } from '../types'
 import { soldiers, workers } from '../world'
 
@@ -23,7 +24,7 @@ const MAP_MARGIN = 1.5
 const CELL_SIZE = 2
 
 function isFlyer(unit: Unit): boolean {
-  return unit.kind === 'soldier' && unit.variant === 'flyer'
+  return unit.kind === 'soldier' && (unit.variant === 'flyer' || unit.variant === 'transport')
 }
 
 /** Busy harvesters and builders phase through the crowd (SC harvester rule). */
@@ -34,8 +35,8 @@ function ignoresCollision(unit: Unit): boolean {
 
 export function updateUnitSeparation(dt: number): void {
   const units: Unit[] = []
-  for (const soldier of soldiers) if (soldier.alive) units.push(soldier)
-  for (const worker of workers) if (worker.alive && !ignoresCollision(worker)) units.push(worker)
+  for (const soldier of soldiers) if (soldier.alive && !soldier.inTransportId) units.push(soldier)
+  for (const worker of workers) if (worker.alive && !worker.inTransportId && !ignoresCollision(worker)) units.push(worker)
   if (units.length < 2) return
 
   // Spatial hash so big armies stay cheap: only neighboring cells are compared.
@@ -97,8 +98,12 @@ export function updateUnitSeparation(dt: number): void {
 
     const magnitude = Math.sqrt(pushX * pushX + pushZ * pushZ)
     const step = Math.min(magnitude, 1) * maxPush
-    position.x = clamp(position.x + (pushX / magnitude) * step, MAP_MARGIN, SCENE.size - MAP_MARGIN)
-    position.z = clamp(position.z + (pushZ / magnitude) * step, MAP_MARGIN, SCENE.size - MAP_MARGIN)
+    const nextX = clamp(position.x + (pushX / magnitude) * step, MAP_MARGIN, SCENE.size - MAP_MARGIN)
+    const nextZ = clamp(position.z + (pushZ / magnitude) * step, MAP_MARGIN, SCENE.size - MAP_MARGIN)
+    // Ground units never get shoved off an island's rim into the sky.
+    if (!flying && !isGroundWalkable(nextX, nextZ)) continue
+    position.x = nextX
+    position.z = nextZ
   }
 }
 

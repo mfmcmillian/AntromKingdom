@@ -1,5 +1,6 @@
 import { Entity, Transform } from '@dcl/sdk/ecs'
 import { Quaternion, Vector3 } from '@dcl/sdk/math'
+import { isGroundWalkable } from './maps'
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
@@ -21,7 +22,7 @@ export function distanceToPosition(entity: Entity, position: Vector3): number {
   return distanceToPoint(current, position)
 }
 
-export function moveTowardPosition(entity: Entity, target: Vector3, speed: number, dt: number): void {
+export function moveTowardPosition(entity: Entity, target: Vector3, speed: number, dt: number, airborne = false): void {
   const transform = Transform.getMutable(entity)
   const current = transform.position
   const direction = Vector3.create(target.x - current.x, 0, target.z - current.z)
@@ -30,8 +31,15 @@ export function moveTowardPosition(entity: Entity, target: Vector3, speed: numbe
   if (distance <= 0.01) return
 
   const step = Math.min(distance, speed * dt)
-  transform.position = Vector3.create(current.x + (direction.x / distance) * step, current.y, current.z + (direction.z / distance) * step)
+  const nextX = current.x + (direction.x / distance) * step
+  const nextZ = current.z + (direction.z / distance) * step
   transform.rotation = Quaternion.fromEulerDegrees(0, (Math.atan2(direction.x, direction.z) * 180) / Math.PI, 0)
+
+  // Island maps: ground units stop dead at the island's rim instead of
+  // marching into the sky. Flyers and transports pass the check.
+  if (!airborne && !isGroundWalkable(nextX, nextZ)) return
+
+  transform.position = Vector3.create(nextX, current.y, nextZ)
 }
 
 export function getFormationPosition(center: Vector3, slot: number, radius: number): Vector3 {

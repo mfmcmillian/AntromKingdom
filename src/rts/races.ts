@@ -35,6 +35,8 @@ export type RaceDefinition = {
   healer: RaceUnitStats
   caster: RaceUnitStats
   flyer: RaceUnitStats
+  /** Unarmed flying carrier: ferries up to 8 ground units across the void on island maps. */
+  transport: RaceUnitStats
   siege: RaceUnitStats
   titan: RaceUnitStats
   /** Signature hero: one per match, granted at the start, cannot be rebuilt. */
@@ -57,6 +59,7 @@ export const RACES: Record<RaceId, RaceDefinition> = {
     healer: { name: 'Field Medic', hp: 60, damage: 0, moveSpeed: 3.1, attackRange: 2.5, healRate: 9, cost: { minerals: 75, gas: 50 }, productionTime: 2.5, supply: 1 },
     caster: { name: 'Stormcaller', hp: 60, damage: 14, moveSpeed: 2.7, attackRange: 7, attackRate: 1.7, splashRadius: 2.8, cost: { minerals: 100, gas: 100 }, productionTime: 3.5, supply: 2 },
     flyer: { name: 'Kestrel Gunship', hp: 90, damage: 12, moveSpeed: 4.2, attackRange: 6.5, attackRate: 0.9, cost: { minerals: 120, gas: 80 }, productionTime: 3.5, supply: 2 },
+    transport: { name: 'Skyhauler', hp: 160, damage: 0, moveSpeed: 3.6, attackRange: 0, cost: { minerals: 150, gas: 75 }, productionTime: 4, supply: 2 },
     siege: { name: 'Thunderhead', hp: 150, damage: 44, moveSpeed: 1.9, attackRange: 11, attackRate: 3.4, splashRadius: 2.6, cost: { minerals: 200, gas: 125 }, productionTime: 5.5, supply: 3 },
     titan: { name: 'Juggernaut', hp: 380, damage: 40, moveSpeed: 2.2, attackRange: 2.8, attackRate: 1.7, splashRadius: 2.2, cost: { minerals: 300, gas: 200 }, productionTime: 8, supply: 4 },
     hero: { name: 'Warmaster Kael', hp: 550, damage: 26, moveSpeed: 3, attackRange: 6.5, attackRate: 1.1, cost: {}, productionTime: 0, supply: 0 },
@@ -84,6 +87,7 @@ export const RACES: Record<RaceId, RaceDefinition> = {
     healer: { name: 'Lightmender', hp: 85, damage: 0, moveSpeed: 2.7, attackRange: 3, healRate: 7, cost: { minerals: 100, gas: 75 }, productionTime: 3.2, supply: 1 },
     caster: { name: 'Riftweaver', hp: 70, damage: 18, moveSpeed: 2.6, attackRange: 8, attackRate: 1.9, splashRadius: 3.2, cost: { minerals: 125, gas: 125 }, productionTime: 4, supply: 2 },
     flyer: { name: 'Zephyr', hp: 110, damage: 15, moveSpeed: 3.9, attackRange: 7, attackRate: 1.1, cost: { minerals: 150, gas: 100 }, productionTime: 4, supply: 2 },
+    transport: { name: 'Riftbarge', hp: 200, damage: 0, moveSpeed: 3.3, attackRange: 0, cost: { minerals: 175, gas: 100 }, productionTime: 4.5, supply: 2 },
     siege: { name: 'Sunlance', hp: 180, damage: 58, moveSpeed: 1.7, attackRange: 12, attackRate: 3.8, splashRadius: 2.2, cost: { minerals: 250, gas: 175 }, productionTime: 6.5, supply: 3 },
     titan: { name: 'Avatar', hp: 450, damage: 50, moveSpeed: 2, attackRange: 3, attackRate: 1.9, splashRadius: 2.4, cost: { minerals: 350, gas: 250 }, productionTime: 9, supply: 4 },
     hero: { name: 'Riftlord Auren', hp: 650, damage: 34, moveSpeed: 2.6, attackRange: 7.5, attackRate: 1.6, splashRadius: 3.5, cost: {}, productionTime: 0, supply: 0 },
@@ -111,6 +115,7 @@ export const RACES: Record<RaceId, RaceDefinition> = {
     healer: { name: 'Broodtender', hp: 50, damage: 0, moveSpeed: 3.4, attackRange: 3.5, healRate: 3, cost: { minerals: 60, gas: 25 }, productionTime: 1.6, supply: 1 },
     caster: { name: 'Plague Weaver', hp: 50, damage: 10, moveSpeed: 3, attackRange: 6, attackRate: 1.5, splashRadius: 2.6, cost: { minerals: 80, gas: 60 }, productionTime: 2.5, supply: 2 },
     flyer: { name: 'Shrieker', hp: 70, damage: 9, moveSpeed: 4.5, attackRange: 5.5, attackRate: 0.8, cost: { minerals: 90, gas: 50 }, productionTime: 2.2, supply: 2 },
+    transport: { name: 'Broodwing', hp: 130, damage: 0, moveSpeed: 3.9, attackRange: 0, cost: { minerals: 125, gas: 50 }, productionTime: 3, supply: 2 },
     siege: { name: 'Acidmaw', hp: 120, damage: 30, moveSpeed: 2.3, attackRange: 10.5, attackRate: 3, splashRadius: 3, cost: { minerals: 150, gas: 100 }, productionTime: 4, supply: 3 },
     titan: { name: 'Behemoth', hp: 320, damage: 30, moveSpeed: 2.6, attackRange: 2.6, attackRate: 1.5, splashRadius: 2, cost: { minerals: 250, gas: 150 }, productionTime: 6, supply: 4 },
     hero: { name: 'Broodmother Szel', hp: 750, damage: 24, moveSpeed: 3.2, attackRange: 2.2, attackRate: 1.4, splashRadius: 1.6, cost: {}, productionTime: 0, supply: 0 },
@@ -144,14 +149,23 @@ export function getSoldierDefinition(team: Team, variant: SoldierVariant): RaceU
   if (variant === 'healer') return race.healer
   if (variant === 'caster') return race.caster
   if (variant === 'flyer') return race.flyer
+  if (variant === 'transport') return race.transport
   if (variant === 'siege') return race.siege
   if (variant === 'titan') return race.titan
   if (variant === 'hero') return race.hero
   return race.melee
 }
 
+/** Airborne variants: fly over the void on island maps and only anti-air weapons reach them. */
+export function isAirVariant(variant: SoldierVariant): boolean {
+  return variant === 'flyer' || variant === 'transport'
+}
+
+/** How many ground units fit inside a transport. */
+export const TRANSPORT_CAPACITY = 8
+
 /** Variants trained at the advanced structure instead of the barracks. */
-export const ADVANCED_VARIANTS: SoldierVariant[] = ['caster', 'flyer', 'siege', 'titan']
+export const ADVANCED_VARIANTS: SoldierVariant[] = ['caster', 'flyer', 'transport', 'siege', 'titan']
 
 /** StarCraft-style tech tiers: these variants also need this building to exist before they can be trained. */
 export const UNIT_REQUIREMENTS: Partial<Record<SoldierVariant, BuildableKind>> = {

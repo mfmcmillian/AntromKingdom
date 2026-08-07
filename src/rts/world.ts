@@ -24,8 +24,8 @@ const MIN_ANTI_AIR_RANGE = 4
  * artillery arcs along the ground and can't elevate; healers never attack.
  */
 export function canAttackTarget(attacker: Soldier | Worker, target: Building | Soldier | Worker): boolean {
-  if (attacker.kind === 'soldier' && attacker.variant === 'healer') return false
-  if (target.kind !== 'soldier' || target.variant !== 'flyer') return true
+  if (attacker.kind === 'soldier' && (attacker.variant === 'healer' || attacker.variant === 'transport')) return false
+  if (target.kind !== 'soldier' || (target.variant !== 'flyer' && target.variant !== 'transport')) return true
   if (attacker.kind !== 'soldier' || attacker.variant === 'siege') return false
   return attacker.variant === 'titan' || attacker.attackRange >= MIN_ANTI_AIR_RANGE
 }

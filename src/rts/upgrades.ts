@@ -69,9 +69,9 @@ export function getUpgradeLevel(team: Team, kind: UpgradeKind): number {
   return levels[team][kind]
 }
 
-/** Which weapons/engine tracks apply to a unit: flyers use the air tracks. */
+/** Which weapons/engine tracks apply to a unit: airborne units use the air tracks. */
 export function getUpgradeKindsFor(variant: SoldierVariant): { damage: UpgradeKind; speed: UpgradeKind } {
-  return variant === 'flyer' ? { damage: 'airDamage', speed: 'airSpeed' } : { damage: 'damage', speed: 'speed' }
+  return variant === 'flyer' || variant === 'transport' ? { damage: 'airDamage', speed: 'airSpeed' } : { damage: 'damage', speed: 'speed' }
 }
 
 export function getDamageMultiplier(team: Team, variant: SoldierVariant): number {

@@ -3,6 +3,7 @@ import { Color4 } from '@dcl/sdk/math'
 import ReactEcs, { UiEntity } from '@dcl/sdk/react-ecs'
 import { SCENE } from './config'
 import { FOG_GRID_SIZE, getFogCellState, isPositionExplored, isPositionVisibleToPlayer } from './fogOfWar'
+import { getMapById } from './maps'
 import { gameState, isHostileToPlayer } from './state'
 import type { EnemyTeam, Team } from './types'
 import { BASIN_PATCHES, CRATERS } from './terrain'
@@ -47,7 +48,10 @@ const MINIMAP_COLORS = {
   // Rich center nodes: gold crystal and icy cryo plasma.
   goldMinerals: Color4.create(1, 0.8, 0.25, 1),
   cryoGas: Color4.create(0.55, 0.88, 1, 1),
-  avatar: Color4.create(1, 1, 1, 1)
+  avatar: Color4.create(1, 1, 1, 1),
+  // Island maps: bright void between floating rock islands.
+  sky: Color4.create(0.16, 0.32, 0.55, 1),
+  island: Color4.create(0.32, 0.32, 0.36, 1)
 }
 
 /** World meters -> minimap pixels. */
@@ -175,6 +179,23 @@ function jumpCameraToClickedPoint(): void {
  * basin, and the landmark craters, so the minimap matches the actual map.
  */
 function terrainLayer() {
+  // Island maps swap the whole layer: sky background with one blob per island.
+  const islands = getMapById(gameState.selectedMapId).islands
+  if (islands) {
+    const elements = [
+      <UiEntity key="sky" uiTransform={{ positionType: 'absolute', position: { left: 0, top: 0 }, width: MAP_SIZE, height: MAP_SIZE }} uiBackground={{ color: MINIMAP_COLORS.sky }} />
+    ]
+    for (let i = 0; i < islands.length; i++) {
+      const island = islands[i]
+      const diameter = island.radius * 2 * MAP_SCALE
+      // Three overlapping rects fake a rounded island (UI has no circles).
+      elements.push(terrainRectSized(`isle-${i}-a`, island.x, island.z, diameter * 0.94, diameter * 0.62, MINIMAP_COLORS.island))
+      elements.push(terrainRectSized(`isle-${i}-b`, island.x, island.z, diameter * 0.62, diameter * 0.94, MINIMAP_COLORS.island))
+      elements.push(terrainRectSized(`isle-${i}-c`, island.x, island.z, diameter * 0.8, diameter * 0.8, MINIMAP_COLORS.island))
+    }
+    return elements
+  }
+
   const RIM = 6
   const elements = [
     // Border highland ring.
@@ -195,14 +216,19 @@ function terrainLayer() {
 
 function terrainRect(key: string, worldX: number, worldZ: number, worldSize: number, color: Color4) {
   const size = worldSize * MAP_SCALE
+  return terrainRectSized(key, worldX, worldZ, size, size, color)
+}
+
+/** Rect centered on a world point, already sized in minimap pixels. */
+function terrainRectSized(key: string, worldX: number, worldZ: number, width: number, height: number, color: Color4) {
   return (
     <UiEntity
       key={key}
       uiTransform={{
         positionType: 'absolute',
-        position: { left: worldX * MAP_SCALE - size / 2, top: MAP_SIZE - worldZ * MAP_SCALE - size / 2 },
-        width: size,
-        height: size
+        position: { left: worldX * MAP_SCALE - width / 2, top: MAP_SIZE - worldZ * MAP_SCALE - height / 2 },
+        width,
+        height
       }}
       uiBackground={{ color }}
     />
@@ -244,14 +270,15 @@ function buildingDots() {
 function unitDots() {
   const dots = []
   for (const worker of workers) {
-    if (!worker.alive) continue
+    // Riders inside a transport are parked off-map: no dot until they unload.
+    if (!worker.alive || worker.inTransportId) continue
     const position = Transform.get(worker.entity).position
     const team = getTeam(worker)
     if (isHostileToPlayer(team) && !isPositionVisibleToPlayer(position)) continue
     dots.push(dot(`wrk-${worker.id}`, position, 6, dotColor(team, false)))
   }
   for (const soldier of soldiers) {
-    if (!soldier.alive) continue
+    if (!soldier.alive || soldier.inTransportId) continue
     const position = Transform.get(soldier.entity).position
     const team = getTeam(soldier)
     if (isHostileToPlayer(team) && !isPositionVisibleToPlayer(position)) continue

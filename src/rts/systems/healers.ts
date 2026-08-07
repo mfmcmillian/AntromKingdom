@@ -28,7 +28,7 @@ export type HealerSystemDeps = {
 
 export function updateHealers(dt: number, deps: HealerSystemDeps): void {
   for (const healer of soldiers) {
-    if (!healer.alive || healer.variant !== 'healer') continue
+    if (!healer.alive || healer.variant !== 'healer' || healer.inTransportId) continue
     if (getRace(getTeam(healer)).id === 'bio') updateAuraHealer(healer, dt)
     else updateBeamHealer(healer, dt, deps)
   }

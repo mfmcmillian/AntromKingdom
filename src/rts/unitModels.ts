@@ -8,7 +8,7 @@ import { RaceId, ResourceKind, Team } from './types'
 // per-state motion (hover bob, tilt, spinners, attack lunges) to mirror the
 // animation clips the game logic requests (idle / walk / talk / attack / impact).
 
-export type UnitRole = 'worker' | 'melee' | 'ranged' | 'caster' | 'flyer' | 'titan' | 'hero' | 'healer' | 'siege'
+export type UnitRole = 'worker' | 'melee' | 'ranged' | 'caster' | 'flyer' | 'transport' | 'titan' | 'hero' | 'healer' | 'siege'
 
 type UnitAnimState = 'idle' | 'walk' | 'talk' | 'attack' | 'impact'
 
@@ -213,6 +213,7 @@ export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team:
     else if (role === 'ranged') buildHumanGunner(rig, addPart, glow)
     else if (role === 'caster') buildHumanStormcaller(rig, addPart, glow)
     else if (role === 'flyer') buildHumanRaptor(rig, addPart, glow)
+    else if (role === 'transport') buildHumanSkyhauler(rig, addPart, glow)
     else if (role === 'hero') buildHumanHero(rig, addPart, glow)
     else if (role === 'healer') buildHumanMedic(rig, addPart, glow)
     else if (role === 'siege') buildHumanThunderhead(rig, addPart, glow)
@@ -223,6 +224,7 @@ export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team:
     else if (role === 'ranged') buildAlienDisruptor(rig, addPart, glow)
     else if (role === 'caster') buildAlienOracle(rig, addPart, glow)
     else if (role === 'flyer') buildAlienTempest(rig, addPart, glow)
+    else if (role === 'transport') buildAlienRiftbarge(rig, addPart, glow)
     else if (role === 'hero') buildAlienHero(rig, addPart, glow)
     else if (role === 'healer') buildAlienLightmender(rig, addPart, glow)
     else if (role === 'siege') buildAlienSunlance(rig, addPart, glow)
@@ -233,6 +235,7 @@ export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team:
     else if (role === 'ranged') buildBioSpitter(rig, addPart, glow)
     else if (role === 'caster') buildBioPlagueWeaver(rig, addPart, glow)
     else if (role === 'flyer') buildBioShrieker(rig, addPart, glow)
+    else if (role === 'transport') buildBioBroodwing(rig, addPart, glow)
     else if (role === 'hero') buildBioHero(rig, addPart, glow)
     else if (role === 'healer') buildBioBroodtender(rig, addPart, glow)
     else if (role === 'siege') buildBioAcidmaw(rig, addPart, glow)
@@ -263,6 +266,7 @@ const TEAM_RING_SIZE: Record<UnitRole, number> = {
   healer: 1.15,
   caster: 1.25,
   flyer: 1.25,
+  transport: 1.7,
   siege: 1.6,
   titan: 1.9,
   hero: 2.2
@@ -790,6 +794,168 @@ function buildHumanRaptor(rig: UnitRig, addPart: PartAdder, glow: Color4): void 
     talk: { amplitude: 0.08, speed: 4, tilt: 4, spin: 1000, lunge: 0 },
     attack: { amplitude: 0.05, speed: 12, tilt: 7, spin: 1400, lunge: -0.06 },
     impact: { amplitude: 0.12, speed: 16, tilt: -8, spin: 900, lunge: 0 }
+  }
+}
+
+/** Human transport: a fat quad-rotor dropship with a bay full of cargo pods and a rear ramp. */
+function buildHumanSkyhauler(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  rig.baseHeight = 2.1
+
+  // --- Wide-body fuselage: hauler hull, armored belly, cargo bay stripe. ---
+  addPart(Vector3.create(0, 0.55, 0), Vector3.create(0.85, 0.5, 1.5), HUMAN_HULL)
+  addPart(Vector3.create(0, 0.36, 0), Vector3.create(0.72, 0.2, 1.3), METAL_DARK)
+  addPart(Vector3.create(0, 0.86, -0.1), Vector3.create(0.6, 0.16, 1.05), METAL_LIGHT)
+  // Bay doors: hazard stripe panels on both flanks.
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.44, 0.55, -0.05), Vector3.create(0.03, 0.34, 0.85), METAL_DARK)
+    addPart(Vector3.create(side * 0.455, 0.55, -0.05), Vector3.create(0.015, 0.1, 0.85), glow, { emissive: glow, emissiveIntensity: 1.8 })
+  }
+  // Cockpit: framed canopy strip up front.
+  addPart(Vector3.create(0, 0.66, 0.72), Vector3.create(0.5, 0.26, 0.28), METAL_LIGHT)
+  addPart(Vector3.create(0, 0.7, 0.84), Vector3.create(0.38, 0.14, 0.1), glow, { emissive: glow, emissiveIntensity: 2.6 })
+  // Rear loading ramp, cracked open with bay light spilling out.
+  addPart(Vector3.create(0, 0.42, -0.82), Vector3.create(0.55, 0.08, 0.34), METAL_LIGHT, { rotation: Quaternion.fromEulerDegrees(-24, 0, 0) })
+  addPart(Vector3.create(0, 0.56, -0.76), Vector3.create(0.4, 0.16, 0.05), glow, { emissive: glow, emissiveIntensity: 2 })
+
+  // --- Four corner lift nacelles with translucent rotor-blur discs. --------
+  for (const side of [-1, 1]) {
+    for (const end of [-1, 1]) {
+      const x = side * 0.62
+      const z = end * 0.55
+      // Pylon arm out to the nacelle.
+      addPart(Vector3.create(side * 0.5, 0.68, z), Vector3.create(0.34, 0.07, 0.16), METAL_LIGHT)
+      addPart(Vector3.create(x, 0.66, z), Vector3.create(0.2, 0.14, 0.2), METAL_DARK, { cylinder: true })
+      // Rotor blur: thin translucent disc with a soft pulse so it reads as spinning.
+      const disc = addPart(Vector3.create(x, 0.78, z), Vector3.create(0.5, 0.02, 0.5), Color4.create(0.7, 0.75, 0.85, 0.4), { cylinder: true })
+      rig.fx.push({ entity: disc, mode: 'pulse', anchor: Vector3.create(x, 0.78, z), radius: 0.02, height: 0, speed: 2.2, phase: side + end, size: 0.5 })
+      // Nav light per nacelle.
+      addPart(Vector3.create(x, 0.6, z), Vector3.create(0.05, 0.05, 0.05), glow, { sphere: true, emissive: glow, emissiveIntensity: 3.2 })
+    }
+  }
+
+  // --- Belly winch light and landing skids. ---------------------------------
+  addPart(Vector3.create(0, 0.28, 0), Vector3.create(0.1, 0.06, 0.1), glow, { cylinder: true, emissive: glow, emissiveIntensity: 2.4 })
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.32, 0.14, 0), Vector3.create(0.06, 0.05, 1.15), METAL_LIGHT)
+    for (const off of [-0.4, 0.4]) {
+      addPart(Vector3.create(side * 0.32, 0.24, off), Vector3.create(0.05, 0.16, 0.05), METAL_DARK, { rotation: Quaternion.fromEulerDegrees(0, 0, side * -12) })
+    }
+  }
+
+  rig.spinAxis = 'y'
+  rig.profiles = {
+    idle: { amplitude: 0.09, speed: 1.3, tilt: 0, spin: 0, lunge: 0 },
+    walk: { amplitude: 0.06, speed: 2.8, tilt: 8, spin: 0, lunge: 0 },
+    talk: { amplitude: 0.07, speed: 3, tilt: 3, spin: 0, lunge: 0 },
+    attack: { amplitude: 0.06, speed: 4, tilt: 4, spin: 0, lunge: 0 },
+    impact: { amplitude: 0.12, speed: 14, tilt: -6, spin: 0, lunge: 0 }
+  }
+}
+
+/** Alien transport: a golden antigrav barge with a crystal field dome over the cargo bay. */
+function buildAlienRiftbarge(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  rig.baseHeight = 2.2
+  const gild = { metallic: 0.8, roughness: 0.25 }
+
+  // --- Antigrav sled: two stacked hull decks, gilded trim. ------------------
+  addPart(Vector3.create(0, 0.4, 0), Vector3.create(0.95, 0.16, 1.6), ALIEN_DARK, gild)
+  addPart(Vector3.create(0, 0.54, 0), Vector3.create(0.75, 0.14, 1.35), ALIEN_GOLD, gild)
+  addPart(Vector3.create(0, 0.64, 0.55), Vector3.create(0.45, 0.12, 0.4), ALIEN_GOLD, gild)
+  // Prow blade.
+  addPart(Vector3.create(0, 0.5, 0.92), Vector3.create(0.24, 0.1, 0.4), ALIEN_GOLD, { ...gild, rotation: Quaternion.fromEulerDegrees(12, 0, 0) })
+
+  // --- Cargo field: translucent crystal dome amidships. ---------------------
+  addPart(Vector3.create(0, 0.78, -0.15), Vector3.create(0.66, 0.42, 0.95), Color4.create(ALIEN_CRYSTAL.r, ALIEN_CRYSTAL.g, ALIEN_CRYSTAL.b, 0.32), {
+    sphere: true,
+    emissive: ALIEN_CRYSTAL,
+    emissiveIntensity: 0.8
+  })
+  addPart(Vector3.create(0, 0.62, -0.15), Vector3.create(0.6, 0.06, 0.9), glow, { emissive: glow, emissiveIntensity: 1.6 })
+
+  // --- Side pylons: gilded outriggers with floating crystal tips. -----------
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.55, 0.5, -0.1), Vector3.create(0.5, 0.08, 0.3), ALIEN_GOLD, gild)
+    const tip = addPart(Vector3.create(side * 0.85, 0.56, -0.1), Vector3.create(0.1, 0.22, 0.1), ALIEN_CRYSTAL, {
+      sphere: true,
+      emissive: ALIEN_CRYSTAL,
+      emissiveIntensity: 2.4
+    })
+    rig.fx.push({ entity: tip, mode: 'pulse', anchor: Vector3.create(side * 0.85, 0.56, -0.1), radius: 0.05, height: 0, speed: 1.4, phase: side, size: 0.1 })
+  }
+
+  // --- Antigrav discs pulsing beneath the sled. ------------------------------
+  const grav = addPart(Vector3.create(0, 0.22, 0), Vector3.create(1.05, 0.03, 1.05), Color4.create(ALIEN_CRYSTAL.r, ALIEN_CRYSTAL.g, ALIEN_CRYSTAL.b, 0.5), {
+    cylinder: true,
+    emissive: ALIEN_CRYSTAL,
+    emissiveIntensity: 1.8
+  })
+  rig.fx.push({ entity: grav, mode: 'pulse', anchor: Vector3.create(0, 0.22, 0), radius: 0.04, height: 0, speed: 1.1, phase: 0, size: 1.05 })
+  // Stern glow.
+  addPart(Vector3.create(0, 0.5, -0.85), Vector3.create(0.3, 0.08, 0.06), glow, { emissive: glow, emissiveIntensity: 2.8 })
+
+  rig.spinAxis = 'y'
+  rig.profiles = {
+    idle: { amplitude: 0.11, speed: 1.1, tilt: 0, spin: 0, lunge: 0 },
+    walk: { amplitude: 0.07, speed: 2.4, tilt: 7, spin: 0, lunge: 0 },
+    talk: { amplitude: 0.08, speed: 2.6, tilt: 3, spin: 0, lunge: 0 },
+    attack: { amplitude: 0.07, speed: 4, tilt: 4, spin: 0, lunge: 0 },
+    impact: { amplitude: 0.13, speed: 13, tilt: -7, spin: 0, lunge: 0 }
+  }
+}
+
+/** Bio transport: a bloated brood beetle that carries the swarm in its belly. */
+function buildBioBroodwing(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  rig.baseHeight = 2.0
+  const flesh = { metallic: 0.05, roughness: 0.85 }
+  const SACK = Color4.create(0.62, 0.32, 0.3, 1)
+
+  // --- Bloated carrier belly with visible brood sacs. ------------------------
+  addPart(Vector3.create(0, 0.5, -0.1), Vector3.create(0.8, 0.6, 1.05), BIO_FLESH, { sphere: true, ...flesh })
+  addPart(Vector3.create(0, 0.72, -0.05), Vector3.create(0.62, 0.36, 0.85), BIO_CARAPACE, { sphere: true })
+  for (const [sx, sy, sz] of [[-0.26, 0.34, 0.18], [0.28, 0.32, -0.12], [0, 0.3, -0.48]] as const) {
+    const sac = addPart(Vector3.create(sx, sy, sz), Vector3.create(0.24, 0.22, 0.24), SACK, { sphere: true, ...flesh, emissive: glow, emissiveIntensity: 0.5 })
+    rig.fx.push({ entity: sac, mode: 'pulse', anchor: Vector3.create(sx, sy, sz), radius: 0.02, height: 0, speed: 0.9, phase: sx * 7, size: 0.24 })
+  }
+
+  // --- Head: stubby, horned, with glowing eyes and gripping mandibles. -------
+  addPart(Vector3.create(0, 0.56, 0.52), Vector3.create(0.34, 0.28, 0.34), BIO_CARAPACE, { sphere: true })
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.09, 0.62, 0.66), Vector3.create(0.05, 0.05, 0.05), glow, { sphere: true, emissive: glow, emissiveIntensity: 3 })
+    addPart(Vector3.create(side * 0.16, 0.44, 0.66), Vector3.create(0.06, 0.05, 0.26), BIO_BONE, { rotation: Quaternion.fromEulerDegrees(0, side * 18, 0) })
+  }
+
+  // --- Two big wing pairs on flap pivots. ------------------------------------
+  for (const side of [-1, 1]) {
+    for (const [zOff, phase] of [[0.18, 0], [-0.22, 0.9]] as const) {
+      const pivot = engine.addEntity()
+      Transform.create(pivot, { parent: rig.bodyRoot, position: Vector3.create(side * 0.2, 0.86, zOff) })
+      rig.parts.push(pivot)
+      addChildPart(rig, pivot, Vector3.create(side * 0.5, 0.04, 0), Vector3.create(0.95, 0.03, 0.42), BIO_FLESH, {
+        ...flesh,
+        emissive: glow,
+        emissiveIntensity: 0.35
+      })
+      addChildPart(rig, pivot, Vector3.create(side * 0.95, 0.06, 0), Vector3.create(0.4, 0.025, 0.3), SACK, flesh)
+      rig.fx.push({ entity: pivot, mode: 'flap', anchor: Vector3.Zero(), radius: side * -26, height: side * 12, speed: 6, phase, size: 0 })
+    }
+  }
+
+  // --- Tucked legs and a stubby tail vent. ------------------------------------
+  for (const side of [-1, 1]) {
+    for (const zOff of [0.25, -0.05, -0.35]) {
+      addPart(Vector3.create(side * 0.34, 0.24, zOff), Vector3.create(0.06, 0.3, 0.06), BIO_CARAPACE, { rotation: Quaternion.fromEulerDegrees(0, 0, side * 35) })
+    }
+  }
+  addPart(Vector3.create(0, 0.46, -0.72), Vector3.create(0.18, 0.14, 0.3), BIO_CARAPACE, { sphere: true })
+  addPart(Vector3.create(0, 0.46, -0.88), Vector3.create(0.08, 0.08, 0.08), glow, { sphere: true, emissive: glow, emissiveIntensity: 2.2 })
+
+  rig.spinAxis = 'y'
+  rig.profiles = {
+    idle: { amplitude: 0.12, speed: 1.5, tilt: 0, spin: 0, lunge: 0 },
+    walk: { amplitude: 0.08, speed: 3, tilt: 9, spin: 0, lunge: 0 },
+    talk: { amplitude: 0.09, speed: 3.2, tilt: 4, spin: 0, lunge: 0 },
+    attack: { amplitude: 0.08, speed: 5, tilt: 5, spin: 0, lunge: 0 },
+    impact: { amplitude: 0.14, speed: 15, tilt: -8, spin: 0, lunge: 0 }
   }
 }
 

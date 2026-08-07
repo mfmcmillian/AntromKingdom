@@ -38,6 +38,8 @@ export type WorkerSystemDeps = {
 export function updateWorkers(dt: number, deps: WorkerSystemDeps): void {
   for (const worker of workers) {
     if (!worker.alive) continue
+    // Riding inside a transport: parked off-map until it unloads.
+    if (worker.inTransportId) continue
 
     updateWorkerGathering(worker, dt, deps)
     updateWorkerBuildMovement(worker, dt, deps)

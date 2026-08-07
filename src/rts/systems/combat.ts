@@ -1,6 +1,7 @@
 import { Transform } from '@dcl/sdk/ecs'
 import { Quaternion } from '@dcl/sdk/math'
 import { distanceToPoint, distanceToPosition, moveTowardPosition } from '../math'
+import { isAirVariant } from '../races'
 import { getSpeedMultiplier } from '../upgrades'
 import type { Building, Soldier, Worker } from '../types'
 import { areHostile } from '../state'
@@ -35,6 +36,9 @@ export function updateSoldiers(dt: number, deps: CombatSystemDeps): void {
 
   for (const soldier of soldiers) {
     if (!soldier.alive) continue
+
+    // Riding inside a transport: parked off-map, takes no part in combat.
+    if (soldier.inTransportId) continue
 
     // Mid siege-transform: the unit is locked down until the cannon finishes
     // growing or retracting (the timer itself ticks in the siege system).
@@ -129,7 +133,7 @@ function updateAttackMove(soldier: Soldier, dt: number, scanForTargets: boolean,
     }
   }
 
-  moveTowardPosition(soldier.entity, soldier.attackMovePoint, getUpgradedMoveSpeed(soldier), dt)
+  moveTowardPosition(soldier.entity, soldier.attackMovePoint, getUpgradedMoveSpeed(soldier), dt, isAirVariant(soldier.variant))
   deps.setSoldierAnimation(soldier, 'walk')
   if (distanceToPosition(soldier.entity, soldier.attackMovePoint) <= 0.35) {
     soldier.state = 'idle'
@@ -156,7 +160,7 @@ function updatePatrol(soldier: Soldier, dt: number, scanForTargets: boolean, dep
   }
 
   const waypoint = soldier.patrolToB ? soldier.patrolPointB : soldier.patrolPointA
-  moveTowardPosition(soldier.entity, waypoint, getUpgradedMoveSpeed(soldier), dt)
+  moveTowardPosition(soldier.entity, waypoint, getUpgradedMoveSpeed(soldier), dt, isAirVariant(soldier.variant))
   deps.setSoldierAnimation(soldier, 'walk')
   if (distanceToPosition(soldier.entity, waypoint) <= 0.35) {
     soldier.patrolToB = !soldier.patrolToB
@@ -206,7 +210,7 @@ function updateMovingToAttack(soldier: Soldier, target: CombatTarget, dt: number
       startAttacking(soldier, deps)
       faceTarget(soldier, targetPosition)
     } else {
-      moveTowardPosition(soldier.entity, targetPosition, getUpgradedMoveSpeed(soldier), dt)
+      moveTowardPosition(soldier.entity, targetPosition, getUpgradedMoveSpeed(soldier), dt, isAirVariant(soldier.variant))
       deps.setSoldierAnimation(soldier, 'walk')
     }
     return
@@ -214,7 +218,7 @@ function updateMovingToAttack(soldier: Soldier, target: CombatTarget, dt: number
 
   const attackPosition = soldier.attackPosition ?? deps.getSoldierAttackPosition(target, 0, soldier)
   soldier.attackPosition = attackPosition
-  moveTowardPosition(soldier.entity, attackPosition, getUpgradedMoveSpeed(soldier), dt)
+  moveTowardPosition(soldier.entity, attackPosition, getUpgradedMoveSpeed(soldier), dt, isAirVariant(soldier.variant))
   deps.setSoldierAnimation(soldier, 'walk')
   if (distanceToPosition(soldier.entity, attackPosition) <= 0.25) {
     startAttacking(soldier, deps)
@@ -290,7 +294,7 @@ function updateSoldierRallyMovement(soldier: Soldier, dt: number, deps: CombatSy
     return
   }
 
-  moveTowardPosition(soldier.entity, soldier.rallyPoint, getUpgradedMoveSpeed(soldier), dt)
+  moveTowardPosition(soldier.entity, soldier.rallyPoint, getUpgradedMoveSpeed(soldier), dt, isAirVariant(soldier.variant))
   if (distanceToPosition(soldier.entity, soldier.rallyPoint) <= 0.35) {
     soldier.state = 'idle'
     soldier.guardPoint = clonePosition(soldier.rallyPoint)
@@ -303,8 +307,9 @@ function updateSoldierRallyMovement(soldier: Soldier, dt: number, deps: CombatSy
 
 /** Nearest hostile within acquisition range: enemy fighters first, then workers, then buildings. */
 function findNearestEnemyInRange(soldier: Soldier, range: number): CombatTarget | undefined {
-  // Healers never engage; their own system chases wounded allies instead.
-  if (soldier.variant === 'healer') return undefined
+  // Healers never engage (their own system chases wounded allies) and
+  // transports are unarmed haulers.
+  if (soldier.variant === 'healer' || soldier.variant === 'transport') return undefined
   const team = getTeam(soldier)
   const position = Transform.get(soldier.entity).position
 

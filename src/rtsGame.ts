@@ -34,7 +34,20 @@ import {
   SCENE,
   TURRET_STATS
 } from './rts/config'
-import { getMapById } from './rts/maps'
+import { getMapById, isGroundWalkable, isSameIsland, setActiveIslands } from './rts/maps'
+import { buildIslandTerrain, clearIslandTerrain } from './rts/islandTerrain'
+import {
+  getCargoCount,
+  getCargoUnits,
+  getTransportById,
+  isTransport,
+  loadUnit,
+  orderBoardTransport,
+  resetTransports,
+  unloadTransport,
+  updateTransportBoarding,
+  type TransportDeps
+} from './rts/systems/transports'
 import {
   addSupplyUsed,
   addResources,
@@ -80,7 +93,7 @@ import { buildEnvironmentEnclosure } from './rts/environment'
 import { buildTerrain } from './rts/terrain'
 import { buildUnitModel, disposeUnit, getTeamColor, isProceduralUnit, setSiegeDeployProgress, setUnitAnimation, setUnitUpgradeInsignia, updateUnitCargo } from './rts/unitModels'
 import { BUILDING_MODEL_HEIGHTS, buildBuildingModel, disposeBuildingModel, isProceduralBuilding, setBuildingModelDamage } from './rts/buildingModels'
-import { RACES, UNIT_REQUIREMENTS, getBuildingDisplayName, getRace, getSoldierDefinition, getWorkerDefinition, pickRandomRace } from './rts/races'
+import { RACES, TRANSPORT_CAPACITY, UNIT_REQUIREMENTS, getBuildingDisplayName, getRace, getSoldierDefinition, getWorkerDefinition, isAirVariant, pickRandomRace } from './rts/races'
 import { buildResourceModel, disposeResourceModel, playResourceDepletion, playResourceGatherPulse } from './rts/resourceModels'
 import { showMoveMarker } from './rts/moveMarker'
 import { fireProjectile } from './rts/projectiles'
@@ -1257,9 +1270,14 @@ function clearMatchWorld(): void {
 
   resetWorld()
   resetUpgrades()
+  resetTransports()
   clearSelectionMarkers()
   clearHealthBars()
   resetFogOfWar()
+
+  // Back to solid ground until the next match decides otherwise.
+  setActiveIslands(undefined)
+  clearIslandTerrain()
 }
 
 export function resetRtsGame(): void {
@@ -1268,6 +1286,12 @@ export function resetRtsGame(): void {
   resetMatchState(MATCH_ACTIVE)
   gameState.status = 'Reset complete. Select a worker to start gathering.'
   clearMatchWorld()
+
+  // Island maps: activate the walkability zones and swap the battlefield
+  // visuals to floating islands before anything spawns.
+  const map = getMapById(gameState.selectedMapId)
+  setActiveIslands(map.islands)
+  if (map.islands) buildIslandTerrain(map.islands)
 
   createStartingBase()
   enableTopDownView()
@@ -1488,9 +1512,15 @@ export function getSelectedSummary(): SelectedSummary {
     const casterLine = selectedUnitCount <= 1 && soldier.variant === 'caster' ? `${CASTER_ABILITY[getRace(getTeam(soldier)).id].describe} ` : ''
     const healerLine = selectedUnitCount <= 1 && soldier.variant === 'healer' ? `${getHealerTraitLine(soldier)} ` : ''
     const siegeLine = selectedUnitCount <= 1 && soldier.variant === 'siege' ? `${getSiegeModeLine(soldier)} ` : ''
+    const transportLine =
+      selectedUnitCount <= 1 && soldier.variant === 'transport'
+        ? `Cargo: ${getCargoCount(soldier)}/${TRANSPORT_CAPACITY}. Select ground units and click this carrier to load; UNLOAD drops them over land. `
+        : ''
     // Close-quarters units can't reach flyers - surface that in the panel (healers never attack at all).
     const airLine =
-      selectedUnitCount <= 1 && soldier.variant !== 'healer' && !canAttackTarget(soldier, { kind: 'soldier', variant: 'flyer' } as Soldier) ? 'Cannot attack air. ' : ''
+      selectedUnitCount <= 1 && soldier.variant !== 'healer' && soldier.variant !== 'transport' && !canAttackTarget(soldier, { kind: 'soldier', variant: 'flyer' } as Soldier)
+        ? 'Cannot attack air. '
+        : ''
     const killLine = selectedUnitCount <= 1 ? ` · Kills: ${soldier.kills ?? 0}` : ''
     return {
       name: selectedUnitCount > 1 ? `${selectedUnitCount} Units` : soldier.name,
@@ -1499,7 +1529,7 @@ export function getSelectedSummary(): SelectedSummary {
       hp: soldier.hp,
       maxHp: soldier.maxHp,
       variant: soldier.variant,
-      detail: `${getGroupSelectionPrefix()}${heroLine}${casterLine}${healerLine}${siegeLine}${airLine}State: ${soldier.state}${killLine}`
+      detail: `${getGroupSelectionPrefix()}${heroLine}${casterLine}${healerLine}${siegeLine}${transportLine}${airLine}State: ${soldier.state}${killLine}`
     }
   }
 
@@ -1560,10 +1590,11 @@ function hideAvatarsEverywhere(): void {
  * players - your base is wherever your seat is, not always the SW corner.
  */
 function getTeamAnchor(team: Team): { temple: Vector3; rotationY: number } {
+  const anchors = getMapById(gameState.selectedMapId).anchors
   if (team === 'player') {
-    return MAP_ANCHORS[multiplayerPlan ? multiplayerPlan.mySeatIndex : 0]
+    return anchors[multiplayerPlan ? multiplayerPlan.mySeatIndex : 0]
   }
-  return MAP_ANCHORS[gameState.enemySeatIndex[team]]
+  return anchors[gameState.enemySeatIndex[team]]
 }
 
 function createStartingBase(): void {
@@ -1650,8 +1681,12 @@ function getResourceFieldsForMatch(): ResourceField[] {
   // Multiplayer rolls the layout off the shared lobby seed so every client
   // generates the exact same resource map; single-player stays truly random.
   const random = multiplayerPlan ? mulberry32(multiplayerPlan.seed ^ 0x5eed) : Math.random
+  const map = getMapById(gameState.selectedMapId)
 
-  return getMapById(gameState.selectedMapId).fields.map((field, index) => {
+  // Island maps never jitter: a drifted field could hang in the void.
+  if (map.islands) return map.fields
+
+  return map.fields.map((field, index) => {
     // The six mains (3 entries each: crystal line + two vents) never move -
     // every start must be identical. Naturals and contested fields shuffle.
     if (index < 18) return field
@@ -1765,6 +1800,7 @@ function getSoldierColliderScale(variant: SoldierVariant): Vector3 {
   if (variant === 'hero') return Vector3.create(3, 4.2, 3)
   if (variant === 'titan') return Vector3.create(2.4, 3.2, 2.4)
   if (variant === 'flyer') return Vector3.create(1.8, 3.2, 1.8)
+  if (variant === 'transport') return Vector3.create(2.6, 3.4, 2.6)
   if (variant === 'siege') return Vector3.create(2, 2.4, 2)
   return Vector3.create(1.4, 2, 1.4)
 }
@@ -2125,6 +2161,20 @@ function handleSelectableClick(id: string): void {
     return
   }
 
+  // Clicking one of your own transports while ground units are selected sends
+  // them aboard, StarCraft dropship style (clicking with nothing else selected
+  // falls through and just selects the transport).
+  if (clicked.kind === 'soldier' && (clicked as Soldier).variant === 'transport' && getTeam(clicked) === 'player') {
+    const passengers = getSelectedUnits().filter((unit) => unit.alive && unit.id !== clicked.id && !(unit.kind === 'soldier' && isAirVariant((unit as Soldier).variant)))
+    if (passengers.length > 0) {
+      const queued = orderBoardTransport(passengers, clicked as Soldier, transportDeps)
+      if (queued.length > 0 && isRelayActive()) {
+        broadcastMyCommand({ type: 'loadTransport', transportId: clicked.id, unitIds: queued.map((unit) => unit.id) })
+      }
+      return
+    }
+  }
+
   if (isEnemyAttackTarget(clicked)) {
     if (orderSelectedAttackOn(clicked)) return
   }
@@ -2229,6 +2279,51 @@ function clearSelection(): void {
   gameState.selectedKind = ''
   gameState.selectedUnitIds = []
   clearSelectionMarkers()
+}
+
+// ---------------------------------------------------------------------------
+// Transports (island maps): boarding walks units to the carrier, riders park
+// off-map, and UNLOAD drops everyone in a ring over solid ground.
+// ---------------------------------------------------------------------------
+
+const transportDeps: TransportDeps = {
+  setSoldierAnimation,
+  setWorkerAnimation,
+  onUnitBoarded(unit) {
+    // A rider can't stay selected or grouped: it is out of the world for now.
+    if (gameState.selectedUnitIds.includes(unit.id)) {
+      const remaining = gameState.selectedUnitIds
+        .filter((id) => id !== unit.id)
+        .map((id) => selectables.get(id))
+        .filter((selectable): selectable is Worker | Soldier => selectable?.alive === true && (selectable.kind === 'worker' || selectable.kind === 'soldier')) as (Worker | Soldier)[]
+      if (remaining.length > 0) setUnitSelection(remaining)
+      else clearSelection()
+    } else if (gameState.selectedId === unit.id) {
+      clearSelection()
+    }
+  },
+  setStatus
+}
+
+/** UNLOAD command button: drop every rider of the selected transport here. */
+export function unloadSelectedTransport(): void {
+  if (!isMatchActive()) return
+  const selected = getSelected()
+  if (!selected?.alive || selected.kind !== 'soldier' || (selected as Soldier).variant !== 'transport') return
+
+  const transport = selected as Soldier
+  if (unloadTransport(transport, transportDeps) && isRelayActive()) {
+    broadcastMyCommand({ type: 'unloadTransport', transportId: transport.id })
+  }
+}
+
+export type TransportCargoInfo = { count: number; capacity: number }
+
+/** Cargo readout for the info panel when a transport is selected. */
+export function getSelectedTransportCargo(): TransportCargoInfo | undefined {
+  const selected = getSelected()
+  if (!selected?.alive || selected.kind !== 'soldier' || (selected as Soldier).variant !== 'transport') return undefined
+  return { count: getCargoCount(selected as Soldier), capacity: TRANSPORT_CAPACITY }
 }
 
 function assignWorkerToResource(worker: Worker, resource: ResourceNode, announce = true): void {
@@ -2478,7 +2573,13 @@ const enemyAiDeps = {
   assignSoldierToAttack,
   getNearestTemple,
   getSnappedPlacementPosition,
-  setStatus
+  setStatus,
+  orderBoardTransport(units: (Soldier | Worker)[], transport: Soldier): void {
+    orderBoardTransport(units, transport, transportDeps, false)
+  },
+  unloadTransport(transport: Soldier): boolean {
+    return unloadTransport(transport, transportDeps, false)
+  }
 }
 
 const workerSystemDeps = {
@@ -2808,6 +2909,25 @@ export function applyRemoteCommand(team: Team, command: MatchCommand): void {
       break
     }
 
+    case 'loadTransport': {
+      const transport = getTransportById(command.transportId)
+      if (!transport || getTeam(transport) !== team) break
+      const passengers: (Soldier | Worker)[] = []
+      for (const id of command.unitIds) {
+        const unit = getRemoteUnit(id, team)
+        if (unit) passengers.push(unit)
+      }
+      orderBoardTransport(passengers, transport, transportDeps, false)
+      break
+    }
+
+    case 'unloadTransport': {
+      const transport = getTransportById(command.transportId)
+      if (!transport || getTeam(transport) !== team) break
+      unloadTransport(transport, transportDeps, false)
+      break
+    }
+
     case 'surrender': {
       eliminateTeam(team, true)
       break
@@ -2944,6 +3064,7 @@ function rtsTickSystem(dt: number): void {
   updateWorkerCargoVisuals()
   updateSoldiersSystem(dt, combatSystemDeps)
   updateHealers(dt, { setSoldierAnimation })
+  updateTransportBoarding(transportDeps)
   updateSiegeUnits(dt)
   updateUnitSeparation(dt)
   updateFireplaceAuras(dt)
@@ -3665,9 +3786,27 @@ function damageSoldier(soldier: Soldier, amount: number, attacker?: Soldier | Wo
 
   creditUnitKill(attacker, soldier)
   const deathScale =
-    soldier.variant === 'hero' ? 2.6 : soldier.variant === 'titan' ? 2.2 : soldier.variant === 'siege' ? 1.6 : soldier.variant === 'flyer' || soldier.variant === 'caster' ? 1.2 : 1
+    soldier.variant === 'hero' ? 2.6 : soldier.variant === 'titan' ? 2.2 : soldier.variant === 'siege' || soldier.variant === 'transport' ? 1.6 : soldier.variant === 'flyer' || soldier.variant === 'caster' ? 1.2 : 1
   spawnDeathBurst(cloneVector(Transform.get(soldier.entity).position), getRace(getTeam(soldier)).accent, deathScale)
   playExplosion(Transform.get(soldier.entity).position)
+
+  // A downed carrier takes every rider with it (StarCraft rule): drop the
+  // cargo at the crash site and kill it there so the deaths read on screen.
+  if (soldier.variant === 'transport') {
+    const crashSite = cloneVector(Transform.get(soldier.entity).position)
+    const riders = getCargoUnits(soldier)
+    soldier.cargo = []
+    for (const rider of riders) {
+      Transform.getMutable(rider.entity).position = Vector3.create(crashSite.x, 0.25, crashSite.z)
+      rider.inTransportId = undefined
+      if (rider.kind === 'soldier') damageSoldier(rider, rider.hp + 1, attacker)
+      else damageWorker(rider, rider.hp + 1, attacker)
+    }
+    if (riders.length > 0 && getTeam(soldier) === 'player') {
+      setStatus(`${soldier.name} shot down with ${riders.length} unit${riders.length === 1 ? '' : 's'} aboard!`)
+    }
+  }
+
   if (soldier.variant === 'hero') {
     setStatus(getTeam(soldier) === 'player' ? `${soldier.name} has fallen! Heroes do not return.` : `${soldier.name} has been slain.`)
   }
@@ -4124,7 +4263,7 @@ function isEnemyAttackTarget(selectable: Selectable): selectable is Building | S
 /** Anything the armed repair order accepts: damaged friendly buildings, plus damaged mech fighters for humans. */
 /** The Vanguard's machines: the units a repair crew can actually weld back together. */
 function isMechSoldier(worker: Worker, soldier: Soldier): boolean {
-  return getRace(getTeam(worker)).id === 'human' && (soldier.variant === 'flyer' || soldier.variant === 'titan')
+  return getRace(getTeam(worker)).id === 'human' && (soldier.variant === 'flyer' || soldier.variant === 'transport' || soldier.variant === 'titan')
 }
 
 function isPlayerRepairableTarget(selectable: Selectable): selectable is Building | Soldier {
@@ -4132,7 +4271,12 @@ function isPlayerRepairableTarget(selectable: Selectable): selectable is Buildin
   if (selectable.kind !== 'soldier') return false
   const soldier = selectable as Soldier
 
-  return getTeam(soldier) === 'player' && getRace('player').id === 'human' && (soldier.variant === 'flyer' || soldier.variant === 'titan') && soldier.hp < soldier.maxHp
+  return (
+    getTeam(soldier) === 'player' &&
+    getRace('player').id === 'human' &&
+    (soldier.variant === 'flyer' || soldier.variant === 'transport' || soldier.variant === 'titan') &&
+    soldier.hp < soldier.maxHp
+  )
 }
 
 function isPlayerRepairTarget(selectable: Selectable): selectable is Building {
@@ -4235,6 +4379,13 @@ function getHoverText(selectable: Selectable): string {
   const owner = getTeamOwnerLabel(getTeam(selectable))
   const ownerTag = owner ? ` [${owner}]` : ''
   if (isHostileToPlayer(getTeam(selectable))) return `Attack ${selectable.name}${ownerTag}`
+  // Your own carrier advertises boarding when ground units are selected.
+  if (selectable.kind === 'soldier' && (selectable as Soldier).variant === 'transport' && getTeam(selectable) === 'player') {
+    const cargo = getCargoCount(selectable as Soldier)
+    const hasPassengersSelected = getSelectedUnits().some((unit) => unit.alive && !(unit.kind === 'soldier' && isAirVariant((unit as Soldier).variant)))
+    if (hasPassengersSelected) return `Board ${selectable.name} (${cargo}/${TRANSPORT_CAPACITY})`
+    return `Select ${selectable.name} (${cargo}/${TRANSPORT_CAPACITY})`
+  }
   return `Select ${selectable.name}${ownerTag}`
 }
 
@@ -4389,6 +4540,17 @@ function canPlaceBuildingAt(definition: BuildingDefinition, position: Vector3): 
   const footprintRadius = footprintHalfSize + BUILDING_PLACEMENT_PADDING
 
   if (!isPlacementInsideMap(position, footprintHalfSize)) return false
+
+  // Island maps: the whole footprint must rest on land - center and corners.
+  if (
+    !isGroundWalkable(position.x, position.z) ||
+    !isGroundWalkable(position.x - footprintHalfSize, position.z - footprintHalfSize) ||
+    !isGroundWalkable(position.x + footprintHalfSize, position.z - footprintHalfSize) ||
+    !isGroundWalkable(position.x - footprintHalfSize, position.z + footprintHalfSize) ||
+    !isGroundWalkable(position.x + footprintHalfSize, position.z + footprintHalfSize)
+  ) {
+    return false
+  }
 
   for (const building of buildings) {
     if (!building.alive) continue

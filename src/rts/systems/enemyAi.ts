@@ -1,9 +1,10 @@
 import { Transform } from '@dcl/sdk/ecs'
 import { Vector3 } from '@dcl/sdk/math'
-import { AI_DIFFICULTY, BUILDING_DEFINITIONS, MAP_ANCHORS, type DifficultySettings } from '../config'
+import { AI_DIFFICULTY, BUILDING_DEFINITIONS, type DifficultySettings } from '../config'
+import { getIslandZoneAt, getMapById, isIslandMap, isSameIsland } from '../maps'
 import { canQueueUnit, getResourceAmount, getSupplyCap, getSupplyUsed, hasResources, spendResources } from '../economy'
 import { distanceToPoint } from '../math'
-import { getSoldierDefinition, getWorkerDefinition } from '../races'
+import { TRANSPORT_CAPACITY, getSoldierDefinition, getWorkerDefinition } from '../races'
 import { areHostile, gameState, isPlayerAlly } from '../state'
 import { getNextUpgradeCost, getUpgradeLevel, isUpgradeInProgress, startUpgradeResearchOrder } from '../upgrades'
 import type { BuildableKind, Building, Difficulty, EnemyTeam, ResourceKind, ResourceNode, Soldier, SoldierVariant, Team, UpgradeKind, Worker } from '../types'
@@ -32,6 +33,20 @@ export type EnemyAiDeps = {
   getNearestTemple(position: Vector3, team: Team): Building | undefined
   getSnappedPlacementPosition(position: Vector3): Vector3
   setStatus(message: string): void
+  /** Island maps: queue ground units to walk aboard / drop the riders here. */
+  orderBoardTransport(units: (Soldier | Worker)[], transport: Soldier): void
+  unloadTransport(transport: Soldier): boolean
+}
+
+/** A ferry run: ground wave boards transports, flies out, drops, attacks. */
+type FerryOperation = {
+  phase: 'boarding' | 'flying'
+  transportIds: string[]
+  attackerIds: string[]
+  dropPoint: Vector3
+  targetTeam: Team
+  /** Safety clock: a stuck phase is abandoned rather than blocking future waves. */
+  timer: number
 }
 
 /** One computer opponent's brain: its own timers, seat, and difficulty tuning. */
@@ -43,11 +58,12 @@ export type EnemyAi = {
   buildRotationY: number
   decisionTimer: number
   attackTimer: number
+  ferry?: FerryOperation
 }
 
 export function createEnemyAi(team: EnemyTeam, difficulty: Difficulty): EnemyAi {
   const settings = AI_DIFFICULTY[difficulty]
-  const seat = MAP_ANCHORS[gameState.enemySeatIndex[team]]
+  const seat = getMapById(gameState.selectedMapId).anchors[gameState.enemySeatIndex[team]]
   return {
     team,
     difficulty,
@@ -62,6 +78,8 @@ export function createEnemyAi(team: EnemyTeam, difficulty: Difficulty): EnemyAi 
 export function updateEnemyAi(ai: EnemyAi, dt: number, deps: EnemyAiDeps): void {
   ai.attackTimer += dt
   ai.decisionTimer += dt
+
+  updateFerryOperation(ai, dt, deps)
 
   if (ai.attackTimer >= ai.settings.attackInterval) {
     ai.attackTimer = 0
@@ -185,6 +203,22 @@ function queueEnemyAdvancedProduction(ai: EnemyAi): void {
   const techLab = getCompletedTeamBuildings(team, 'techLab')[0]
   if (!techLab) return
 
+  // Island maps: a small carrier fleet comes before anything fancy, or the
+  // ground army can never leave home.
+  if (isIslandMap()) {
+    const transportCount =
+      soldiers.filter((soldier) => soldier.alive && getTeam(soldier) === team && soldier.variant === 'transport').length +
+      soldierProductionOrders.filter((order) => order.team === team && order.variant === 'transport').length
+    if (transportCount < 2) {
+      const transportDef = getSoldierDefinition(team, 'transport')
+      if (canQueueUnit(team, transportDef.supply) && hasResources(team, transportDef.cost) && spendResources(team, transportDef.cost)) {
+        soldierProductionOrders.push({ barracksId: techLab.id, timer: 0, productionTime: transportDef.productionTime, team, variant: 'transport' })
+        gameState.economies[team].soldierQueue += 1
+        return
+      }
+    }
+  }
+
   const advancedCount = soldiers.filter(
     (soldier) =>
       soldier.alive &&
@@ -276,7 +310,10 @@ function sendEnemyAttackWave(ai: EnemyAi, deps: EnemyAiDeps): void {
   }
   if (hostileTemples.length === 0) return
 
-  const availableAttackers = soldiers.filter((soldier) => soldier.alive && getTeam(soldier) === ai.team && soldier.state === 'idle')
+  // Transports never fight and riders are already spoken for.
+  const availableAttackers = soldiers.filter(
+    (soldier) => soldier.alive && getTeam(soldier) === ai.team && soldier.state === 'idle' && soldier.variant !== 'transport' && !soldier.inTransportId
+  )
   const attackers = availableAttackers.slice(ai.settings.defenderCount)
 
   if (attackers.length < 3) return
@@ -292,6 +329,15 @@ function sendEnemyAttackWave(ai: EnemyAi, deps: EnemyAiDeps): void {
     .sort((a, b) => distanceToPoint(Transform.get(a.entity).position, ai.home) - distanceToPoint(Transform.get(b.entity).position, ai.home))
 
   const targets = [...turrets, ...temples]
+
+  // Island maps: a target across the void can't be marched to. Flyers go
+  // direct; the ground wave boards transports and gets ferried over.
+  const primaryTargetPosition = Transform.get(targets[0].entity).position
+  if (isIslandMap() && !isSameIsland(ai.home, primaryTargetPosition)) {
+    sendFerriedAttackWave(ai, attackers, targets, targetTeam, deps)
+    return
+  }
+
   let slot = 0
   for (const attacker of attackers) {
     // Healers can't take attack orders - they escort the wave via attack-move
@@ -312,6 +358,159 @@ function sendEnemyAttackWave(ai: EnemyAi, deps: EnemyAiDeps): void {
   } else if (isPlayerAlly(ai.team)) {
     deps.setStatus(`Your ally is attacking with ${attackers.length} fighters.`)
   }
+}
+
+// ---------------------------------------------------------------------------
+// Island warfare: the AI ferries its ground army StarCraft-drop style.
+// Boarding -> flying -> unload at the target island's rim -> attack.
+// ---------------------------------------------------------------------------
+
+/** Kick off a ferry run (flyers attack immediately; ground units board). */
+function sendFerriedAttackWave(ai: EnemyAi, attackers: Soldier[], targets: (Building | Soldier | Worker)[], targetTeam: Team, deps: EnemyAiDeps): void {
+  const airborne = attackers.filter((soldier) => soldier.variant === 'flyer')
+  const ground = attackers.filter((soldier) => soldier.variant !== 'flyer' && soldier.variant !== 'transport')
+
+  let slot = 0
+  for (const flyer of airborne) {
+    deps.assignSoldierToAttack(flyer, targets[slot % targets.length], slot)
+    slot++
+  }
+
+  // One ferry run at a time, and only when there is something worth shipping.
+  if (ai.ferry || ground.length < 3) return
+
+  const transports = soldiers.filter(
+    (soldier) => soldier.alive && getTeam(soldier) === ai.team && soldier.variant === 'transport'
+  )
+  if (transports.length === 0) return
+
+  const wave = ground.slice(0, transports.length * TRANSPORT_CAPACITY)
+
+  // Drop just inside the target island's rim, pulled toward the island center
+  // so nobody lands in the sky.
+  const targetPosition = Transform.get(targets[0].entity).position
+  const island = getIslandZoneAt(targetPosition.x, targetPosition.z)
+  const centerX = island?.x ?? targetPosition.x
+  const centerZ = island?.z ?? targetPosition.z
+  const towardCenterX = centerX - targetPosition.x
+  const towardCenterZ = centerZ - targetPosition.z
+  const length = Math.sqrt(towardCenterX * towardCenterX + towardCenterZ * towardCenterZ) || 1
+  const dropDistance = Math.min(8, length)
+  const dropPoint = Vector3.create(targetPosition.x + (towardCenterX / length) * dropDistance, 0.25, targetPosition.z + (towardCenterZ / length) * dropDistance)
+
+  // Split the wave across the carriers; each carrier flies to meet its riders.
+  const usedTransports: Soldier[] = []
+  let index = 0
+  for (const transport of transports) {
+    const chunk = wave.slice(index, index + TRANSPORT_CAPACITY)
+    if (chunk.length === 0) break
+    index += chunk.length
+    deps.orderBoardTransport(chunk, transport)
+    const meetX = chunk.reduce((sum, unit) => sum + Transform.get(unit.entity).position.x, 0) / chunk.length
+    const meetZ = chunk.reduce((sum, unit) => sum + Transform.get(unit.entity).position.z, 0) / chunk.length
+    sendTransportTo(transport, meetX, meetZ)
+    usedTransports.push(transport)
+  }
+  if (usedTransports.length === 0) return
+
+  ai.ferry = {
+    phase: 'boarding',
+    transportIds: usedTransports.map((transport) => transport.id),
+    attackerIds: wave.map((soldier) => soldier.id),
+    dropPoint,
+    targetTeam,
+    timer: 0
+  }
+}
+
+/** Drives an in-flight ferry run every frame. */
+function updateFerryOperation(ai: EnemyAi, dt: number, deps: EnemyAiDeps): void {
+  const ferry = ai.ferry
+  if (!ferry) return
+  ferry.timer += dt
+
+  const transports = ferry.transportIds
+    .map((id) => soldiers.find((soldier) => soldier.id === id))
+    .filter((soldier): soldier is Soldier => soldier?.alive === true)
+  if (transports.length === 0) {
+    ai.ferry = undefined
+    return
+  }
+
+  if (ferry.phase === 'boarding') {
+    const stillWalking = ferry.attackerIds.some((id) => {
+      const unit = soldiers.find((soldier) => soldier.id === id)
+      return unit?.alive === true && !unit.inTransportId
+    })
+    // Everyone aboard (or 30s passed - stragglers get left behind): take off.
+    if (!stillWalking || ferry.timer > 30) {
+      ferry.phase = 'flying'
+      ferry.timer = 0
+      transports.forEach((transport, i) => {
+        sendTransportTo(transport, ferry.dropPoint.x + (i % 3) * 3 - 3, ferry.dropPoint.z + Math.floor(i / 3) * 3)
+      })
+    }
+    return
+  }
+
+  // Flying: unload each carrier as it reaches the drop zone.
+  for (const transport of transports) {
+    if ((transport.cargo?.length ?? 0) === 0) continue
+    const position = Transform.get(transport.entity).position
+    if (distanceToPoint(position, ferry.dropPoint) <= 7) {
+      deps.unloadTransport(transport)
+    } else if (transport.state !== 'movingToRally') {
+      // Something interrupted the flight (retaliation scans etc): re-order it.
+      sendTransportTo(transport, ferry.dropPoint.x, ferry.dropPoint.z)
+    }
+  }
+
+  const anyCargoLeft = transports.some((transport) => (transport.cargo?.length ?? 0) > 0)
+  if (!anyCargoLeft || ferry.timer > 75) {
+    orderDroppedWave(ai, ferry, deps)
+    for (const transport of transports) sendTransportTo(transport, ai.home.x, ai.home.z)
+    ai.ferry = undefined
+  }
+}
+
+/** Post-drop: the landed wave storms the nearest hostile structures. */
+function orderDroppedWave(ai: EnemyAi, ferry: FerryOperation, deps: EnemyAiDeps): void {
+  const hostileBuildings = buildings
+    .filter((building) => building.alive && getTeam(building) === ferry.targetTeam)
+    .sort((a, b) => distanceToPoint(Transform.get(a.entity).position, ferry.dropPoint) - distanceToPoint(Transform.get(b.entity).position, ferry.dropPoint))
+  if (hostileBuildings.length === 0) return
+
+  // Turrets die first, same doctrine as the classic wave.
+  const turrets = hostileBuildings.filter((building) => building.kind === 'turret' && building.isComplete)
+  const targets = [...turrets, ...hostileBuildings.filter((building) => building.kind !== 'turret')]
+
+  let slot = 0
+  for (const id of ferry.attackerIds) {
+    const unit = soldiers.find((soldier) => soldier.id === id)
+    if (!unit?.alive || unit.inTransportId) continue
+    if (unit.variant === 'healer') {
+      const escortTo = Transform.get(targets[0].entity).position
+      unit.state = 'attackMoving'
+      unit.attackMovePoint = { x: escortTo.x, y: escortTo.y, z: escortTo.z }
+      unit.targetId = undefined
+      continue
+    }
+    deps.assignSoldierToAttack(unit, targets[slot % targets.length], slot)
+    slot++
+  }
+
+  if (ferry.targetTeam === 'player' && slot > 0) {
+    deps.setStatus(`Enemy drop! ${slot} hostiles just landed on your island.`)
+  }
+}
+
+/** Plain fly-to order for an AI carrier. */
+function sendTransportTo(transport: Soldier, x: number, z: number): void {
+  transport.state = 'movingToRally'
+  transport.targetId = undefined
+  transport.attackPosition = undefined
+  transport.attackMovePoint = undefined
+  transport.rallyPoint = { x, y: Transform.get(transport.entity).position.y, z }
 }
 
 function shouldBuildEnemyHomestead(ai: EnemyAi, completedHomesteadCount: number): boolean {
@@ -349,7 +548,12 @@ function getNearestResourceOfKind(position: Vector3, resource: ResourceKind): Re
   for (const node of resources) {
     if (!node.alive || node.resource !== resource || node.amount <= 0) continue
 
-    const distance = distanceToPoint(position, Transform.get(node.entity).position)
+    const nodePosition = Transform.get(node.entity).position
+    // Island maps: workers can't walk across the void, so only nodes on the
+    // same island count (otherwise they pile up on the rim forever).
+    if (isIslandMap() && !isSameIsland(position, nodePosition)) continue
+
+    const distance = distanceToPoint(position, nodePosition)
     if (distance < nearestDistance) {
       nearest = node
       nearestDistance = distance
@@ -406,6 +610,9 @@ function getEnemyExpansionPosition(ai: EnemyAi, deps: EnemyAiDeps): Vector3 | un
 
   const openClusters = resources
     .filter((node) => node.alive && node.amount > 0 && node.resource === 'minerals')
+    // Island maps: the AI only expands where its builders can walk (no worker
+    // ferries yet), which in practice means its own island.
+    .filter((node) => !isIslandMap() || isSameIsland(ai.home, Transform.get(node.entity).position))
     .filter((node) => {
       const position = Transform.get(node.entity).position
       return !buildings.some(

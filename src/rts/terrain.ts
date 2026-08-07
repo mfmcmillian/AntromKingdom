@@ -1,6 +1,22 @@
-import { GltfContainer, Material, MeshRenderer, TextureWrapMode, Transform, engine, type Entity } from '@dcl/sdk/ecs'
+import { GltfContainer, Material, MeshRenderer, TextureWrapMode, Transform, VisibilityComponent, engine, type Entity } from '@dcl/sdk/ecs'
 import { Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { MAP_ANCHORS, POSITIONS, RESOURCE_FIELDS, SCENE } from './config'
+
+// Every terrain entity is tracked so island maps (which paint their own sky
+// and floating islands at match start) can hide the whole classic battlefield
+// and bring it back when a solid-ground map is played again.
+const terrainEntities: Entity[] = []
+
+function trackTerrainEntity(entity: Entity): Entity {
+  terrainEntities.push(entity)
+  return entity
+}
+
+export function setClassicTerrainVisible(visible: boolean): void {
+  for (const entity of terrainEntities) {
+    VisibilityComponent.createOrReplace(entity, { visible })
+  }
+}
 
 // Terrain pass: one textured ground sheet, large tinted decals that break the
 // tiling and mark zones (center basin, worn tracks between the bases), border
@@ -47,7 +63,7 @@ const PROPS = {
 
 /** Spawns a prop scaled uniformly, base resting on the ground (sink > 0 buries it). */
 function placeProp(prop: PropDef, x: number, z: number, scale: number, yawDegrees: number, sink = 0): void {
-  const entity = engine.addEntity()
+  const entity = trackTerrainEntity(engine.addEntity())
   Transform.create(entity, {
     position: Vector3.create(x, -prop.minY * scale - sink, z),
     rotation: Quaternion.fromEulerDegrees(0, yawDegrees, 0),
@@ -107,7 +123,7 @@ function groundMaterial(entity: Entity, tint: Color4): void {
 }
 
 function createGroundSheet(): void {
-  const ground = engine.addEntity()
+  const ground = trackTerrainEntity(engine.addEntity())
   Transform.create(ground, {
     position: Vector3.create(SCENE.center, GROUND_Y, SCENE.center),
     rotation: Quaternion.fromEulerDegrees(90, 0, 0),
@@ -119,7 +135,7 @@ function createGroundSheet(): void {
 
 /** A flat square of the same ground texture with a tint, used for patches, tracks and basins. */
 function createGroundDecal(center: Vector3, size: number, y: number, yawDegrees: number, tint: Color4, length?: number): void {
-  const decal = engine.addEntity()
+  const decal = trackTerrainEntity(engine.addEntity())
   Transform.create(decal, {
     position: Vector3.create(center.x, y, center.z),
     rotation: Quaternion.fromEulerDegrees(90, yawDegrees, 0),
@@ -394,7 +410,7 @@ function scatterSurfaceDetail(): void {
       placeProp(PROPS.boulders, x, z, scaleForHeight(PROPS.boulders, 0.3 + random() * 0.4), random() * 360)
     } else if (roll < 0.72) {
       // Small dust crater.
-      const entity = engine.addEntity()
+      const entity = trackTerrainEntity(engine.addEntity())
       const size = 1.2 + random() * 2.4
       Transform.create(entity, {
         position: Vector3.create(x, 0.14, z),
@@ -412,7 +428,7 @@ function scatterSurfaceDetail(): void {
       // Glowing crystal shard. Never near a real mineral line - a cyan glow
       // beside harvestable crystals would read as one more resource node.
       if (isProtected(x, z, 3)) continue
-      const entity = engine.addEntity()
+      const entity = trackTerrainEntity(engine.addEntity())
       const height = 0.25 + random() * 0.45
       Transform.create(entity, {
         position: Vector3.create(x, height / 2, z),

@@ -10,7 +10,9 @@ import {
   castSelectedHeroAbility,
   getSelectedHeroAbility,
   getSelectedSiegeMode,
+  getSelectedTransportCargo,
   toggleSelectedSiegeMode,
+  unloadSelectedTransport,
   CONTROL_GROUP_SLOTS,
   cycleSelectedStance,
   endRtsMatch,
@@ -79,7 +81,7 @@ import { getDragScreenRect } from './rts/dragSelect'
 import { MAPS, getMapById, getNextMapId } from './rts/maps'
 import { minimapPanel } from './rts/minimap'
 import { BUILDING_DEFINITIONS } from './rts/config'
-import { RACES, RACE_IDS, getBuildingDisplayName, getRace, getSoldierDefinition, getWorkerDefinition } from './rts/races'
+import { RACES, RACE_IDS, TRANSPORT_CAPACITY, getBuildingDisplayName, getRace, getSoldierDefinition, getWorkerDefinition } from './rts/races'
 import { UPGRADE_INFO, UPGRADE_MAX_LEVEL, getNextUpgradeCost, getUpgradeLevel, getUpgradeProgress, isUpgradeInProgress } from './rts/upgrades'
 import { isTopDownViewActive, toggleTopDownView } from './rts/topDownCamera'
 import { CONSOLE_HEIGHT } from './rts/hud'
@@ -124,6 +126,7 @@ const UNIT_ICON_FILES: Record<SoldierVariant | 'worker', string> = {
   healer: 'icon-unit-healer',
   caster: 'icon-unit-caster',
   flyer: 'icon-unit-flyer',
+  transport: 'icon-unit-transport',
   siege: 'icon-unit-siege',
   titan: 'icon-unit-titan',
   hero: 'icon-unit-hero'
@@ -164,6 +167,7 @@ const ICON = {
     patrol: 'images/icons/icon-action-patrol.jpg',
     stance: 'images/icons/icon-action-stance.jpg',
     siegeMode: 'images/icons/icon-action-siegemode.jpg',
+    unload: 'images/icons/icon-action-unload.jpg',
     repair: 'images/icons/icon-action-repair.jpg',
     build: 'images/icons/icon-action-build.jpg',
     buildAdvanced: 'images/icons/icon-action-buildadvanced.jpg'
@@ -1044,6 +1048,7 @@ function getCommandSlots(selected: SelectedSummary): CommandSlot[] {
   if (selected.kind === 'techLab') {
     slots.push(trainSlot('caster', 'Spellcaster. Slow blasts that splash nearby enemies.'))
     slots.push(trainSlot('flyer', 'Fast flyer. Hovers over the battlefield.'))
+    slots.push(trainSlot('transport', `Unarmed air carrier. Ferries ${TRANSPORT_CAPACITY} ground units across the void.`))
     slots.push(trainSlot('siege', getSiegeDescription()))
     slots.push(trainSlot('titan', 'Giant assault monster. Splash stomps, huge HP.'))
     slots.push(rallySlot())
@@ -1113,6 +1118,19 @@ function getCommandSlots(selected: SelectedSummary): CommandSlot[] {
             ? 'Retract the main cannon and return to mobile mode so the artillery can move.'
             : 'Dig in and grow the main cannon: huge damage and range, but the gun cannot move.',
         onClick: toggleSelectedSiegeMode
+      })
+    }
+    // A lone selected transport gets the drop-cargo button.
+    const cargo = getSelectedTransportCargo()
+    if (cargo) {
+      slots.push({
+        id: 'unload-transport',
+        icon: ICON.action.unload,
+        name: `Unload All (${cargo.count}/${cargo.capacity})`,
+        description: 'Drop every carried unit onto the ground below. The transport must hover over land.',
+        badge: `${cargo.count}`,
+        locked: cargo.count === 0 ? 'Nothing aboard. Right-click the transport with ground units selected to load them.' : undefined,
+        onClick: unloadSelectedTransport
       })
     }
     slots.push(selectAllSlot('all fighters'))

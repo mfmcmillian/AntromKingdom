@@ -76,7 +76,7 @@ export type AttackTargetCommand = {
 export type TrainCommand = {
   type: 'train'
   buildingId: string
-  unit: 'worker' | 'melee' | 'ranged' | 'healer' | 'caster' | 'flyer' | 'siege' | 'titan' | 'hero'
+  unit: 'worker' | 'melee' | 'ranged' | 'healer' | 'caster' | 'flyer' | 'transport' | 'siege' | 'titan' | 'hero'
 }
 
 export type BuildCommand = {
@@ -122,6 +122,17 @@ export type SiegeModeCommand = {
   sieged: boolean
 }
 
+export type LoadTransportCommand = {
+  type: 'loadTransport'
+  transportId: string
+  unitIds: string[]
+}
+
+export type UnloadTransportCommand = {
+  type: 'unloadTransport'
+  transportId: string
+}
+
 export type RallyCommand = {
   type: 'rally'
   buildingId: string
@@ -150,6 +161,8 @@ export type MatchCommand =
   | ResearchCommand
   | StanceCommand
   | SiegeModeCommand
+  | LoadTransportCommand
+  | UnloadTransportCommand
   | RallyCommand
   | HeroAbilityCommand
   | SurrenderCommand

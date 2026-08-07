@@ -26,7 +26,7 @@ export type WorkerState =
 export type SoldierState = 'idle' | 'movingToAttack' | 'attacking' | 'movingToRally' | 'attackMoving' | 'patrolling' | 'dead'
 /** defensive: chase a short leash then return to post; hold: never move, only fire in range. */
 export type SoldierStance = 'defensive' | 'hold'
-export type SoldierVariant = 'melee' | 'ranged' | 'caster' | 'flyer' | 'titan' | 'hero' | 'healer' | 'siege'
+export type SoldierVariant = 'melee' | 'ranged' | 'caster' | 'flyer' | 'titan' | 'hero' | 'healer' | 'siege' | 'transport'
 export type BuildableKind = 'temple' | 'supplyHouse' | 'barracks' | 'techLab' | 'forge' | 'airForge' | 'fireplace' | 'turret'
 /** damage/speed are ground-only (forge); airDamage/airSpeed apply to flyers (air forge). */
 export type UpgradeKind = 'damage' | 'speed' | 'airDamage' | 'airSpeed'
@@ -89,6 +89,8 @@ export type Worker = Selectable & {
   activeAnimation: string
   /** Lifetime enemy units this worker has finished off. */
   kills?: number
+  /** Set while this worker rides inside a transport (it is parked off-map). */
+  inTransportId?: string
   /** Obelisk haste aura (seconds remaining at +25% move speed). */
   hasteRemaining?: number
   /** Spore Plague damage-over-time (seconds remaining, damage rate, credit). */
@@ -141,6 +143,10 @@ export type Soldier = Selectable & {
   siegeTransition?: number
   siegeTargetMode?: boolean
   siegeIdleTimer?: number
+  /** Transport variants: ids of the ground units riding inside. */
+  cargo?: string[]
+  /** Set while this unit rides inside a transport (it is parked off-map). */
+  inTransportId?: string
   /** Hero active ability cooldown (seconds until the button is ready again). */
   heroAbilityCooldown?: number
   /** Time Fracture slow (seconds remaining at half move speed). */
