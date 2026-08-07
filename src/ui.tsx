@@ -28,6 +28,7 @@ import {
   isBuildingUnlocked,
   isMultiplayerHumanTeam,
   isMultiplayerMatch,
+  isRankedMultiplayerMatch,
   isUnitUnlocked,
   queueWorker,
   queueSoldier,
@@ -58,9 +59,12 @@ import {
   getLobby,
   getMyAddress,
   getMyLobbyId,
+  getMyRankedRating,
   getMySeatIndex,
   getPresentPlayerCount,
   getPresentPlayers,
+  getRankedEntry,
+  getRankedLadder,
   getViewedLobbyId,
   requestLobbyReset,
   hostSetMap,
@@ -76,7 +80,7 @@ import {
 } from './rts/multiplayer/session'
 import { buildLocalMatchPlan } from './rts/multiplayer/seatMap'
 import { startCommandRelay } from './rts/multiplayer/commandRelay'
-import { lobbyRoomName, type LobbyConfig, type LobbySeat } from './rts/multiplayer/protocol'
+import { RANKED_START_RATING, lobbyRoomName, type LobbyConfig, type LobbySeat } from './rts/multiplayer/protocol'
 import { getDragScreenRect } from './rts/dragSelect'
 import { MAPS, getMapById, getNextMapId } from './rts/maps'
 import { minimapPanel } from './rts/minimap'
@@ -2098,6 +2102,7 @@ function lobbySeatRow(seat: LobbySeat, index: number) {
   const iAmHost = isHost()
   const mySeat = getMySeatIndex()
   const isMine = mySeat === index
+  const ranked = getLobby().ranked
 
   const chips: ReactEcs.JSX.Element[] = []
 
@@ -2111,11 +2116,19 @@ function lobbySeatRow(seat: LobbySeat, index: number) {
         if (isMine) setMyRace(nextLobbyRace(seat.race))
       })
     )
-    chips.push(
-      opponentChip(`seat-team-${index}`, `TEAM ${seat.allianceId + 1}`, 92, () => {
-        if (isMine) setMyAlliance((seat.allianceId + 1) % 6)
-      })
-    )
+    if (ranked) {
+      // Alliances are locked in ranked; the interesting number is the rating.
+      const rating = seat.address ? (getRankedEntry(seat.address)?.rating ?? RANKED_START_RATING) : RANKED_START_RATING
+      chips.push(
+        <Label key={`seat-elo-${index}`} value={`${rating} ELO`} fontSize={13} color={UI.gold} textAlign="middle-left" uiTransform={{ width: 92 }} />
+      )
+    } else {
+      chips.push(
+        opponentChip(`seat-team-${index}`, `TEAM ${seat.allianceId + 1}`, 92, () => {
+          if (isMine) setMyAlliance((seat.allianceId + 1) % 6)
+        })
+      )
+    }
     chips.push(
       <Label
         key={`seat-ready-${index}`}
@@ -2161,7 +2174,8 @@ function lobbySeatRow(seat: LobbySeat, index: number) {
     if (getMyAddress() !== '') {
       chips.push(lobbyButton(`seat-join-${index}`, isMine ? 'JOINED' : mySeat >= 0 ? 'MOVE HERE' : 'JOIN', Color4.create(0.12, 0.3, 0.16, 0.95), () => claimSeat(index)))
     }
-    if (iAmHost) {
+    if (iAmHost && !ranked) {
+      // No computer seats on the ladder: only human results are rated.
       chips.push(lobbyButton(`seat-cpu-${index}`, '+ COMPUTER', Color4.create(0.25, 0.32, 0.45, 0.9), () => hostSetSeat(index, { kind: 'computer', ready: false })))
     }
   }
@@ -2262,6 +2276,66 @@ function multiplayerLobbyOverlay() {
   return getViewedLobbyId() < 0 ? lobbyBrowserOverlay() : lobbyRoomOverlay()
 }
 
+/** Elo leaderboard docked to the left of the room browser (mirrors the online panel). */
+function rankedLadderPanel() {
+  const ladder = getRankedLadder()
+  const myAddress = getMyAddress()
+  const top = ladder.entries.slice(0, 12)
+  const myEntry = myAddress ? getRankedEntry(myAddress) : undefined
+  const myRank = myEntry ? ladder.entries.indexOf(myEntry) + 1 : 0
+
+  return (
+    <UiEntity
+      uiTransform={{
+        positionType: 'absolute',
+        position: { top: 240, left: '50%' },
+        margin: { left: -740 },
+        width: 270,
+        flexDirection: 'column',
+        padding: { top: 24, bottom: 24, left: 20, right: 20 }
+      }}
+      uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.9) }}
+    >
+      <Label value="RANKED LADDER" fontSize={18} color={UI.gold} textAlign="middle-left" uiTransform={{ width: '100%', height: 22, margin: { bottom: 12 } }} />
+      {top.map((entry, index) => {
+        const isMe = entry.address === myAddress
+        return (
+          <UiEntity key={`ladder-${entry.address}`} uiTransform={{ width: '100%', height: 26, flexDirection: 'row', alignItems: 'center', margin: { bottom: 4 } }}>
+            <Label value={`${index + 1}.`} fontSize={13} color={index < 3 ? UI.gold : UI.dim} textAlign="middle-left" uiTransform={{ width: 26, height: '100%' }} />
+            <Label
+              value={isMe ? `${entry.name} (you)` : entry.name}
+              fontSize={13}
+              color={isMe ? UI.gold : UI.text}
+              textAlign="middle-left"
+              textWrap="nowrap"
+              uiTransform={{ width: 130, height: '100%' }}
+            />
+            <Label value={`${entry.rating}`} fontSize={14} color={UI.text} textAlign="middle-right" uiTransform={{ width: 44, height: '100%' }} />
+            <Label value={`${entry.wins}-${entry.losses}`} fontSize={11} color={UI.dim} textAlign="middle-right" uiTransform={{ width: 40, height: '100%' }} />
+          </UiEntity>
+        )
+      })}
+      {top.length === 0 ? (
+        <Label
+          value="No rated matches yet. Win in the RANKED LADDER room to claim the first spot."
+          fontSize={12}
+          color={UI.dim}
+          textAlign="middle-left"
+          textWrap="wrap"
+          uiTransform={{ width: '100%', height: 48 }}
+        />
+      ) : null}
+      <Label
+        value={myEntry ? `You: #${myRank}  ·  ${myEntry.rating} Elo  ·  ${myEntry.wins}-${myEntry.losses}` : `You: unranked  ·  ${RANKED_START_RATING} Elo`}
+        fontSize={12}
+        color={UI.gold}
+        textAlign="middle-left"
+        uiTransform={{ width: '100%', height: 18, margin: { top: 10 } }}
+      />
+    </UiEntity>
+  )
+}
+
 /** One row per room in the browser: name, occupancy, phase, and an enter button. */
 function lobbyBrowserRoomRow(config: LobbyConfig) {
   const humans = config.seats.filter((seat) => seat.kind === 'human').length
@@ -2273,10 +2347,16 @@ function lobbyBrowserRoomRow(config: LobbyConfig) {
     <UiEntity
       key={`room-${config.id}`}
       uiTransform={{ width: '100%', height: 66, flexDirection: 'row', alignItems: 'center', margin: { bottom: 10 }, padding: { left: 18, right: 14 } }}
-      uiBackground={{ color: Color4.create(0.05, 0.06, 0.09, 0.92) }}
+      uiBackground={{ color: config.ranked ? Color4.create(0.09, 0.075, 0.03, 0.94) : Color4.create(0.05, 0.06, 0.09, 0.92) }}
     >
-      <Label value={lobbyRoomName(config.id)} fontSize={18} color={UI.text} textAlign="middle-left" uiTransform={{ width: 220, height: '100%' }} />
-      <Label value={occupancy} fontSize={13} color={UI.dim} textAlign="middle-left" uiTransform={{ width: 200, height: '100%' }} />
+      <Label value={lobbyRoomName(config.id)} fontSize={18} color={config.ranked ? UI.gold : UI.text} textAlign="middle-left" uiTransform={{ width: 220, height: '100%' }} />
+      <Label
+        value={config.ranked ? `${occupancy}  ·  Elo rated FFA` : occupancy}
+        fontSize={13}
+        color={UI.dim}
+        textAlign="middle-left"
+        uiTransform={{ width: 200, height: '100%' }}
+      />
       <UiEntity uiTransform={{ width: 110, height: 26, justifyContent: 'center', alignItems: 'center', margin: { right: 16 } }} uiBackground={{ color: inMatch ? Color4.create(0.35, 0.1, 0.1, 0.95) : Color4.create(0.08, 0.25, 0.12, 0.95) }}>
         <Label value={inMatch ? 'IN MATCH' : 'OPEN'} fontSize={12} color={inMatch ? UI.red : UI.green} textAlign="middle-center" />
       </UiEntity>
@@ -2322,6 +2402,7 @@ function lobbyBrowserOverlay() {
         />
       </UiEntity>
 
+      {rankedLadderPanel()}
       {lobbyOnlinePlayersPanel()}
 
       <UiEntity
@@ -2394,6 +2475,7 @@ function lobbyRoomOverlay() {
       </UiEntity>
 
       {/* Everyone currently in the world, so you know who you're waiting on. */}
+      {lobby.ranked ? rankedLadderPanel() : null}
       {lobbyOnlinePlayersPanel()}
 
       <UiEntity
@@ -2411,9 +2493,13 @@ function lobbyRoomOverlay() {
         <Label value="SEATS" fontSize={18} color={UI.text} textAlign="middle-left" uiTransform={{ margin: { bottom: 14 } }} />
         {lobby.seats.map((seat, index) => lobbySeatRow(seat, index))}
         <Label
-          value="Seats on the same team fight together. Mix players and computers on any side."
+          value={
+            lobby.ranked
+              ? 'Ranked free-for-all: humans only, no alliances. The last commander standing wins Elo from every opponent.'
+              : 'Seats on the same team fight together. Mix players and computers on any side.'
+          }
           fontSize={12}
-          color={Color4.create(0.55, 0.58, 0.66, 0.9)}
+          color={lobby.ranked ? UI.gold : Color4.create(0.55, 0.58, 0.66, 0.9)}
           textAlign="middle-left"
           uiTransform={{ margin: { top: 8 } }}
         />
@@ -2576,6 +2662,20 @@ function getScoreboardEntries(): ScoreboardEntry[] {
   ]
 }
 
+/**
+ * Ranked footer under the result: my rating change once the server has scored
+ * the match (the ladder syncs back with per-player deltas), a waiting note
+ * until then. Losers see their delta as soon as the winner's report lands.
+ */
+function rankedEndScreenLine(): string {
+  const myAddress = getMyAddress()
+  const lastMatch = getRankedLadder().lastMatch
+  const myDelta = lastMatch?.deltas.find((entry) => entry.address === myAddress)
+  if (!myDelta) return 'RANKED MATCH  ·  awaiting ladder update...'
+  const sign = myDelta.delta >= 0 ? '+' : ''
+  return `RANKED MATCH  ·  ${sign}${myDelta.delta} ELO  ·  now ${getMyRankedRating()}`
+}
+
 function endGameOverlay() {
   const didWin = gameState.matchResult === 'win'
   const entries = getScoreboardEntries()
@@ -2611,6 +2711,7 @@ function endGameOverlay() {
         </UiEntity>
         <Label value={didWin ? 'VICTORY' : 'DEFEAT'} fontSize={52} color={didWin ? UI.green : UI.red} textAlign="middle-center" uiTransform={{ width: '100%', height: 62, margin: { top: 6 } }} />
         <Label value={`MATCH TIME  ${formatMatchTime(gameState.matchTime)}`} fontSize={17} color={UI.gold} textAlign="middle-center" uiTransform={{ width: '100%', height: 22 }} />
+        {isRankedMultiplayerMatch() ? <Label value={rankedEndScreenLine()} fontSize={15} color={UI.gold} textAlign="middle-center" uiTransform={{ width: '100%', height: 20, margin: { top: 4 } }} /> : null}
 
         <UiEntity uiTransform={{ width: '100%', height: 50, flexDirection: 'row', alignItems: 'center', margin: { top: 22 } }} uiBackground={{ color: UI.card }}>
           <Label value="ARMY" fontSize={15} color={UI.dim} textAlign="middle-left" uiTransform={{ width: 312, height: '100%', padding: { left: 18 } }} />

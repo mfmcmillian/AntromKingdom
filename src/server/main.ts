@@ -1,17 +1,22 @@
 import { PlayerIdentityData, engine } from '@dcl/sdk/ecs'
 import { syncEntity } from '@dcl/sdk/network'
+import { EnvVar, Storage } from '@dcl/sdk/server'
 import {
   MAX_SEATS,
   PROTOCOL_VERSION,
+  RANKED_START_RATING,
   createDefaultLobbies,
   createDefaultSeat,
   type LobbyConfig,
   type LobbyRequest,
   type LobbySeat,
-  type MatchCommand
+  type MatchCommand,
+  type RankedEntry,
+  type RankedLadder,
+  type RankedMatchSummary
 } from '../rts/multiplayer/protocol'
 import { MAPS } from '../rts/maps'
-import { LOBBY_SYNC_ID, MpLobbyState, room } from '../rts/multiplayer/transport'
+import { LOBBY_SYNC_ID, MpLobbyState, MpRankedState, RANKED_SYNC_ID, room } from '../rts/multiplayer/transport'
 
 // DecentraCraft authoritative server. Runs headlessly alongside the world and
 // owns everything the clients must agree on:
@@ -19,11 +24,49 @@ import { LOBBY_SYNC_ID, MpLobbyState, room } from '../rts/multiplayer/transport'
 //   - match starts (freezes a room's lobby, rolls its shared seed)
 //   - the command relay (validates seat ownership, rebroadcasts in one
 //     canonical order, scoped to the room so concurrent matches don't mix)
+//   - the ranked ladder (Elo ratings persisted in world Storage, published to
+//     clients and optionally pushed to the website leaderboard endpoint)
 
 const lobbies: LobbyConfig[] = createDefaultLobbies()
 
 /** Players currently in the scene (lowercase addresses). */
 const present = new Set<string>()
+
+// --- Ranked ladder state ------------------------------------------------------
+
+const RANKED_STORAGE_KEY = 'ranked-ladder-v1'
+const ELO_K = 32
+
+/** All rated players, keyed by lowercase wallet address. */
+const rankedRatings = new Map<string, RankedEntry>()
+let rankedLastMatch: RankedMatchSummary | undefined
+
+/**
+ * Human rosters frozen at ranked match start, keyed by room id. Presence
+ * eviction frees seats when players leave mid-match, so results validate
+ * against this snapshot instead of the live seats. Deleting a roster marks
+ * the match as scored (one result per match).
+ */
+const rankedRosters = new Map<number, { address: string; name: string }[]>()
+
+function eloExpected(rating: number, opponent: number): number {
+  return 1 / (1 + Math.pow(10, (opponent - rating) / 400))
+}
+
+function getOrCreateRankedEntry(address: string, name: string): RankedEntry {
+  let entry = rankedRatings.get(address)
+  if (!entry) {
+    entry = { address, name, rating: RANKED_START_RATING, wins: 0, losses: 0 }
+    rankedRatings.set(address, entry)
+  }
+  if (name) entry.name = name
+  return entry
+}
+
+function buildRankedLadder(): RankedLadder {
+  const entries = [...rankedRatings.values()].sort((a, b) => b.rating - a.rating)
+  return { entries, lastMatch: rankedLastMatch, updated: Date.now() }
+}
 
 export function startServer(): void {
   console.log('[Server] DecentraCraft authoritative server starting')
@@ -38,6 +81,92 @@ export function startServer(): void {
     const state = MpLobbyState.getMutable(lobbyEntity)
     state.json = JSON.stringify(lobbies)
     state.revision = revision
+  }
+
+  // --- Ranked ladder: load from Storage, publish to clients, push to the site --
+  const rankedEntity = engine.addEntity()
+  let rankedRevision = 0
+  MpRankedState.create(rankedEntity, { json: JSON.stringify(buildRankedLadder()), revision: rankedRevision })
+  syncEntity(rankedEntity, [MpRankedState.componentId], RANKED_SYNC_ID)
+
+  function publishRankedLadder(): void {
+    rankedRevision += 1
+    const state = MpRankedState.getMutable(rankedEntity)
+    state.json = JSON.stringify(buildRankedLadder())
+    state.revision = rankedRevision
+  }
+
+  async function loadRankedLadder(): Promise<void> {
+    try {
+      // Scene-scoped storage on the Server Side Storage service: values are
+      // JSON round-tripped automatically, so the ladder stores as an object.
+      const stored = await Storage.get<RankedLadder>(RANKED_STORAGE_KEY)
+      if (!stored) return
+      for (const entry of stored.entries ?? []) {
+        if (entry.address) rankedRatings.set(entry.address, entry)
+      }
+      rankedLastMatch = stored.lastMatch
+      publishRankedLadder()
+      console.log(`[Server] ranked ladder loaded: ${rankedRatings.size} rated player(s)`)
+    } catch (error) {
+      console.log(`[Server] ranked ladder load failed: ${error}`)
+    }
+  }
+  void loadRankedLadder()
+
+  /** Persist the ladder and mirror it to the website endpoint (if configured). */
+  function saveRankedLadder(): void {
+    const ladder = buildRankedLadder()
+    const json = JSON.stringify(ladder)
+    Storage.set(RANKED_STORAGE_KEY, ladder).catch((error: unknown) => {
+      console.log(`[Server] ranked ladder save failed: ${error}`)
+    })
+    // Optional site sync: set LEADERBOARD_PUSH_URL (deploy-env or .env) to a
+    // JSON endpoint; the website ladder section reads the same URL.
+    void (async () => {
+      try {
+        const url = await EnvVar.get('LEADERBOARD_PUSH_URL')
+        if (!url) return
+        await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: json })
+        console.log('[Server] ranked ladder pushed to website endpoint')
+      } catch (error) {
+        console.log(`[Server] ranked ladder website push failed: ${error}`)
+      }
+    })()
+  }
+
+  /**
+   * Score a ranked free-for-all: the winner takes a pairwise Elo exchange
+   * against every opponent in the frozen roster; opponents don't exchange
+   * points among themselves (their finishing order is unknown).
+   */
+  function applyRankedResult(lobby: LobbyConfig, roster: { address: string; name: string }[], winnerAddress: string): void {
+    const winnerSeat = roster.find((member) => member.address === winnerAddress)
+    if (!winnerSeat) return
+    const winner = getOrCreateRankedEntry(winnerSeat.address, winnerSeat.name)
+    const deltas = new Map<string, number>([[winner.address, 0]])
+
+    for (const member of roster) {
+      if (member.address === winnerAddress) continue
+      const loser = getOrCreateRankedEntry(member.address, member.name)
+      const winnerGain = Math.round(ELO_K * (1 - eloExpected(winner.rating, loser.rating)))
+      const loserLoss = Math.round(ELO_K * eloExpected(loser.rating, winner.rating))
+      winner.rating += winnerGain
+      loser.rating = Math.max(0, loser.rating - loserLoss)
+      loser.losses += 1
+      deltas.set(winner.address, (deltas.get(winner.address) ?? 0) + winnerGain)
+      deltas.set(loser.address, -loserLoss)
+    }
+    winner.wins += 1
+
+    rankedLastMatch = {
+      winner: winner.address,
+      deltas: [...deltas.entries()].map(([address, delta]) => ({ address, delta }))
+    }
+    rankedRosters.delete(lobby.id)
+    publishRankedLadder()
+    saveRankedLadder()
+    console.log(`[Server] ranked result: ${winner.name} wins (${roster.length} players), new rating ${winner.rating}`)
   }
 
   function seatOf(lobby: LobbyConfig, address: string): LobbySeat | undefined {
@@ -61,6 +190,8 @@ export function startServer(): void {
     const active = lobby.seats.filter((seat) => seat.kind !== 'closed')
     const humans = active.filter((seat) => seat.kind === 'human')
     if (active.length < 2 || humans.length === 0) return false
+    // Rated matches need at least two humans; AI wins mean nothing on a ladder.
+    if (lobby.ranked && humans.length < 2) return false
     return humans.every((seat) => seat.ready && seat.address)
   }
 
@@ -106,6 +237,8 @@ export function startServer(): void {
         console.log(`[Server] room ${lobby.id}: all players left during a match; reopening`)
         lobby.phase = 'lobby'
         for (const seat of lobby.seats) seat.ready = false
+        // Nobody is left to report an abandoned ranked match: void it.
+        rankedRosters.delete(lobby.id)
         dirty = true
       }
       if (ensureLeader(lobby)) dirty = true
@@ -156,6 +289,7 @@ export function startServer(): void {
       }
       case 'setAlliance': {
         if (!mySeat) return
+        if (lobby.ranked) return // ranked is strict FFA: alliances stay locked to seats
         mySeat.allianceId = Math.max(0, Math.min(MAX_SEATS - 1, request.allianceId | 0))
         break
       }
@@ -167,6 +301,7 @@ export function startServer(): void {
       case 'setSeat': {
         // Leader manages computer/closed seats; humans manage themselves.
         if (!isLeader) return
+        if (lobby.ranked) return // no computer seats on the ladder
         const target = lobby.seats[request.seat]
         if (!target || target.kind === 'human') return
         const patch = request.patch
@@ -176,6 +311,7 @@ export function startServer(): void {
       }
       case 'setGameMode': {
         if (!isLeader) return
+        if (lobby.ranked) return // ranked mode is locked to FFA
         lobby.gameMode = request.gameMode
         break
       }
@@ -190,9 +326,29 @@ export function startServer(): void {
         if (!isLeader || lobby.phase === 'inMatch' || !canStart(lobby)) return
         lobby.phase = 'inMatch'
         lobby.seed = Math.floor(Math.random() * 2 ** 31)
+        if (lobby.ranked) {
+          // Freeze the human roster now: presence eviction may free seats
+          // mid-match, but the result must still rate everyone who started.
+          rankedRosters.set(
+            lobby.id,
+            lobby.seats
+              .filter((seat): seat is LobbySeat & { address: string } => seat.kind === 'human' && !!seat.address)
+              .map((seat) => ({ address: seat.address.toLowerCase(), name: seat.name ?? seat.address.slice(0, 8) }))
+          )
+        }
         publishLobbies()
         console.log(`[Server] room ${lobby.id}: match starting, seed ${lobby.seed}`)
         room.send('matchStart', { lobbyId: lobby.id, json: JSON.stringify(lobby) })
+        return
+      }
+      case 'reportResult': {
+        // Ranked only. The roster snapshot doubles as the "not yet scored"
+        // flag, and both the reporter and the named winner must be on it -
+        // so late duplicates and reports from spectators are all rejected.
+        if (!lobby.ranked) return
+        const roster = rankedRosters.get(lobby.id)
+        if (!roster || !roster.some((member) => member.address === sender)) return
+        applyRankedResult(lobby, roster, request.winnerAddress.toLowerCase())
         return
       }
       case 'resetLobby': {

@@ -11,13 +11,16 @@ import type { Difficulty, GameMode, RaceId } from '../types'
 // locally, everyone else fills enemy1..3) and applies the command to its sim.
 
 /** Bump when the protocol changes shape; mismatched clients refuse to join. */
-export const PROTOCOL_VERSION = 3
+export const PROTOCOL_VERSION = 4
 
 /** Maximum seats per match: one per engine team. */
 export const MAX_SEATS = 6
 
-/** Concurrent lobby rooms per world: independent matches running side by side. */
-export const LOBBY_ROOM_COUNT = 4
+/** Concurrent lobby rooms per world: casual battle rooms plus the ranked room. */
+export const LOBBY_ROOM_COUNT = 5
+
+/** The last room is the ranked ladder: humans only, free-for-all, Elo rated. */
+export const RANKED_ROOM_ID = LOBBY_ROOM_COUNT - 1
 
 export type SeatKind = 'human' | 'computer' | 'closed'
 
@@ -47,6 +50,8 @@ export type LobbyConfig = {
   gameMode: GameMode
   /** Battleground everyone loads (see rts/maps.ts registry); leader picks it. */
   mapId: string
+  /** Ranked ladder room: humans only, FFA locked, results feed the Elo ladder. */
+  ranked: boolean
   seats: LobbySeat[]
   /** Shared RNG seed rolled by the server at match start. */
   seed: number
@@ -182,6 +187,38 @@ export type LobbyRequest =
   | { type: 'setMap'; mapId: string }
   | { type: 'startMatch' }
   | { type: 'resetLobby' }
+  // Ranked only: the winning client reports the result; the server checks the
+  // reporter and the named winner both held seats when the match started.
+  | { type: 'reportResult'; winnerAddress: string }
+
+// --- Ranked ladder ------------------------------------------------------------
+
+/** Everyone starts here; K-factor 32 keeps early placement swings meaningful. */
+export const RANKED_START_RATING = 1200
+
+export type RankedEntry = {
+  /** Lowercase wallet address (stable identity across name changes). */
+  address: string
+  /** Latest display name seen in a ranked lobby. */
+  name: string
+  rating: number
+  wins: number
+  losses: number
+}
+
+/** Rating deltas from the most recent ranked match, for "+16" style badges. */
+export type RankedMatchSummary = {
+  winner: string
+  deltas: { address: string; delta: number }[]
+}
+
+/** Published by the server (rating-sorted) after every ranked result. */
+export type RankedLadder = {
+  entries: RankedEntry[]
+  lastMatch?: RankedMatchSummary
+  /** Unix ms of the last update. */
+  updated: number
+}
 
 export function createDefaultSeat(index: number): LobbySeat {
   return {
@@ -194,27 +231,30 @@ export function createDefaultSeat(index: number): LobbySeat {
 }
 
 export function createDefaultLobby(id: number): LobbyConfig {
+  const ranked = id === RANKED_ROOM_ID
   return {
     version: PROTOCOL_VERSION,
     id,
     hostAddress: '',
     phase: 'lobby',
-    gameMode: 'team',
+    // Ranked is always free-for-all so every result maps to one winner.
+    gameMode: ranked ? 'ffa' : 'team',
     mapId: DEFAULT_MAP_ID,
+    ranked,
     seats: [createDefaultSeat(0), createDefaultSeat(1), createDefaultSeat(2), createDefaultSeat(3), createDefaultSeat(4), createDefaultSeat(5)],
     seed: 0,
     revision: 0
   }
 }
 
-/** The full set of concurrent lobby rooms, in room-id order. */
+/** The full set of concurrent lobby rooms, in room-id order (ranked room last). */
 export function createDefaultLobbies(): LobbyConfig[] {
   const lobbies: LobbyConfig[] = []
   for (let i = 0; i < LOBBY_ROOM_COUNT; i++) lobbies.push(createDefaultLobby(i))
   return lobbies
 }
 
-/** Display name for a room ("BATTLE ROOM 1"...). */
+/** Display name for a room ("BATTLE ROOM 1"... plus the ranked ladder room). */
 export function lobbyRoomName(id: number): string {
-  return `BATTLE ROOM ${id + 1}`
+  return id === RANKED_ROOM_ID ? 'RANKED LADDER' : `BATTLE ROOM ${id + 1}`
 }

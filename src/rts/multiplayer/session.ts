@@ -3,12 +3,15 @@ import { isStateSyncronized } from '@dcl/sdk/network'
 import { getPlayer, onEnterScene, onLeaveScene } from '@dcl/sdk/src/players'
 import {
   PROTOCOL_VERSION,
+  RANKED_START_RATING,
   createDefaultLobbies,
   type LobbyConfig,
   type LobbyRequest,
-  type LobbySeat
+  type LobbySeat,
+  type RankedEntry,
+  type RankedLadder
 } from './protocol'
-import { MpLobbyState, room } from './transport'
+import { MpLobbyState, MpRankedState, room } from './transport'
 import type { Difficulty, GameMode, RaceId } from '../types'
 
 // Client side of the multiplayer session. The authoritative server owns a set
@@ -20,6 +23,8 @@ import type { Difficulty, GameMode, RaceId } from '../types'
 
 let lobbies: LobbyConfig[] = createDefaultLobbies()
 let lastSeenRevision = -1
+let rankedLadder: RankedLadder = { entries: [], updated: 0 }
+let lastSeenRankedRevision = -1
 let myAddress = ''
 let myName = ''
 /** Room the lobby UI is inside (-1 = the room browser). */
@@ -92,6 +97,18 @@ function sessionSystem(): void {
       // Keep the last good state.
     }
   }
+
+  // Pull ranked ladder updates published by the server.
+  for (const [, state] of engine.getEntitiesWith(MpRankedState)) {
+    if (state.revision === lastSeenRankedRevision) continue
+    lastSeenRankedRevision = state.revision
+    try {
+      const parsed = JSON.parse(state.json) as RankedLadder
+      if (Array.isArray(parsed.entries)) rankedLadder = parsed
+    } catch {
+      // Keep the last good ladder.
+    }
+  }
 }
 
 // --- Read API ----------------------------------------------------------------
@@ -149,6 +166,39 @@ export function getPresentPlayers(): { address: string; name: string }[] {
 /** Is this wallet currently in the scene? Drives mid-match leaver detection. */
 export function isPlayerPresent(address: string): boolean {
   return presentPlayers.has(address.toLowerCase())
+}
+
+// --- Ranked ladder -------------------------------------------------------------
+
+/** The Elo ladder published by the server (rating-sorted). */
+export function getRankedLadder(): RankedLadder {
+  return rankedLadder
+}
+
+/** A player's ladder entry, or undefined if they've never finished a ranked match. */
+export function getRankedEntry(address: string): RankedEntry | undefined {
+  const key = address.toLowerCase()
+  return rankedLadder.entries.find((entry) => entry.address === key)
+}
+
+/** My current rating (everyone starts at the baseline before their first match). */
+export function getMyRankedRating(): number {
+  return myAddress === '' ? RANKED_START_RATING : (getRankedEntry(myAddress)?.rating ?? RANKED_START_RATING)
+}
+
+/** Is this room the ranked ladder room? */
+export function isRankedLobby(lobbyId: number): boolean {
+  return lobbies[lobbyId]?.ranked === true
+}
+
+/**
+ * Report a ranked result to the server. Called by the winning client when its
+ * sim declares victory; the server validates against the frozen match roster
+ * and only the first report per match counts.
+ */
+export function reportRankedResult(lobbyId: number, winnerAddress: string): void {
+  if (myAddress === '' || lobbyId < 0) return
+  room.send('lobbyRequest', { lobbyId, json: JSON.stringify({ type: 'reportResult', winnerAddress } satisfies LobbyRequest) })
 }
 
 export function onLobbyChanged(listener: LobbyListener): void {
@@ -214,6 +264,7 @@ export function canStartMatch(): boolean {
   const active = lobby.seats.filter((seat) => seat.kind !== 'closed')
   const humans = active.filter((seat) => seat.kind === 'human')
   if (active.length < 2 || humans.length === 0) return false
+  if (lobby.ranked && humans.length < 2) return false
   return humans.every((seat) => seat.ready && seat.address)
 }
 

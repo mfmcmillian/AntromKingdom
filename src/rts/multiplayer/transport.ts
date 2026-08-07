@@ -8,6 +8,9 @@ import { AUTH_SERVER_PEER_ID } from '@dcl/sdk/network/message-bus-sync'
 /** Sync id for the lobby entity the server publishes. */
 export const LOBBY_SYNC_ID = 5001
 
+/** Sync id for the ranked ladder entity the server publishes. */
+export const RANKED_SYNC_ID = 5002
+
 /**
  * Every lobby room as one JSON payload (a LobbyConfig[] in room-id order)
  * plus a revision counter. Written only by the authoritative server (enforced
@@ -19,8 +22,19 @@ export const MpLobbyState = engine.defineComponent('dc-mp-lobby-state', {
   revision: Schemas.Int
 })
 
-// Anti-cheat: only the authoritative server may write the lobby.
+/**
+ * The ranked Elo ladder as one JSON payload (a RankedLadder). Persisted in
+ * world Storage server-side and republished after every ranked result, so the
+ * leaderboard survives restarts and late joiners see it immediately.
+ */
+export const MpRankedState = engine.defineComponent('dc-mp-ranked-state', {
+  json: Schemas.String,
+  revision: Schemas.Int
+})
+
+// Anti-cheat: only the authoritative server may write the lobby and the ladder.
 MpLobbyState.validateBeforeChange((value) => value.senderAddress === AUTH_SERVER_PEER_ID)
+MpRankedState.validateBeforeChange((value) => value.senderAddress === AUTH_SERVER_PEER_ID)
 
 // Every message carries the room id it belongs to, so concurrent matches
 // never hear each other's traffic.

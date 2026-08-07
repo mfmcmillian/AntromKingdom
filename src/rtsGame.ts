@@ -83,7 +83,7 @@ import { updateUnitSeparation } from './rts/systems/separation'
 import { updateWorkers as updateWorkersSystem } from './rts/systems/workers'
 import { mulberry32, type LocalMatchPlan } from './rts/multiplayer/seatMap'
 import { broadcastMyCommand, isRelayActive, stopCommandRelay } from './rts/multiplayer/commandRelay'
-import { isPlayerPresent } from './rts/multiplayer/session'
+import { getMyAddress, isPlayerPresent, isRankedLobby, reportRankedResult } from './rts/multiplayer/session'
 import type { MatchCommand } from './rts/multiplayer/protocol'
 import { updateDragSelect } from './rts/dragSelect'
 import { initFogOfWar, resetFogOfWar } from './rts/fogOfWar'
@@ -3259,8 +3259,19 @@ export function getMatchRoster(): MatchRosterEntry[] {
   }))
 }
 
+/** Ranked room match on this client? Drives result reporting and the end-screen tag. */
+export function isRankedMultiplayerMatch(): boolean {
+  return multiplayerPlan !== undefined && isRankedLobby(multiplayerPlan.lobbyId)
+}
+
 function endMatch(result: 'win' | 'loss'): void {
   if (gameState.matchStatus === MATCH_ENDED) return
+
+  // Ranked ladder: the winning client reports the result. Losers stay quiet -
+  // in a free-for-all only the last commander standing knows the match is over.
+  if (result === 'win' && isRankedMultiplayerMatch() && multiplayerPlan) {
+    reportRankedResult(multiplayerPlan.lobbyId, getMyAddress())
+  }
 
   gameState.matchStatus = MATCH_ENDED
   gameState.matchResult = result
