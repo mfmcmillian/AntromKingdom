@@ -18,13 +18,11 @@
 // ---------------------------------------------------------------------------
 
 /**
- * Endpoint that receives the game server's ladder pushes. '/api/ladder' is
- * the bundled Vercel serverless function (website/api/ladder.js) — it just
- * works when this site is deployed on Vercel. If the site is hosted elsewhere
- * (e.g. GitHub Pages), set this to the full Vercel URL instead:
- * 'https://<project>.vercel.app/api/ladder'.
+ * Endpoint that receives the game server's ladder pushes — the Vercel
+ * serverless function bundled with this site (website/api/ladder.js).
+ * Absolute URL so the GitHub Pages copy of the site reads the same feed.
  */
-const LADDER_ENDPOINT = '/api/ladder'
+const LADDER_ENDPOINT = 'https://decentracraft-nine.vercel.app/api/ladder'
 
 ;(function initLadder() {
   const table = document.getElementById('ladderTable')

@@ -37,6 +37,22 @@ const present = new Set<string>()
 const RANKED_STORAGE_KEY = 'ranked-ladder-v1'
 const ELO_K = 32
 
+/**
+ * Website leaderboard endpoint (website/api/ladder.js on Vercel). The server
+ * POSTs the ladder here after every rated match and can restore from it on
+ * boot. EnvVar LEADERBOARD_PUSH_URL overrides it, but the env service only
+ * exists for Worlds - this Genesis City LAND deploy relies on the default.
+ */
+const DEFAULT_LEADERBOARD_PUSH_URL = 'https://decentracraft-nine.vercel.app/api/ladder'
+
+async function getLeaderboardPushUrl(): Promise<string> {
+  try {
+    return (await EnvVar.get('LEADERBOARD_PUSH_URL')) || DEFAULT_LEADERBOARD_PUSH_URL
+  } catch {
+    return DEFAULT_LEADERBOARD_PUSH_URL
+  }
+}
+
 /** All rated players, keyed by lowercase wallet address. */
 const rankedRatings = new Map<string, RankedEntry>()
 let rankedLastMatch: RankedMatchSummary | undefined
@@ -97,36 +113,54 @@ export function startServer(): void {
   }
 
   async function loadRankedLadder(): Promise<void> {
+    // First choice: the Server Side Storage service (values JSON round-trip
+    // automatically). Worlds have it; the Genesis City LAND deploy may not.
     try {
-      // Scene-scoped storage on the Server Side Storage service: values are
-      // JSON round-tripped automatically, so the ladder stores as an object.
       const stored = await Storage.get<RankedLadder>(RANKED_STORAGE_KEY)
-      if (!stored) return
-      for (const entry of stored.entries ?? []) {
-        if (entry.address) rankedRatings.set(entry.address, entry)
+      if (stored) {
+        applyLoadedLadder(stored, 'storage')
+        return
       }
-      rankedLastMatch = stored.lastMatch
-      publishRankedLadder()
-      console.log(`[Server] ranked ladder loaded: ${rankedRatings.size} rated player(s)`)
     } catch (error) {
-      console.log(`[Server] ranked ladder load failed: ${error}`)
+      console.log(`[Server] ranked ladder storage load failed: ${error}`)
     }
+
+    // Fallback: restore the last ladder the server pushed to the website
+    // endpoint, so ratings survive restarts even without world Storage.
+    try {
+      const url = await getLeaderboardPushUrl()
+      const response = await fetch(url)
+      if (!response.ok) return
+      applyLoadedLadder((await response.json()) as RankedLadder, 'website endpoint')
+    } catch (error) {
+      console.log(`[Server] ranked ladder endpoint load failed: ${error}`)
+    }
+  }
+
+  function applyLoadedLadder(ladder: RankedLadder, source: string): void {
+    for (const entry of ladder.entries ?? []) {
+      if (entry.address) rankedRatings.set(entry.address, entry)
+    }
+    rankedLastMatch = ladder.lastMatch
+    publishRankedLadder()
+    console.log(`[Server] ranked ladder loaded from ${source}: ${rankedRatings.size} rated player(s)`)
   }
   void loadRankedLadder()
 
-  /** Persist the ladder and mirror it to the website endpoint (if configured). */
+  /** Persist the ladder (best effort) and mirror it to the website endpoint. */
   function saveRankedLadder(): void {
     const ladder = buildRankedLadder()
     const json = JSON.stringify(ladder)
-    Storage.set(RANKED_STORAGE_KEY, ladder).catch((error: unknown) => {
-      console.log(`[Server] ranked ladder save failed: ${error}`)
-    })
-    // Optional site sync: set LEADERBOARD_PUSH_URL (deploy-env or .env) to a
-    // JSON endpoint; the website ladder section reads the same URL.
+    try {
+      Storage.set(RANKED_STORAGE_KEY, ladder).catch((error: unknown) => {
+        console.log(`[Server] ranked ladder storage save failed: ${error}`)
+      })
+    } catch (error) {
+      console.log(`[Server] ranked ladder storage save failed: ${error}`)
+    }
     void (async () => {
       try {
-        const url = await EnvVar.get('LEADERBOARD_PUSH_URL')
-        if (!url) return
+        const url = await getLeaderboardPushUrl()
         await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: json })
         console.log('[Server] ranked ladder pushed to website endpoint')
       } catch (error) {
