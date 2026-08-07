@@ -82,10 +82,8 @@ function createOceanFloor(): void {
 function createWaveLayer(islands: IslandZone[]): void {
   const isInWater = (x: number, z: number, clearance: number): boolean =>
     !islands.some((island) => {
-      const dx = x - island.x
-      const dz = z - island.z
-      const reach = island.radius + clearance
-      return dx * dx + dz * dz < reach * reach
+      const reach = island.halfSize + clearance
+      return Math.abs(x - island.x) < reach && Math.abs(z - island.z) < reach
     })
 
   // A few large translucent current patches for tonal depth.
@@ -146,15 +144,17 @@ function createWaveLayer(islands: IslandZone[]): void {
   }
 }
 
-/** One island: sandy beach ring under a grassy surface disc. */
+/** One island: a square grass plate over a sandy beach border - flat edges make building placement predictable. */
 function createIsland(island: IslandZone): void {
+  const side = island.halfSize * 2
+
   // Beach rim: pale sand peeking out under the grass, meeting the water.
   const rim = spawn()
   Transform.create(rim, {
     position: Vector3.create(island.x, 0.045, island.z),
-    scale: Vector3.create(island.radius * 2 + 1.6, 0.012, island.radius * 2 + 1.6)
+    scale: Vector3.create(side + 1.6, 0.012, side + 1.6)
   })
-  MeshRenderer.setCylinder(rim)
+  MeshRenderer.setBox(rim)
   Material.setPbrMaterial(rim, {
     albedoColor: Color4.create(0.82, 0.72, 0.5, 1),
     metallic: 0,
@@ -167,9 +167,9 @@ function createIsland(island: IslandZone): void {
   const surface = spawn()
   Transform.create(surface, {
     position: Vector3.create(island.x, 0.06, island.z),
-    scale: Vector3.create(island.radius * 2, 0.014, island.radius * 2)
+    scale: Vector3.create(side, 0.014, side)
   })
-  MeshRenderer.setCylinder(surface)
+  MeshRenderer.setBox(surface)
   Material.setPbrMaterial(surface, {
     texture: Material.Texture.Common({ src: GRASS_TEXTURE, wrapMode: TextureWrapMode.TWM_REPEAT }),
     albedoColor: Color4.create(0.95, 1, 0.9, 1),
@@ -179,15 +179,15 @@ function createIsland(island: IslandZone): void {
     castShadows: false
   })
 
-  // A couple of soft meadow patches per island so the grass isn't uniform.
+  // A couple of soft meadow patches per island so the grass isn't uniform
+  // (still round - they're vegetation, not land).
   const patches = 2 + Math.floor(random() * 2)
   for (let i = 0; i < patches; i++) {
     const patch = spawn()
-    const patchSize = island.radius * (0.35 + random() * 0.4)
-    const angle = random() * Math.PI * 2
-    const reach = random() * (island.radius - patchSize * 0.6)
+    const patchSize = island.halfSize * (0.35 + random() * 0.4)
+    const reach = island.halfSize - patchSize * 0.6
     Transform.create(patch, {
-      position: Vector3.create(island.x + Math.cos(angle) * reach, 0.075 + i * 0.004, island.z + Math.sin(angle) * reach),
+      position: Vector3.create(island.x + (random() * 2 - 1) * reach, 0.075 + i * 0.004, island.z + (random() * 2 - 1) * reach),
       scale: Vector3.create(patchSize, 0.008, patchSize)
     })
     MeshRenderer.setCylinder(patch)

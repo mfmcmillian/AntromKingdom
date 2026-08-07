@@ -11,24 +11,24 @@ const H = SIZE + PAD * 2 + 80 // extra strip for the legend
 const px = (x) => PAD + x * S
 const py = (z) => PAD + (160 - z) * S // world +z is north (up)
 
-// Mirrors ISLANDS_ZONES in src/rts/maps.ts.
+// Mirrors ISLANDS_ZONES in src/rts/maps.ts (islands are squares; halfSize = half the side).
 const PLAYER_ISLANDS = [
-  { x: 128.5, z: 108, radius: 18 },
-  { x: 80, z: 136, radius: 18 },
-  { x: 31.5, z: 108, radius: 18 },
-  { x: 31.5, z: 52, radius: 18 },
-  { x: 80, z: 24, radius: 18 },
-  { x: 128.5, z: 52, radius: 18 }
+  { x: 128.5, z: 108, halfSize: 16 },
+  { x: 80, z: 136, halfSize: 16 },
+  { x: 31.5, z: 108, halfSize: 16 },
+  { x: 31.5, z: 52, halfSize: 16 },
+  { x: 80, z: 24, halfSize: 16 },
+  { x: 128.5, z: 52, halfSize: 16 }
 ]
 const EXPANSION_ISLANDS = [
-  { x: 146, z: 80, radius: 11 },
-  { x: 113, z: 137, radius: 11 },
-  { x: 47, z: 137, radius: 11 },
-  { x: 14, z: 80, radius: 11 },
-  { x: 47, z: 23, radius: 11 },
-  { x: 113, z: 23, radius: 11 }
+  { x: 146, z: 80, halfSize: 9 },
+  { x: 113, z: 137, halfSize: 9 },
+  { x: 47, z: 137, halfSize: 9 },
+  { x: 14, z: 80, halfSize: 9 },
+  { x: 47, z: 23, halfSize: 9 },
+  { x: 113, z: 23, halfSize: 9 }
 ]
-const CENTER_ISLAND = { x: 80, z: 80, radius: 14 }
+const CENTER_ISLAND = { x: 80, z: 80, halfSize: 14 }
 
 // Mirrors ISLANDS_ANCHORS in order, colors matching the classic diagram.
 // Starts are shuffled every match, so no anchor is labeled as "you".
@@ -80,14 +80,14 @@ for (let i = 0; i < 90; i++) {
   svg += `<ellipse cx="${cx}" cy="${cy}" rx="${rw}" ry="${Math.max(1, rw * 0.4)}" fill="#dff0ff" opacity="${0.35 + ((a >> 24) % 40) / 100}"/>`
 }
 
-// Islands: player isles (large), expansions (mid), rich center.
+// Islands: square plates - player isles (large), expansions (mid), rich center.
 const drawIsland = (isle, fill, stroke) => {
   const cx = px(isle.x)
   const cy = py(isle.z)
-  const r = isle.radius * S
-  // Sandy beach ring where the land meets the water.
-  svg += `<circle cx="${cx}" cy="${cy}" r="${r + 5}" fill="#cfb377" opacity="0.9"/>`
-  svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="3"/>`
+  const r = isle.halfSize * S
+  // Sandy beach border where the land meets the water.
+  svg += `<rect x="${cx - r - 5}" y="${cy - r - 5}" width="${(r + 5) * 2}" height="${(r + 5) * 2}" fill="#cfb377" opacity="0.9"/>`
+  svg += `<rect x="${cx - r}" y="${cy - r}" width="${r * 2}" height="${r * 2}" fill="${fill}" stroke="${stroke}" stroke-width="3"/>`
 }
 for (const isle of PLAYER_ISLANDS) drawIsland(isle, '#2b4a22', '#4a7038')
 for (const isle of EXPANSION_ISLANDS) drawIsland(isle, '#254019', '#42632f')
@@ -95,7 +95,7 @@ drawIsland(CENTER_ISLAND, '#3d4a1e', '#6b6136')
 
 // Expansion isle tags.
 for (const isle of EXPANSION_ISLANDS) {
-  svg += `<text x="${px(isle.x)}" y="${py(isle.z) - isle.radius * S - 10}" fill="#8fa3c0" font-family="Arial" font-size="16" font-weight="bold" text-anchor="middle">EMPTY ISLE</text>`
+  svg += `<text x="${px(isle.x)}" y="${py(isle.z) - isle.halfSize * S - 14}" fill="#8fa3c0" font-family="Arial" font-size="16" font-weight="bold" text-anchor="middle">EMPTY ISLE</text>`
 }
 
 // Resource fields.

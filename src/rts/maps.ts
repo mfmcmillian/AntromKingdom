@@ -5,8 +5,8 @@ import { Vector3 } from '@dcl/sdk/math'
 // base anchors and resource layout; the match setup screen and the MP lobby
 // both pick from this list (the lobby syncs the choice via LobbyConfig.mapId).
 
-/** A walkable ground disc on island maps; everything outside every zone is void. */
-export type IslandZone = { x: number; z: number; radius: number }
+/** A walkable square of ground on island maps (halfSize = half the side length); everything outside every zone is water. */
+export type IslandZone = { x: number; z: number; halfSize: number }
 
 export type MapDefinition = {
   id: string
@@ -30,27 +30,30 @@ export type MapDefinition = {
 // ocean. No land routes at all: expanding or attacking means transports.
 // Layout math: player islands on a ring of radius 56 at 30/90/150/210/270/330
 // degrees, expansion isles on a ring of 66 at 0/60/.../300 degrees.
+// Islands are SQUARES (flat edges = predictable building placement). Sizes are
+// capped so no two squares ever touch: adjacent player/expansion centers sit
+// 28-29m apart on one axis, so 16 + 9 leaves a guaranteed 3m+ water strait.
 // ---------------------------------------------------------------------------
 
 const SKY_PLAYER_ISLANDS: IslandZone[] = [
-  { x: 128.5, z: 108, radius: 18 },
-  { x: 80, z: 136, radius: 18 },
-  { x: 31.5, z: 108, radius: 18 },
-  { x: 31.5, z: 52, radius: 18 },
-  { x: 80, z: 24, radius: 18 },
-  { x: 128.5, z: 52, radius: 18 }
+  { x: 128.5, z: 108, halfSize: 16 },
+  { x: 80, z: 136, halfSize: 16 },
+  { x: 31.5, z: 108, halfSize: 16 },
+  { x: 31.5, z: 52, halfSize: 16 },
+  { x: 80, z: 24, halfSize: 16 },
+  { x: 128.5, z: 52, halfSize: 16 }
 ]
 
 const SKY_EXPANSION_ISLANDS: IslandZone[] = [
-  { x: 146, z: 80, radius: 11 },
-  { x: 113, z: 137, radius: 11 },
-  { x: 47, z: 137, radius: 11 },
-  { x: 14, z: 80, radius: 11 },
-  { x: 47, z: 23, radius: 11 },
-  { x: 113, z: 23, radius: 11 }
+  { x: 146, z: 80, halfSize: 9 },
+  { x: 113, z: 137, halfSize: 9 },
+  { x: 47, z: 137, halfSize: 9 },
+  { x: 14, z: 80, halfSize: 9 },
+  { x: 47, z: 23, halfSize: 9 },
+  { x: 113, z: 23, halfSize: 9 }
 ]
 
-const SKY_CENTER_ISLAND: IslandZone = { x: 80, z: 80, radius: 14 }
+const SKY_CENTER_ISLAND: IslandZone = { x: 80, z: 80, halfSize: 14 }
 
 export const ISLANDS_ZONES: IslandZone[] = [...SKY_PLAYER_ISLANDS, ...SKY_EXPANSION_ISLANDS, SKY_CENTER_ISLAND]
 
@@ -168,14 +171,12 @@ export function isIslandMap(): boolean {
   return activeIslands !== undefined
 }
 
-/** Can a ground unit stand here? Solid-ground maps: always yes. */
+/** Can a ground unit stand here? Solid-ground maps: always yes. Islands are squares, so this is a box test. */
 export function isGroundWalkable(x: number, z: number): boolean {
   if (!activeIslands) return true
   for (const island of activeIslands) {
-    const dx = x - island.x
-    const dz = z - island.z
-    const reach = island.radius + EDGE_MARGIN
-    if (dx * dx + dz * dz <= reach * reach) return true
+    const reach = island.halfSize + EDGE_MARGIN
+    if (Math.abs(x - island.x) <= reach && Math.abs(z - island.z) <= reach) return true
   }
   return false
 }
@@ -185,9 +186,7 @@ export function islandIndexAt(x: number, z: number): number {
   if (!activeIslands) return -1
   for (let i = 0; i < activeIslands.length; i++) {
     const island = activeIslands[i]
-    const dx = x - island.x
-    const dz = z - island.z
-    if (dx * dx + dz * dz <= island.radius * island.radius) return i
+    if (Math.abs(x - island.x) <= island.halfSize && Math.abs(z - island.z) <= island.halfSize) return i
   }
   return -1
 }

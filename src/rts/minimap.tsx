@@ -187,11 +187,9 @@ function terrainLayer() {
     ]
     for (let i = 0; i < islands.length; i++) {
       const island = islands[i]
-      const diameter = island.radius * 2 * MAP_SCALE
-      // Three overlapping rects fake a rounded island (UI has no circles).
-      elements.push(terrainRectSized(`isle-${i}-a`, island.x, island.z, diameter * 0.94, diameter * 0.62, MINIMAP_COLORS.island))
-      elements.push(terrainRectSized(`isle-${i}-b`, island.x, island.z, diameter * 0.62, diameter * 0.94, MINIMAP_COLORS.island))
-      elements.push(terrainRectSized(`isle-${i}-c`, island.x, island.z, diameter * 0.8, diameter * 0.8, MINIMAP_COLORS.island))
+      // Islands are literal squares of land, so one rect each is exact.
+      const side = island.halfSize * 2 * MAP_SCALE
+      elements.push(terrainRectSized(`isle-${i}`, island.x, island.z, side, side, MINIMAP_COLORS.island))
     }
     return elements
   }
