@@ -75,7 +75,8 @@ export type EnemyAi = {
 
 export function createEnemyAi(team: EnemyTeam, difficulty: Difficulty): EnemyAi {
   const settings = AI_DIFFICULTY[difficulty]
-  const seat = getMapById(gameState.selectedMapId).anchors[gameState.enemySeatIndex[team]]
+  const seatIndex = gameState.enemySeatIndex[team]
+  const seat = getMapById(gameState.selectedMapId).anchors[gameState.anchorPermutation[seatIndex] ?? seatIndex]
   return {
     team,
     difficulty,

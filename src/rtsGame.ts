@@ -1307,12 +1307,35 @@ export function resetRtsGame(): void {
  * mode, seats each computer (allies near the player, hostiles far), rolls
  * 'random' races, and spins up one AI brain per computer.
  */
+/**
+ * Rerolls which map anchor each seat starts on, so nobody spawns at the same
+ * spot every match. Seat 0 (the single-player human; lobby seat 0 in MP) gets
+ * a random anchor and the remaining anchors are ordered far-to-near from it,
+ * preserving the "hostiles far, allies near" meaning of seat numbers.
+ * Multiplayer rolls from the shared lobby seed so every client agrees.
+ */
+function rollAnchorPermutation(): void {
+  const anchors = getMapById(gameState.selectedMapId).anchors
+  const random = multiplayerPlan ? mulberry32(multiplayerPlan.seed ^ 0xa7c4) : Math.random
+  const indices = anchors.map((_, index) => index)
+
+  for (let i = indices.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1))
+    ;[indices[i], indices[j]] = [indices[j], indices[i]]
+  }
+
+  const home = anchors[indices[0]].temple
+  const rest = indices.slice(1).sort((a, b) => distanceToPoint(anchors[b].temple, home) - distanceToPoint(anchors[a].temple, home))
+  gameState.anchorPermutation = [indices[0], ...rest]
+}
+
 function applyOpponentSetup(): void {
   if (multiplayerPlan) {
     applyMultiplayerSetup(multiplayerPlan)
     return
   }
 
+  rollAnchorPermutation()
   const opponents = gameState.opponents.slice(0, ENEMY_TEAMS.length)
   gameState.activeEnemyTeams = ENEMY_TEAMS.slice(0, Math.max(1, opponents.length))
 
@@ -1356,6 +1379,7 @@ function applyMultiplayerSetup(plan: LocalMatchPlan): void {
   gameState.playerRace = plan.races.player
   gameState.gameMode = plan.gameMode
   gameState.selectedMapId = plan.mapId
+  rollAnchorPermutation()
   gameState.activeEnemyTeams = plan.activeEnemyTeams.slice()
   gameState.alliances.player = plan.alliances.player
 
@@ -1589,10 +1613,8 @@ function hideAvatarsEverywhere(): void {
  */
 function getTeamAnchor(team: Team): { temple: Vector3; rotationY: number } {
   const anchors = getMapById(gameState.selectedMapId).anchors
-  if (team === 'player') {
-    return anchors[multiplayerPlan ? multiplayerPlan.mySeatIndex : 0]
-  }
-  return anchors[gameState.enemySeatIndex[team]]
+  const seat = team === 'player' ? (multiplayerPlan ? multiplayerPlan.mySeatIndex : 0) : gameState.enemySeatIndex[team]
+  return anchors[gameState.anchorPermutation[seat] ?? seat]
 }
 
 function createStartingBase(): void {

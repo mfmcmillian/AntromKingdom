@@ -63,6 +63,10 @@ export const gameState = {
   // where anchor 0 is the classic SW player start). Single-player: allies get
   // anchors near the player, hostiles the far side. Multiplayer: lobby seats.
   enemySeatIndex: { enemy1: 1, enemy2: 2, enemy3: 3, enemy4: 4, enemy5: 5 } as Record<EnemyTeam, number>,
+  // Seat -> anchor shuffle, rerolled every match so nobody starts at the same
+  // spot twice (seeded in multiplayer so all clients agree). Index 0 is the
+  // local player's seat in single player; the rest run far-to-near from it.
+  anchorPermutation: [0, 1, 2, 3, 4, 5] as number[],
   economies: {
     player: createEconomy(),
     enemy1: createEconomy(),

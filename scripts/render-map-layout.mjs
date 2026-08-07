@@ -12,7 +12,7 @@ const px = (x) => PAD + x * S
 const py = (z) => PAD + (160 - z) * S // world +z is north (up)
 
 const ANCHORS = [
-  { x: 8.54, z: 3.48, label: 'START 1 (YOU)', color: '#35a4ff' },
+  { x: 8.54, z: 3.48, label: 'START 1', color: '#35a4ff' },
   { x: 142.89, z: 136.75, label: 'START 2', color: '#f24d3e' },
   { x: 80, z: 148, label: 'START 3', color: '#ff9e26' },
   { x: 12, z: 146, label: 'START 4', color: '#c855f2' },

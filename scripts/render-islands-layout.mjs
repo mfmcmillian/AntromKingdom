@@ -30,10 +30,10 @@ const EXPANSION_ISLANDS = [
 ]
 const CENTER_ISLAND = { x: 80, z: 80, radius: 14 }
 
-// Mirrors ISLANDS_ANCHORS in order (seat 1 = the player), colors matching
-// the classic diagram.
+// Mirrors ISLANDS_ANCHORS in order, colors matching the classic diagram.
+// Starts are shuffled every match, so no anchor is labeled as "you".
 const ANCHORS = [
-  { x: 132, z: 110, label: 'START 1 (YOU)', color: '#35a4ff' },
+  { x: 132, z: 110, label: 'START 1', color: '#35a4ff' },
   { x: 80, z: 140, label: 'START 2', color: '#f24d3e' },
   { x: 28, z: 110, label: 'START 3', color: '#ff9e26' },
   { x: 28, z: 50, label: 'START 4', color: '#c855f2' },
