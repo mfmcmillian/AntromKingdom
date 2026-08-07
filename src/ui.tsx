@@ -2547,7 +2547,14 @@ function lobbyRoomOverlay() {
           >
             <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.06, 0.14, 0.28, 1) }}>
               <Label
-                value={canStart ? 'START MATCH' : 'WAITING FOR PLAYERS'}
+                value={
+                  canStart
+                    ? 'START MATCH'
+                    : // Ranked can't be padded with computers, so tell the host what's actually missing.
+                      lobby.ranked && lobby.seats.filter((seat) => seat.kind === 'human').length < 2
+                      ? 'NEEDS 2+ HUMANS (NO COMPS)'
+                      : 'WAITING FOR PLAYERS'
+                }
                 fontSize={canStart ? 22 : 16}
                 color={canStart ? Color4.create(0.85, 0.93, 1, 1) : UI.dim}
                 textAlign="middle-center"
