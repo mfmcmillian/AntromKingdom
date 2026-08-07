@@ -1,5 +1,8 @@
 name: Deploy website to GitHub Pages
 
+# Pages serves from the gh-pages branch; this mirrors website/ onto it.
+# (The Actions-native deploy-pages path needs Pages pre-configured with
+# "GitHub Actions" as source, which the default token cannot set up.)
 on:
   push:
     branches: [main]
@@ -9,9 +12,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
   group: pages
@@ -20,20 +21,10 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
-      # enablement: true creates the Pages site on first run, no manual setup
-      - uses: actions/configure-pages@v5
+      - uses: peaceiris/actions-gh-pages@v4
         with:
-          enablement: true
-
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: website
-
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./website
