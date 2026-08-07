@@ -60,16 +60,25 @@ const FIELDS = [
 
 let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">`
 svg += `<rect width="${W}" height="${H}" fill="#0b0e14"/>`
-// The battlefield is open sky: a deep blue void instead of solid ground.
-svg += `<rect x="${PAD}" y="${PAD}" width="${SIZE}" height="${SIZE}" fill="#101a2e" stroke="#3a4356" stroke-width="3"/>`
+// The battlefield is deep space: a near-black void with stars.
+svg += `<rect x="${PAD}" y="${PAD}" width="${SIZE}" height="${SIZE}" fill="#0a0c18" stroke="#3a4356" stroke-width="3"/>`
 
-// Soft cloud wisps in the void so it reads as sky.
-for (let i = 0; i < 26; i++) {
+// Star glints scattered in the void.
+for (let i = 0; i < 90; i++) {
   const a = (i * 2654435761) % 4294967296
   const cx = PAD + ((a % 997) / 997) * SIZE
   const cy = PAD + (((a >> 8) % 991) / 991) * SIZE
-  const rw = 40 + ((a >> 16) % 70)
-  svg += `<ellipse cx="${cx}" cy="${cy}" rx="${rw}" ry="${rw * 0.32}" fill="#22304d" opacity="0.35"/>`
+  const r = 1 + ((a >> 16) % 3)
+  const warm = (a >> 20) % 4 === 0
+  svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${warm ? '#ffd9a0' : '#dfe9ff'}" opacity="${0.5 + ((a >> 24) % 50) / 100}"/>`
+}
+// A couple of faint nebula wisps for color depth.
+for (let i = 0; i < 6; i++) {
+  const a = ((i + 7) * 2654435761) % 4294967296
+  const cx = PAD + ((a % 997) / 997) * SIZE
+  const cy = PAD + (((a >> 8) % 991) / 991) * SIZE
+  const rw = 60 + ((a >> 16) % 80)
+  svg += `<ellipse cx="${cx}" cy="${cy}" rx="${rw}" ry="${rw * 0.4}" fill="${i % 2 === 0 ? '#3a2c66' : '#1f4066'}" opacity="0.28"/>`
 }
 
 // Islands: player isles (large), expansions (mid), rich center.
@@ -80,9 +89,9 @@ const drawIsland = (isle, fill, stroke) => {
   svg += `<circle cx="${cx}" cy="${cy}" r="${r + 5}" fill="#0e1523" opacity="0.9"/>`
   svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="3"/>`
 }
-for (const isle of PLAYER_ISLANDS) drawIsland(isle, '#232c3c', '#46536b')
-for (const isle of EXPANSION_ISLANDS) drawIsland(isle, '#20293a', '#3d4a62')
-drawIsland(CENTER_ISLAND, '#2a2c22', '#6b6136')
+for (const isle of PLAYER_ISLANDS) drawIsland(isle, '#2b4a22', '#4a7038')
+for (const isle of EXPANSION_ISLANDS) drawIsland(isle, '#254019', '#42632f')
+drawIsland(CENTER_ISLAND, '#3d4a1e', '#6b6136')
 
 // Expansion isle tags.
 for (const isle of EXPANSION_ISLANDS) {

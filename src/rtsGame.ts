@@ -1295,11 +1295,9 @@ export function resetRtsGame(): void {
 
   createStartingBase()
   enableTopDownView()
-  // Multiplayer: open the camera over your own corner, wherever your seat is.
-  if (multiplayerPlan) {
-    const anchor = getTeamAnchor('player')
-    setCameraFocus(anchor.temple.x, anchor.temple.z)
-  }
+  // Open the camera over your own base, wherever your seat's anchor is on this map.
+  const startAnchor = getTeamAnchor('player')
+  setCameraFocus(startAnchor.temple.x, startAnchor.temple.z)
   setAckVoice(gameState.playerRace)
   startAmbientMusic()
 }
@@ -2317,13 +2315,27 @@ export function unloadSelectedTransport(): void {
   }
 }
 
-export type TransportCargoInfo = { count: number; capacity: number }
+export type TransportCargoInfo = {
+  count: number
+  capacity: number
+  /** One entry per rider so the HUD can draw their portraits. */
+  units: { id: string; name: string; variant: SoldierVariant | 'worker' }[]
+}
 
 /** Cargo readout for the info panel when a transport is selected. */
 export function getSelectedTransportCargo(): TransportCargoInfo | undefined {
   const selected = getSelected()
   if (!selected?.alive || selected.kind !== 'soldier' || (selected as Soldier).variant !== 'transport') return undefined
-  return { count: getCargoCount(selected as Soldier), capacity: TRANSPORT_CAPACITY }
+  const riders = getCargoUnits(selected as Soldier)
+  return {
+    count: riders.length,
+    capacity: TRANSPORT_CAPACITY,
+    units: riders.map((rider) => ({
+      id: rider.id,
+      name: rider.name,
+      variant: rider.kind === 'worker' ? 'worker' : (rider as Soldier).variant ?? 'melee'
+    }))
+  }
 }
 
 function assignWorkerToResource(worker: Worker, resource: ResourceNode, announce = true): void {

@@ -655,7 +655,7 @@ function infoPanel(selected: SelectedSummary) {
         ) : null}
       </UiEntity>
 
-      {multi ? wireframeGrid(units) : selected.kind === 'forge' || selected.kind === 'airForge' ? researchQueuePanel(selected) : productionQueuePanel(selected)}
+      {multi ? wireframeGrid(units) : selected.kind === 'forge' || selected.kind === 'airForge' ? researchQueuePanel(selected) : transportCargoPanel() ?? productionQueuePanel(selected)}
     </UiEntity>
   )
 }
@@ -767,6 +767,30 @@ function wireframeGrid(units: ReturnType<typeof getSelectedUnitsInfo>) {
           <Label value={`+${extra}`} fontSize={16} color={UI.text} textAlign="middle-center" />
         </UiEntity>
       ) : null}
+    </UiEntity>
+  )
+}
+
+/** Cargo hold readout for a selected transport: one portrait per rider, plus
+ * empty frames so the remaining capacity is visible at a glance. */
+function transportCargoPanel() {
+  const cargo = getSelectedTransportCargo()
+  if (!cargo) return null
+
+  const emptySlots = Math.max(0, cargo.capacity - cargo.units.length)
+  return (
+    <UiEntity uiTransform={{ flexDirection: 'column', width: 300, height: '100%', padding: { top: 30 } }}>
+      <Label value={`CARGO  ${cargo.count}/${cargo.capacity}`} fontSize={13} color={UI.dim} textAlign="middle-left" uiTransform={{ margin: { bottom: 8 } }} />
+      <UiEntity uiTransform={{ flexDirection: 'row', flexWrap: 'wrap', alignContent: 'flex-start', width: 300 }}>
+        {cargo.units.map((rider) => (
+          <UiEntity key={`cargo-${rider.id}`} uiTransform={{ width: 54, height: 54, margin: { right: 6, bottom: 6 }, padding: 2 }} uiBackground={{ color: UI.slotFrame }}>
+            <UiEntity uiTransform={{ width: '100%', height: '100%' }} uiBackground={{ textureMode: 'stretch', texture: { src: unitIcon(rider.variant) } }} />
+          </UiEntity>
+        ))}
+        {Array.from({ length: emptySlots }).map((_, index) => (
+          <UiEntity key={`cargo-empty-${index}`} uiTransform={{ width: 54, height: 54, margin: { right: 6, bottom: 6 } }} uiBackground={{ color: UI.cardSoft }} />
+        ))}
+      </UiEntity>
     </UiEntity>
   )
 }

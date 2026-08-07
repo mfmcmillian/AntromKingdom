@@ -49,9 +49,9 @@ const MINIMAP_COLORS = {
   goldMinerals: Color4.create(1, 0.8, 0.25, 1),
   cryoGas: Color4.create(0.55, 0.88, 1, 1),
   avatar: Color4.create(1, 1, 1, 1),
-  // Island maps: bright void between floating rock islands.
-  sky: Color4.create(0.16, 0.32, 0.55, 1),
-  island: Color4.create(0.32, 0.32, 0.36, 1)
+  // Island maps: deep-space void between grassy floating islands.
+  sky: Color4.create(0.05, 0.05, 0.12, 1),
+  island: Color4.create(0.24, 0.42, 0.18, 1)
 }
 
 /** World meters -> minimap pixels. */

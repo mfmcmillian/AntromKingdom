@@ -5,13 +5,14 @@ import type { IslandZone } from './maps'
 import { setClassicTerrainVisible } from './terrain'
 
 // ---------------------------------------------------------------------------
-// Island-map terrain: hides the classic battlefield and paints a sky "floor"
-// with floating rock islands on top. Everything stays paper-thin (the whole
-// stack lives between y 0.02 and 0.17) because fog-of-war tiles sit at ~0.18
-// and gameplay assumes a flat field.
+// Island-map terrain: hides the classic battlefield and paints a deep-space
+// "floor" with grassy floating islands on top. Everything stays paper-thin
+// (the whole stack lives between y 0.02 and 0.17) because fog-of-war tiles
+// sit at ~0.18 and gameplay assumes a flat field.
 // ---------------------------------------------------------------------------
 
-const GROUND_TEXTURE = 'assets/textures/moon_ground.png'
+const SPACE_TEXTURE = 'assets/textures/space_ceiling.png'
+const GRASS_TEXTURE = 'assets/textures/grass_ground.png'
 
 const entities: Entity[] = []
 
@@ -33,8 +34,8 @@ export function buildIslandTerrain(islands: IslandZone[]): void {
   setClassicTerrainVisible(false)
   seed = 991177
 
-  createSkyFloor()
-  createCloudLayer(islands)
+  createSpaceFloor()
+  createStarLayer(islands)
   for (const island of islands) createIsland(island)
 }
 
@@ -45,45 +46,37 @@ export function clearIslandTerrain(): void {
   setClassicTerrainVisible(true)
 }
 
-/** The void: a bright sky sheet covering the whole map under the islands. */
-function createSkyFloor(): void {
-  const sky = spawn()
-  Transform.create(sky, {
-    position: Vector3.create(SCENE.center, 0.02, SCENE.center),
-    rotation: Quaternion.fromEulerDegrees(90, 0, 0),
-    scale: Vector3.create(SCENE.size, SCENE.size, 1)
-  })
-  MeshRenderer.setPlane(sky)
-  Material.setPbrMaterial(sky, {
-    albedoColor: Color4.create(0.36, 0.58, 0.85, 1),
-    emissiveColor: Color4.create(0.22, 0.38, 0.6, 1),
-    emissiveIntensity: 0.55,
-    metallic: 0,
-    roughness: 1,
-    specularIntensity: 0,
-    castShadows: false
-  })
-
-  // A softer haze ring toward the middle so the sheet doesn't read as flat paint.
-  const haze = spawn()
-  Transform.create(haze, {
-    position: Vector3.create(SCENE.center, 0.035, SCENE.center),
-    scale: Vector3.create(SCENE.size * 0.7, 0.004, SCENE.size * 0.7)
-  })
-  MeshRenderer.setCylinder(haze)
-  Material.setPbrMaterial(haze, {
-    albedoColor: Color4.create(0.5, 0.7, 0.92, 1),
-    emissiveColor: Color4.create(0.32, 0.48, 0.68, 1),
-    emissiveIntensity: 0.4,
-    metallic: 0,
-    roughness: 1,
-    specularIntensity: 0,
-    castShadows: false
-  })
+/** The void: a starfield/nebula sheet covering the whole map under the islands. */
+function createSpaceFloor(): void {
+  // 2x2 grid of textured tiles so the starfield stays crisp across 160m.
+  const half = SCENE.size / 2
+  for (const ox of [0, 1]) {
+    for (const oz of [0, 1]) {
+      const tile = spawn()
+      Transform.create(tile, {
+        position: Vector3.create(half / 2 + ox * half, 0.02, half / 2 + oz * half),
+        rotation: Quaternion.fromEulerDegrees(90, 0, 0),
+        scale: Vector3.create(half, half, 1)
+      })
+      MeshRenderer.setPlane(tile)
+      Material.setPbrMaterial(tile, {
+        texture: Material.Texture.Common({ src: SPACE_TEXTURE, wrapMode: TextureWrapMode.TWM_REPEAT }),
+        // Emissive-lit so the stars glow on their own instead of needing sun.
+        emissiveTexture: Material.Texture.Common({ src: SPACE_TEXTURE, wrapMode: TextureWrapMode.TWM_REPEAT }),
+        albedoColor: Color4.create(0.55, 0.55, 0.65, 1),
+        emissiveColor: Color4.create(0.85, 0.85, 1, 1),
+        emissiveIntensity: 0.8,
+        metallic: 0,
+        roughness: 1,
+        specularIntensity: 0,
+        castShadows: false
+      })
+    }
+  }
 }
 
-/** Flat white cloud puffs drifting in the void between the islands. */
-function createCloudLayer(islands: IslandZone[]): void {
+/** Bright star glints and faint nebula wisps drifting in the void. */
+function createStarLayer(islands: IslandZone[]): void {
   const isInVoid = (x: number, z: number, clearance: number): boolean =>
     !islands.some((island) => {
       const dx = x - island.x
@@ -92,43 +85,68 @@ function createCloudLayer(islands: IslandZone[]): void {
       return dx * dx + dz * dz < reach * reach
     })
 
-  let placed = 0
+  // A few large translucent nebula wisps for color depth.
+  let wisps = 0
   let attempts = 0
-  while (placed < 34 && attempts < 260) {
+  while (wisps < 8 && attempts < 120) {
     attempts++
-    const x = 4 + random() * (SCENE.size - 8)
-    const z = 4 + random() * (SCENE.size - 8)
-    const size = 3 + random() * 7
-    if (!isInVoid(x, z, size * 0.5 + 1)) continue
+    const x = 6 + random() * (SCENE.size - 12)
+    const z = 6 + random() * (SCENE.size - 12)
+    const size = 8 + random() * 12
+    if (!isInVoid(x, z, size * 0.4)) continue
 
-    // Each puff is a cluster of 2-3 overlapping flat discs, so the shape
-    // reads as a cloud from the top-down camera instead of a perfect circle.
-    const discs = 2 + Math.floor(random() * 2)
-    for (let i = 0; i < discs; i++) {
-      const disc = spawn()
-      const discSize = size * (0.55 + random() * 0.5)
-      Transform.create(disc, {
-        position: Vector3.create(x + (random() - 0.5) * size * 0.7, 0.08 + random() * 0.06, z + (random() - 0.5) * size * 0.7),
-        scale: Vector3.create(discSize, 0.01, discSize * (0.6 + random() * 0.4))
-      })
-      MeshRenderer.setCylinder(disc)
-      Material.setPbrMaterial(disc, {
-        albedoColor: Color4.create(0.96, 0.98, 1, 1),
-        emissiveColor: Color4.create(0.6, 0.64, 0.7, 1),
-        emissiveIntensity: 0.35,
-        metallic: 0,
-        roughness: 1,
-        specularIntensity: 0,
-        castShadows: false
-      })
-    }
-    placed++
+    const wisp = spawn()
+    const violet = random() < 0.5
+    Transform.create(wisp, {
+      position: Vector3.create(x, 0.05, z),
+      scale: Vector3.create(size, 0.006, size * (0.5 + random() * 0.4))
+    })
+    MeshRenderer.setCylinder(wisp)
+    Material.setPbrMaterial(wisp, {
+      albedoColor: violet ? Color4.create(0.45, 0.3, 0.7, 0.16) : Color4.create(0.25, 0.5, 0.7, 0.16),
+      emissiveColor: violet ? Color4.create(0.5, 0.35, 0.8, 1) : Color4.create(0.3, 0.55, 0.8, 1),
+      emissiveIntensity: 0.5,
+      metallic: 0,
+      roughness: 1,
+      specularIntensity: 0,
+      castShadows: false
+    })
+    wisps++
+  }
+
+  // Bright star glints scattered through the void between the islands.
+  let stars = 0
+  attempts = 0
+  while (stars < 46 && attempts < 320) {
+    attempts++
+    const x = 3 + random() * (SCENE.size - 6)
+    const z = 3 + random() * (SCENE.size - 6)
+    if (!isInVoid(x, z, 1.5)) continue
+
+    const star = spawn()
+    const size = 0.18 + random() * 0.4
+    const warm = random() < 0.25
+    Transform.create(star, {
+      position: Vector3.create(x, 0.07, z),
+      scale: Vector3.create(size, 0.004, size)
+    })
+    MeshRenderer.setCylinder(star)
+    Material.setPbrMaterial(star, {
+      albedoColor: warm ? Color4.create(1, 0.9, 0.7, 1) : Color4.create(0.9, 0.95, 1, 1),
+      emissiveColor: warm ? Color4.create(1, 0.85, 0.6, 1) : Color4.create(0.85, 0.92, 1, 1),
+      emissiveIntensity: 2.4,
+      metallic: 0,
+      roughness: 1,
+      specularIntensity: 0,
+      castShadows: false
+    })
+    stars++
   }
 }
 
-/** One floating island: dark cliff rim ring under a moon-rock surface disc. */
+/** One floating island: earthy cliff rim ring under a grassy surface disc. */
 function createIsland(island: IslandZone): void {
-  // Cliff rim: slightly wider and darker, peeking out under the surface.
+  // Cliff rim: exposed earth peeking out under the grass.
   const rim = spawn()
   Transform.create(rim, {
     position: Vector3.create(island.x, 0.045, island.z),
@@ -136,15 +154,14 @@ function createIsland(island: IslandZone): void {
   })
   MeshRenderer.setCylinder(rim)
   Material.setPbrMaterial(rim, {
-    albedoColor: Color4.create(0.16, 0.15, 0.19, 1),
+    albedoColor: Color4.create(0.32, 0.22, 0.14, 1),
     metallic: 0,
     roughness: 1,
     specularIntensity: 0,
     castShadows: false
   })
 
-  // Surface: the same moon-rock texture as the classic map, so units and
-  // buildings sit on familiar ground.
+  // Surface: lush grass so the isles read as living land against the void.
   const surface = spawn()
   Transform.create(surface, {
     position: Vector3.create(island.x, 0.06, island.z),
@@ -152,15 +169,15 @@ function createIsland(island: IslandZone): void {
   })
   MeshRenderer.setCylinder(surface)
   Material.setPbrMaterial(surface, {
-    texture: Material.Texture.Common({ src: GROUND_TEXTURE, wrapMode: TextureWrapMode.TWM_REPEAT }),
-    albedoColor: Color4.create(0.9, 0.9, 0.96, 1),
+    texture: Material.Texture.Common({ src: GRASS_TEXTURE, wrapMode: TextureWrapMode.TWM_REPEAT }),
+    albedoColor: Color4.create(0.95, 1, 0.9, 1),
     metallic: 0,
     roughness: 1,
     specularIntensity: 0,
     castShadows: false
   })
 
-  // A couple of soft tone patches per island so the surface isn't uniform.
+  // A couple of soft meadow patches per island so the grass isn't uniform.
   const patches = 2 + Math.floor(random() * 2)
   for (let i = 0; i < patches; i++) {
     const patch = spawn()
@@ -173,7 +190,7 @@ function createIsland(island: IslandZone): void {
     })
     MeshRenderer.setCylinder(patch)
     Material.setPbrMaterial(patch, {
-      albedoColor: random() < 0.5 ? Color4.create(0.78, 0.78, 0.85, 1) : Color4.create(0.95, 0.93, 0.9, 1),
+      albedoColor: random() < 0.5 ? Color4.create(0.5, 0.72, 0.32, 0.55) : Color4.create(0.72, 0.82, 0.42, 0.45),
       metallic: 0,
       roughness: 1,
       specularIntensity: 0,
