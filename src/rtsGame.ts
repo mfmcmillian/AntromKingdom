@@ -1288,13 +1288,15 @@ function applyOpponentSetup(): void {
 
   for (let i = 0; i < gameState.activeEnemyTeams.length; i++) {
     const team = gameState.activeEnemyTeams[i]
-    const setup = opponents[i] ?? { race: 'random' as const, difficulty: 'medium' as const, ally: false }
-    const isAlly = gameState.gameMode === 'team' && setup.ally
+    const setup = opponents[i] ?? { race: 'random' as const, difficulty: 'medium' as const, team: 2 }
+    const isAlly = gameState.gameMode === 'team' && setup.team === 1
 
     gameState.enemyRaces[team] = setup.race === 'random' ? pickRandomRace() : setup.race
     gameState.enemyDifficulties[team] = setup.difficulty
-    // FFA: everyone for themselves. Team mode: allies join the player's id 0.
-    gameState.alliances[team] = gameState.gameMode === 'ffa' ? i + 1 : isAlly ? 0 : 1
+    // FFA: everyone for themselves. Team mode: setup team N maps straight to
+    // alliance id N-1, so team 1 joins the player (id 0) and teams 2-4 are
+    // mutually hostile enemy sides.
+    gameState.alliances[team] = gameState.gameMode === 'ffa' ? i + 1 : setup.team - 1
     gameState.enemySeatIndex[team] = isAlly ? openAnchors.pop()! : openAnchors.shift()!
   }
 

@@ -23,8 +23,11 @@ export type TeamStats = {
 export type OpponentSetup = {
   race: RaceId | 'random'
   difficulty: Difficulty
-  /** Team mode only: this computer fights on the player's side. */
-  ally: boolean
+  /**
+   * Team mode only: 1-based team number. Team 1 is the player's side; teams
+   * 2-4 are enemy sides that also fight each other.
+   */
+  team: number
 }
 
 function createEconomy(): TeamEconomy {
@@ -48,7 +51,7 @@ export const gameState = {
   // Battleground picked on the match setup screen (MP: synced via the lobby).
   selectedMapId: DEFAULT_MAP_ID,
   // Match setup chosen on the title screen: 1-5 computers, each with a race, difficulty and side.
-  opponents: [{ race: 'random', difficulty: 'medium', ally: false }] as OpponentSetup[],
+  opponents: [{ race: 'random', difficulty: 'medium', team: 2 }] as OpponentSetup[],
   // Resolved at match start from `opponents` (random races rolled here).
   activeEnemyTeams: ['enemy1'] as EnemyTeam[],
   enemyRaces: { enemy1: 'alien', enemy2: 'alien', enemy3: 'alien', enemy4: 'alien', enemy5: 'alien' } as Record<EnemyTeam, RaceId>,

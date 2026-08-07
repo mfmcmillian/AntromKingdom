@@ -1510,9 +1510,12 @@ const OPPONENT_SLOT_COLORS = [Color4.create(0.95, 0.3, 0.25, 1), Color4.create(1
 const ALLY_UI_COLOR = Color4.create(0.95, 0.85, 0.3, 1)
 
 const GAME_MODES: { id: GameMode; label: string; hint: string }[] = [
-  { id: 'team', label: 'TEAM', hint: 'Pick each computer\'s side. Allies fight with you and share vision.' },
+  { id: 'team', label: 'TEAM', hint: 'You are Team 1. Computers on Team 1 fight beside you; Teams 2-4 are enemies and also fight each other.' },
   { id: 'ffa', label: 'FFA', hint: 'Free-for-all: every computer fights everyone, including each other.' }
 ]
+
+/** Highest team number selectable on the setup screen (Team 1 = the player's). */
+const MAX_SETUP_TEAM = 4
 
 function opponentRaceLabel(race: RaceId | 'random'): string {
   return race === 'random' ? 'RANDOM' : RACES[race].name
@@ -1530,11 +1533,13 @@ function cycleOpponentDifficulty(index: number): void {
   setup.difficulty = DIFFICULTY_IDS[next]
 }
 
-function toggleOpponentSide(index: number): void {
+function cycleOpponentTeam(index: number): void {
   const setup = gameState.opponents[index]
-  // Someone has to be the enemy: block turning the last foe into an ally.
-  if (!setup.ally && gameState.opponents.filter((opponent) => !opponent.ally).length <= 1) return
-  setup.ally = !setup.ally
+  let next = setup.team >= MAX_SETUP_TEAM ? 1 : setup.team + 1
+  // Someone has to be the enemy: skip Team 1 if this is the last hostile computer.
+  const otherHostiles = gameState.opponents.filter((opponent, i) => i !== index && opponent.team !== 1).length
+  if (next === 1 && otherHostiles === 0) next = 2
+  setup.team = next
 }
 
 /** A click-to-cycle setting chip: shows the current value, advances on click. */
@@ -1553,17 +1558,33 @@ function opponentChip(key: string, value: string, width: number, onClick: () => 
   )
 }
 
+/** The player's own fixed row above the computers: always Team 1. */
+function playerSetupRow() {
+  return (
+    <UiEntity key="setup-you" uiTransform={{ width: '100%', height: 40, flexDirection: 'row', alignItems: 'center', margin: { bottom: 6 } }}>
+      <UiEntity uiTransform={{ width: 10, height: 10, margin: { right: 8 } }} uiBackground={{ color: ALLY_UI_COLOR }} />
+      <Label value="YOU" fontSize={13} color={UI.gold} textAlign="middle-left" uiTransform={{ width: 52 }} />
+      {gameState.gameMode === 'team' ? (
+        <UiEntity uiTransform={{ width: 74, height: 34, margin: { right: 6 }, justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.05, 0.07, 0.11, 0.96) }}>
+          <Label value="TEAM 1" fontSize={12} color={UI.gold} textAlign="middle-center" />
+        </UiEntity>
+      ) : null}
+      <Label value={RACES[gameState.playerRace].name} fontSize={13} color={UI.text} textAlign="middle-left" uiTransform={{ width: 120 }} />
+    </UiEntity>
+  )
+}
+
 function opponentRow(index: number) {
   const setup = gameState.opponents[index]
-  const isAlly = gameState.gameMode === 'team' && setup.ally
-  const slotColor = isAlly ? ALLY_UI_COLOR : OPPONENT_SLOT_COLORS[index]
+  const isAlly = gameState.gameMode === 'team' && setup.team === 1
+  const slotColor = isAlly ? ALLY_UI_COLOR : OPPONENT_SLOT_COLORS[index % OPPONENT_SLOT_COLORS.length]
 
   return (
     <UiEntity key={`opponent-${index}`} uiTransform={{ width: '100%', height: 40, flexDirection: 'row', alignItems: 'center', margin: { bottom: 6 } }}>
       <UiEntity uiTransform={{ width: 10, height: 10, margin: { right: 8 } }} uiBackground={{ color: slotColor }} />
       <Label value={`CPU ${index + 1}`} fontSize={13} color={UI.dim} textAlign="middle-left" uiTransform={{ width: 52 }} />
-      {gameState.gameMode === 'team' ? opponentChip(`opp-side-${index}`, isAlly ? 'ALLY' : 'FOE', 62, () => toggleOpponentSide(index)) : null}
-      {opponentChip(`opp-race-${index}`, opponentRaceLabel(setup.race), gameState.gameMode === 'team' ? 96 : 120, () => cycleOpponentRace(index))}
+      {gameState.gameMode === 'team' ? opponentChip(`opp-team-${index}`, `TEAM ${setup.team}`, 74, () => cycleOpponentTeam(index)) : null}
+      {opponentChip(`opp-race-${index}`, opponentRaceLabel(setup.race), gameState.gameMode === 'team' ? 90 : 120, () => cycleOpponentRace(index))}
       {opponentChip(`opp-diff-${index}`, AI_DIFFICULTY[setup.difficulty].label.toUpperCase(), 78, () => cycleOpponentDifficulty(index))}
       {gameState.opponents.length > 1 ? (
         <UiEntity
@@ -1572,7 +1593,7 @@ function opponentRow(index: number) {
           onMouseDown={() => {
             gameState.opponents.splice(index, 1)
             // Never leave the roster without a foe after a removal.
-            if (gameState.opponents.every((opponent) => opponent.ally)) gameState.opponents[0].ally = false
+            if (gameState.opponents.every((opponent) => opponent.team === 1)) gameState.opponents[0].team = 2
           }}
         >
           <Label value="X" fontSize={13} color={UI.text} textAlign="middle-center" />
@@ -1737,7 +1758,7 @@ function startScreenOverlay() {
           }}
         >
           <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.06, 0.14, 0.28, 1) }}>
-              <Label value="CONTINUE" fontSize={22} color={Color4.create(0.85, 0.93, 1, 1)} textAlign="middle-center" />
+              <Label value="SINGLE PLAYER" fontSize={22} color={Color4.create(0.85, 0.93, 1, 1)} textAlign="middle-center" />
             </UiEntity>
           </UiEntity>
           <UiEntity
@@ -1844,18 +1865,19 @@ function matchSetupOverlay() {
         }}
         uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.9) }}
       >
-        <Label value="OPPONENTS" fontSize={22} color={UI.text} textAlign="middle-left" uiTransform={{ margin: { bottom: 18 } }} />
+        <Label value="TEAMS" fontSize={22} color={UI.text} textAlign="middle-left" uiTransform={{ margin: { bottom: 18 } }} />
         <Label value="GAME MODE" fontSize={14} color={Color4.create(0.75, 0.78, 0.85, 0.9)} textAlign="middle-left" uiTransform={{ margin: { bottom: 8 } }} />
         {gameModeToggle()}
         <Label value={GAME_MODES.find((mode) => mode.id === gameState.gameMode)?.hint ?? ''} fontSize={12} color={Color4.create(0.55, 0.58, 0.66, 0.9)} textAlign="middle-left" uiTransform={{ margin: { bottom: 18 } }} />
-        <Label value="COMPUTERS" fontSize={14} color={Color4.create(0.75, 0.78, 0.85, 0.9)} textAlign="middle-left" uiTransform={{ margin: { bottom: 10 } }} />
+        <Label value="PLAYERS" fontSize={14} color={Color4.create(0.75, 0.78, 0.85, 0.9)} textAlign="middle-left" uiTransform={{ margin: { bottom: 10 } }} />
+        {playerSetupRow()}
         {gameState.opponents.map((_, index) => opponentRow(index))}
         {gameState.opponents.length < 5 ? (
           <UiEntity
             uiTransform={{ width: 180, height: 34, margin: { top: 6 }, justifyContent: 'center', alignItems: 'center' }}
             uiBackground={{ color: Color4.create(0.12, 0.3, 0.16, 0.95) }}
             onMouseDown={() => {
-              gameState.opponents.push({ race: 'random', difficulty: 'medium', ally: false })
+              gameState.opponents.push({ race: 'random', difficulty: 'medium', team: 2 })
             }}
           >
             <Label value="+ ADD COMPUTER" fontSize={12} color={UI.text} textAlign="middle-center" />
