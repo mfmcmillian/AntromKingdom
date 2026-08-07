@@ -1,4 +1,4 @@
-import { Material, MeshRenderer, Transform, engine } from '@dcl/sdk/ecs'
+import { ColliderLayer, Material, MeshCollider, MeshRenderer, Transform, engine } from '@dcl/sdk/ecs'
 import { Color3, Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { SCENE } from './config'
 
@@ -71,5 +71,39 @@ export function buildEnvironmentEnclosure(): void {
       roughness: 1,
       castShadows: false
     })
+  }
+
+  buildBoundaryColliders()
+}
+
+/**
+ * Invisible physics walls just inside the scene border. The horizon panels are
+ * render-only, so without these an avatar can wander onto the neighbouring
+ * parcel - at which point THAT scene activates and slaps its UI over our HUD.
+ * Physics-only layer: bodies bounce off, but pointer rays (unit clicks, ground
+ * orders near the edge) pass straight through.
+ */
+function buildBoundaryColliders(): void {
+  const size = SCENE.size
+  const center = SCENE.center
+  const wallThickness = 2
+  // Sunk below ground and taller than any terrain bump or jump arc.
+  const wallBottom = -10
+  const wallTop = WALL_HEIGHT
+  const wallMidY = (wallBottom + wallTop) / 2
+  const wallScaleY = wallTop - wallBottom
+  const inset = wallThickness / 2 + 0.3
+
+  const walls: { pos: Vector3; scale: Vector3 }[] = [
+    { pos: Vector3.create(center, wallMidY, size - inset), scale: Vector3.create(size, wallScaleY, wallThickness) },
+    { pos: Vector3.create(center, wallMidY, inset), scale: Vector3.create(size, wallScaleY, wallThickness) },
+    { pos: Vector3.create(size - inset, wallMidY, center), scale: Vector3.create(wallThickness, wallScaleY, size) },
+    { pos: Vector3.create(inset, wallMidY, center), scale: Vector3.create(wallThickness, wallScaleY, size) }
+  ]
+
+  for (const wall of walls) {
+    const entity = engine.addEntity()
+    Transform.create(entity, { position: wall.pos, scale: wall.scale })
+    MeshCollider.setBox(entity, ColliderLayer.CL_PHYSICS)
   }
 }
