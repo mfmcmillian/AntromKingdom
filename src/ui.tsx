@@ -298,6 +298,7 @@ export const uiMenu = () => {
       {gameState.matchStatus === 'active' ? bottomConsole(selected) : null}
       {gameState.matchStatus === 'active' ? idleWorkerButton() : null}
       {gameState.matchStatus === 'active' ? controlGroupsBar() : null}
+      {gameState.matchStatus === 'active' ? matchRosterButton() : null}
       {gameState.matchStatus === 'active' ? matchRosterPanel() : null}
 
       {minimapPanel()}
@@ -439,38 +440,95 @@ function attackAlertBanner() {
   )
 }
 
-/**
- * Slim commanders roster under the resource bar: everyone in the match, their
- * seat color, ally tags, and OUT the moment their last building falls.
- */
-function matchRosterPanel() {
-  const roster = getMatchRoster()
-  if (roster.length < 2) return null
+/** Whether the mid-screen commanders panel is open (toggled by the HUD button). */
+let showRosterPanel = false
 
+/** Small HUD button under the resource bar that opens the commanders panel. */
+function matchRosterButton() {
   return (
     <UiEntity
       uiTransform={{
         positionType: 'absolute',
         position: { top: 64, right: 12 },
-        width: 250,
-        flexDirection: 'column',
-        padding: { top: 8, bottom: 8, left: 12, right: 12 }
+        width: 130,
+        height: 32,
+        justifyContent: 'center',
+        alignItems: 'center'
       }}
-      uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.7) }}
+      uiBackground={{ color: showRosterPanel ? Color4.create(0.12, 0.2, 0.32, 0.95) : Color4.create(0.02, 0.03, 0.05, 0.78) }}
+      onMouseDown={() => {
+        playUiClick()
+        showRosterPanel = !showRosterPanel
+      }}
     >
-      <Label value="COMMANDERS" fontSize={11} color={Color4.create(0.55, 0.58, 0.66, 0.9)} textAlign="middle-left" uiTransform={{ width: '100%', height: 14, margin: { bottom: 4 } }} />
+      <Label value="PLAYERS" fontSize={14} color={UI.text} textAlign="middle-center" />
+    </UiEntity>
+  )
+}
+
+/**
+ * StarCraft-style mid-screen commanders panel: everyone in the match with seat
+ * color, race, human/CPU, ally tag, and OUT the moment their last building falls.
+ */
+function matchRosterPanel() {
+  if (!showRosterPanel) return null
+  const roster = getMatchRoster()
+
+  return (
+    <UiEntity
+      uiTransform={{
+        positionType: 'absolute',
+        position: { top: 240, left: '50%' },
+        margin: { left: -280 },
+        width: 560,
+        flexDirection: 'column',
+        padding: { top: 20, bottom: 20, left: 26, right: 26 }
+      }}
+      uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.94) }}
+    >
+      <UiEntity uiTransform={{ width: '100%', height: 30, flexDirection: 'row', alignItems: 'center', margin: { bottom: 14 } }}>
+        <Label value="COMMANDERS" fontSize={22} color={UI.gold} textAlign="middle-left" uiTransform={{ width: 420, height: '100%' }} />
+        <UiEntity
+          uiTransform={{ width: 34, height: 30, justifyContent: 'center', alignItems: 'center' }}
+          uiBackground={{ color: Color4.create(0.45, 0.12, 0.12, 0.9) }}
+          onMouseDown={() => {
+            showRosterPanel = false
+          }}
+        >
+          <Label value="X" fontSize={14} color={UI.text} textAlign="middle-center" />
+        </UiEntity>
+      </UiEntity>
+
       {roster.map((entry) => (
-        <UiEntity key={`roster-${entry.team}`} uiTransform={{ width: '100%', height: 20, flexDirection: 'row', alignItems: 'center' }}>
-          <UiEntity uiTransform={{ width: 10, height: 10, margin: { right: 8 } }} uiBackground={{ color: LOBBY_SEAT_COLORS[entry.seat] ?? UI.dim }} />
+        <UiEntity
+          key={`roster-${entry.team}`}
+          uiTransform={{ width: '100%', height: 42, flexDirection: 'row', alignItems: 'center', margin: { bottom: 6 }, padding: { left: 12, right: 12 } }}
+          uiBackground={{ color: entry.team === 'player' ? Color4.create(0.08, 0.11, 0.17, 0.95) : Color4.create(0.05, 0.06, 0.09, 0.92) }}
+        >
+          <UiEntity uiTransform={{ width: 14, height: 14, margin: { right: 12 } }} uiBackground={{ color: LOBBY_SEAT_COLORS[entry.seat] ?? UI.dim }} />
           <Label
-            value={`${entry.name}${entry.team !== 'player' && entry.ally ? '  · ally' : ''}`}
-            fontSize={12}
+            value={entry.name}
+            fontSize={16}
             color={entry.eliminated ? Color4.create(0.5, 0.38, 0.38, 0.85) : UI.text}
             textAlign="middle-left"
             textWrap="nowrap"
-            uiTransform={{ width: 172, height: '100%' }}
+            uiTransform={{ width: 200, height: '100%' }}
           />
-          {entry.eliminated ? <Label value="OUT" fontSize={11} color={UI.red} textAlign="middle-right" uiTransform={{ width: 34, height: '100%' }} /> : null}
+          <Label value={RACES[entry.race].name.toUpperCase()} fontSize={12} color={RACES[entry.race].accent} textAlign="middle-left" uiTransform={{ width: 120, height: '100%' }} />
+          <Label
+            value={entry.team === 'player' ? 'YOU' : entry.ally ? 'ALLY' : entry.isHuman ? 'HUMAN' : 'CPU'}
+            fontSize={12}
+            color={entry.team === 'player' || entry.ally ? UI.gold : UI.dim}
+            textAlign="middle-left"
+            uiTransform={{ width: 80, height: '100%' }}
+          />
+          <Label
+            value={entry.eliminated ? 'ELIMINATED' : 'IN COMMAND'}
+            fontSize={12}
+            color={entry.eliminated ? UI.red : UI.green}
+            textAlign="middle-right"
+            uiTransform={{ width: 90, height: '100%' }}
+          />
         </UiEntity>
       ))}
     </UiEntity>
@@ -705,20 +763,25 @@ function wireframeGrid(units: ReturnType<typeof getSelectedUnitsInfo>) {
   )
 }
 
-/** SC-style production readout: queued unit icon, progress bar of the active order, queue count. */
+/**
+ * SC-style production readout: the active order's icon with its progress bar,
+ * then the rest of the queue as an icon strip so you can see what's coming.
+ */
 function productionQueuePanel(selected: SelectedSummary) {
   if (selected.team !== undefined && selected.team !== 'player') return null
   const queue = getSelectedProductionQueue()
-  if (!queue) return null
+  if (!queue || queue.entries.length === 0) return null
 
-  const icon = selected.kind === 'temple' ? unitIcon('worker') : unitIcon(queue.variant ?? 'melee')
+  const entryIcon = (entry: SoldierVariant | 'worker') => unitIcon(entry)
+  const waiting = queue.entries.slice(1, 6)
+  const overflow = queue.entries.length - 1 - waiting.length
 
   return (
     <UiEntity uiTransform={{ flexDirection: 'column', width: 300, height: '100%', padding: { top: 30 } }}>
       <Label value="PRODUCTION" fontSize={13} color={UI.dim} textAlign="middle-left" uiTransform={{ margin: { bottom: 8 } }} />
       <UiEntity uiTransform={{ flexDirection: 'row', alignItems: 'center' }}>
-        <UiEntity uiTransform={{ width: 56, height: 56, padding: 2, margin: { right: 12 } }} uiBackground={{ color: UI.slotFrame }}>
-          <UiEntity uiTransform={{ width: '100%', height: '100%' }} uiBackground={{ textureMode: 'stretch', texture: { src: icon } }} />
+        <UiEntity uiTransform={{ width: 56, height: 56, padding: 2, margin: { right: 12 } }} uiBackground={{ color: UI.accent }}>
+          <UiEntity uiTransform={{ width: '100%', height: '100%' }} uiBackground={{ textureMode: 'stretch', texture: { src: entryIcon(queue.entries[0]) } }} />
         </UiEntity>
         <UiEntity uiTransform={{ flexDirection: 'column', width: 200 }}>
           <UiEntity uiTransform={{ width: 200, height: 12, padding: 2 }} uiBackground={{ color: UI.panelStrong }}>
@@ -727,6 +790,20 @@ function productionQueuePanel(selected: SelectedSummary) {
           <Label value={`In queue: ${queue.count}`} fontSize={14} color={UI.text} textAlign="middle-left" uiTransform={{ margin: { top: 6 } }} />
         </UiEntity>
       </UiEntity>
+      {waiting.length > 0 ? (
+        <UiEntity uiTransform={{ flexDirection: 'row', margin: { top: 8 } }}>
+          {waiting.map((entry, index) => (
+            <UiEntity key={`queue-${index}`} uiTransform={{ width: 36, height: 36, margin: { right: 5 }, padding: 2 }} uiBackground={{ color: UI.slotFrame }}>
+              <UiEntity uiTransform={{ width: '100%', height: '100%' }} uiBackground={{ textureMode: 'stretch', texture: { src: entryIcon(entry) } }} />
+            </UiEntity>
+          ))}
+          {overflow > 0 ? (
+            <UiEntity uiTransform={{ width: 36, height: 36, justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: UI.cardSoft }}>
+              <Label value={`+${overflow}`} fontSize={13} color={UI.text} textAlign="middle-center" />
+            </UiEntity>
+          ) : null}
+        </UiEntity>
+      ) : null}
     </UiEntity>
   )
 }
@@ -2067,7 +2144,7 @@ function lobbyMapRow(iAmHost: boolean) {
   )
 }
 
-/** Who's in the world right now, docked to the left of the seats box. */
+/** Who's in the world right now, docked to the right of the seats box. */
 function lobbyOnlinePlayersPanel() {
   const players = getPresentPlayers()
   const myAddress = getMyAddress()
@@ -2077,7 +2154,7 @@ function lobbyOnlinePlayersPanel() {
       uiTransform={{
         positionType: 'absolute',
         position: { top: 240, left: '50%' },
-        margin: { left: -710 },
+        margin: { left: 450 },
         width: 260,
         flexDirection: 'column',
         padding: { top: 24, bottom: 24, left: 20, right: 20 }

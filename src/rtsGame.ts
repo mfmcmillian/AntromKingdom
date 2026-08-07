@@ -127,6 +127,7 @@ import type {
   EnemyTeam,
   ModelConfig,
   PlacementState,
+  RaceId,
   ResourceCost,
   ResourceKind,
   ResourceNode,
@@ -1399,6 +1400,8 @@ export type ProductionQueueInfo = {
   count: number
   progress: number
   variant?: SoldierVariant
+  /** Every queued order in sequence ('worker' or the fighter variant), for the icon strip. */
+  entries: (SoldierVariant | 'worker')[]
 }
 
 /** Production queue of the selected building, for the info panel (count + progress of the active order). */
@@ -1409,13 +1412,18 @@ export function getSelectedProductionQueue(): ProductionQueueInfo | undefined {
   if (selected.kind === 'temple') {
     const orders = workerProductionOrders.filter((order) => order.templeId === selected.id)
     if (orders.length === 0) return undefined
-    return { count: orders.length, progress: clamp(orders[0].timer / orders[0].productionTime, 0, 1) }
+    return { count: orders.length, progress: clamp(orders[0].timer / orders[0].productionTime, 0, 1), entries: orders.map(() => 'worker' as const) }
   }
 
   if (selected.kind === 'barracks' || selected.kind === 'techLab') {
     const orders = soldierProductionOrders.filter((order) => order.barracksId === selected.id)
     if (orders.length === 0) return undefined
-    return { count: orders.length, progress: clamp(orders[0].timer / orders[0].productionTime, 0, 1), variant: orders[0].variant }
+    return {
+      count: orders.length,
+      progress: clamp(orders[0].timer / orders[0].productionTime, 0, 1),
+      variant: orders[0].variant,
+      entries: orders.map((order) => order.variant)
+    }
   }
 
   return undefined
@@ -3048,6 +3056,7 @@ export function getTeamDisplayName(team: Team): string {
 export type MatchRosterEntry = {
   team: Team
   name: string
+  race: RaceId
   /** Map seat, for the seat-color swatch in the HUD roster. */
   seat: number
   isHuman: boolean
@@ -3061,6 +3070,7 @@ export function getMatchRoster(): MatchRosterEntry[] {
   return teams.map((team) => ({
     team,
     name: getTeamDisplayName(team),
+    race: team === 'player' ? gameState.playerRace : gameState.enemyRaces[team as EnemyTeam],
     seat: team === 'player' ? (multiplayerPlan?.mySeatIndex ?? 0) : gameState.enemySeatIndex[team as EnemyTeam],
     isHuman: team === 'player' || isMultiplayerHumanTeam(team),
     ally: team !== 'player' && isPlayerAlly(team),
