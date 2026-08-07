@@ -79,9 +79,47 @@ const UNITS = {
   ]
 }
 
+// Buildings fit BOTH budgets: BUILDING_MODEL_HEIGHTS (collider / health bar
+// height) and the placement footprint from BUILDING_DEFINITIONS.scale. The
+// smaller of the two scale factors wins so nothing overflows its ghost.
+const BUILDINGS = {
+  human: [
+    { role: 'temple', match: 'commandpost', height: 11, footprint: 10, tris: 8000 },
+    { role: 'supplyHouse', match: 'habitat', height: 5, footprint: 6, tris: 5000 },
+    { role: 'barracks', match: 'armory', height: 7, footprint: 5.85, tris: 6000 },
+    { role: 'techLab', match: 'starforge', height: 8, footprint: 5.5, tris: 6000 },
+    { role: 'forge', match: 'foundry', height: 6, footprint: 4.5, tris: 5000 },
+    { role: 'airForge', match: 'skyharbor', height: 7, footprint: 5, tris: 6000 },
+    { role: 'fireplace', match: 'beacon', height: 3, footprint: 2.5, tris: 4000 },
+    { role: 'turret', match: 'sentrycannon', height: 5, footprint: 2.6, tris: 4000 }
+  ],
+  alien: [
+    { role: 'temple', match: 'monolith', height: 11, footprint: 10, tris: 8000 },
+    { role: 'supplyHouse', match: 'conduit', height: 5, footprint: 6, tris: 5000 },
+    { role: 'barracks', match: 'riftgate', height: 7, footprint: 5.85, tris: 6000 },
+    { role: 'techLab', match: 'sanctum', height: 8, footprint: 5.5, tris: 6000 },
+    { role: 'forge', match: 'ascensionspire', height: 6, footprint: 4.5, tris: 5000 },
+    { role: 'airForge', match: 'zenithspire', height: 7, footprint: 5, tris: 6000 },
+    { role: 'fireplace', match: 'obelisk', height: 3, footprint: 2.5, tris: 4000 },
+    { role: 'turret', match: 'arcspire', height: 5, footprint: 2.6, tris: 4000 }
+  ],
+  bio: [
+    { role: 'temple', match: 'broodheart', height: 11, footprint: 10, tris: 8000 },
+    { role: 'supplyHouse', match: 'growthpod', height: 5, footprint: 6, tris: 5000 },
+    { role: 'barracks', match: 'spawningpit', height: 7, footprint: 5.85, tris: 6000 },
+    { role: 'techLab', match: 'grandnest', height: 8, footprint: 5.5, tris: 6000 },
+    { role: 'forge', match: 'mutationden', height: 6, footprint: 4.5, tris: 5000 },
+    { role: 'airForge', match: 'windroost', height: 7, footprint: 5, tris: 6000 },
+    { role: 'fireplace', match: 'sporemound', height: 3, footprint: 2.5, tris: 4000 },
+    { role: 'turret', match: 'thornmound', height: 5, footprint: 2.6, tris: 4000 }
+  ]
+}
+
 const sourceDir = process.argv[2]
+// Optional second arg: 'units' | 'buildings' | 'all' (default all).
+const set = process.argv[3] ?? 'all'
 if (!sourceDir) {
-  console.error('Usage: node scripts/optimize-unit-models.mjs <sourceDir>')
+  console.error('Usage: node scripts/optimize-unit-models.mjs <sourceDir> [units|buildings|all]')
   process.exit(1)
 }
 
@@ -101,68 +139,89 @@ function countTriangles(doc) {
   return total
 }
 
-for (const [race, units] of Object.entries(UNITS)) {
-  const outDir = join('models', 'units', race)
+async function processModel(category, race, entry) {
+  const outDir = join('models', category, race)
   mkdirSync(outDir, { recursive: true })
 
-  for (const unit of units) {
-    const fileName = sourceFiles.find((name) => name.toLowerCase().includes(unit.match))
-    if (!fileName) {
-      console.log(`SKIP  ${race}/${unit.role}: no file matching "${unit.match}" in ${sourceDir}`)
-      continue
-    }
+  const fileName = sourceFiles.find((name) => name.toLowerCase().includes(entry.match))
+  if (!fileName) {
+    console.log(`SKIP  ${category}/${race}/${entry.role}: no file matching "${entry.match}" in ${sourceDir}`)
+    return
+  }
 
-    const sourcePath = join(sourceDir, fileName)
-    const doc = await io.read(sourcePath)
+  const doc = await io.read(join(sourceDir, fileName))
 
-    const before = countTriangles(doc)
-    const ratio = Math.min(1, unit.tris / before)
-    await doc.transform(weld(), simplify({ simplifier: MeshoptSimplifier, ratio, error: 0.25 }))
+  const before = countTriangles(doc)
+  const ratio = Math.min(1, entry.tris / before)
+  await doc.transform(weld(), simplify({ simplifier: MeshoptSimplifier, ratio, error: 0.25 }))
 
-    // Base color carries the whole look at RTS zoom; everything else is dead
-    // weight. Fixed factors replace the dropped metallic-roughness map.
-    for (const material of doc.getRoot().listMaterials()) {
-      material.setNormalTexture(null)
-      material.setMetallicRoughnessTexture(null)
-      material.setEmissiveTexture(null)
-      material.setEmissiveFactor([0, 0, 0])
-      material.setMetallicFactor(0)
-      material.setRoughnessFactor(0.85)
-    }
+  // Base color carries the whole look at RTS zoom; everything else is dead
+  // weight. Fixed factors replace the dropped metallic-roughness map.
+  for (const material of doc.getRoot().listMaterials()) {
+    material.setNormalTexture(null)
+    material.setMetallicRoughnessTexture(null)
+    material.setEmissiveTexture(null)
+    material.setEmissiveFactor([0, 0, 0])
+    material.setMetallicFactor(0)
+    material.setRoughnessFactor(0.85)
+  }
 
-    await doc.transform(
-      textureCompress({ encoder: sharp, targetFormat: 'jpeg', quality: 80, resize: [512, 512] }),
-      dedup(),
-      prune()
-    )
+  await doc.transform(
+    textureCompress({ encoder: sharp, targetFormat: 'jpeg', quality: 80, resize: [512, 512] }),
+    dedup(),
+    prune()
+  )
 
-    // Bake feet-on-ground centering and in-game scale into a wrapper node.
-    const scene = doc.getRoot().getDefaultScene() ?? doc.getRoot().listScenes()[0]
-    const bounds = getBounds(scene)
-    const sizeX = bounds.max[0] - bounds.min[0]
-    const sizeY = bounds.max[1] - bounds.min[1]
-    const sizeZ = bounds.max[2] - bounds.min[2]
-    const measured = unit.mode === 'height' ? sizeY : Math.max(sizeX, sizeZ)
-    const scale = unit.size / measured
-    const centerX = (bounds.min[0] + bounds.max[0]) / 2
-    const centerZ = (bounds.min[2] + bounds.max[2]) / 2
+  // Bake feet-on-ground centering and in-game scale into a wrapper node.
+  const scene = doc.getRoot().getDefaultScene() ?? doc.getRoot().listScenes()[0]
+  const bounds = getBounds(scene)
+  const sizeX = bounds.max[0] - bounds.min[0]
+  const sizeY = bounds.max[1] - bounds.min[1]
+  const sizeZ = bounds.max[2] - bounds.min[2]
+  const footprint = Math.max(sizeX, sizeZ)
 
-    const wrapper = doc
-      .createNode(`${race}-${unit.role}`)
-      .setScale([scale, scale, scale])
-      .setTranslation([-centerX * scale, -bounds.min[1] * scale, -centerZ * scale])
-    for (const child of scene.listChildren()) wrapper.addChild(child)
-    scene.addChild(wrapper)
+  let scale
+  let targetLabel
+  if (entry.mode === 'height') {
+    scale = entry.size / sizeY
+    targetLabel = `${entry.size}m height`
+  } else if (entry.mode === 'footprint') {
+    scale = entry.size / footprint
+    targetLabel = `${entry.size}m footprint`
+  } else {
+    // Fit: respect both the height and the footprint budget.
+    scale = Math.min(entry.height / sizeY, entry.footprint / footprint)
+    targetLabel = `fit h${entry.height}/fp${entry.footprint} -> ${(sizeY * scale).toFixed(1)}m tall, ${(footprint * scale).toFixed(1)}m wide`
+  }
+  const centerX = (bounds.min[0] + bounds.max[0]) / 2
+  const centerZ = (bounds.min[2] + bounds.max[2]) / 2
 
-    const outPath = join(outDir, `${unit.role}.glb`)
-    await io.write(outPath, doc)
+  const wrapper = doc
+    .createNode(`${race}-${entry.role}`)
+    .setScale([scale, scale, scale])
+    .setTranslation([-centerX * scale, -bounds.min[1] * scale, -centerZ * scale])
+  for (const child of scene.listChildren()) wrapper.addChild(child)
+  scene.addChild(wrapper)
 
-    const outKb = Math.round(statSync(outPath).size / 1024)
-    const after = countTriangles(doc)
-    console.log(
-      `OK    ${race}/${unit.role}: ${Math.round(before / 1000)}k -> ${Math.round(after)} tris, ` +
-        `${outKb} KB, ${sizeX.toFixed(2)}x${sizeY.toFixed(2)}x${sizeZ.toFixed(2)} raw -> ${unit.size}m ${unit.mode}`
-    )
+  const outPath = join(outDir, `${entry.role}.glb`)
+  await io.write(outPath, doc)
+
+  const outKb = Math.round(statSync(outPath).size / 1024)
+  const after = countTriangles(doc)
+  console.log(
+    `OK    ${category}/${race}/${entry.role}: ${Math.round(before / 1000)}k -> ${Math.round(after)} tris, ` +
+      `${outKb} KB, ${sizeX.toFixed(2)}x${sizeY.toFixed(2)}x${sizeZ.toFixed(2)} raw -> ${targetLabel}`
+  )
+}
+
+if (set === 'units' || set === 'all') {
+  for (const [race, entries] of Object.entries(UNITS)) {
+    for (const entry of entries) await processModel('units', race, entry)
+  }
+}
+if (set === 'buildings' || set === 'all') {
+  for (const [race, entries] of Object.entries(BUILDINGS)) {
+    for (const entry of entries) await processModel('buildings', race, entry)
   }
 }
 

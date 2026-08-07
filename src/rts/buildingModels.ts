@@ -1,4 +1,4 @@
-import { Entity, Material, MeshRenderer, Transform, VisibilityComponent, engine } from '@dcl/sdk/ecs'
+import { Entity, GltfContainer, Material, MeshRenderer, Transform, VisibilityComponent, engine } from '@dcl/sdk/ecs'
 import { Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import type { BuildableKind, RaceId } from './types'
 
@@ -11,6 +11,46 @@ import type { BuildableKind, RaceId } from './types'
 // (placement rotation, construction growth, death) carries every part along.
 // Parts tagged with a motion (spin / bob / pulse) are animated continuously,
 // so every base reads as a living, working machine.
+
+/**
+ * Meshy-generated building models (optimized by scripts/optimize-unit-models.mjs:
+ * feet at y=0, XZ-centered, pre-scaled to fit the collider height and placement
+ * footprint). When a race/kind pair is listed here it replaces the procedural
+ * build; anything missing falls back to the primitive-part version below.
+ * yaw turns the model so its front door faces the building's +Z.
+ */
+const GLB_BUILDINGS: Record<RaceId, Partial<Record<BuildableKind, { src: string; yaw?: number }>>> = {
+  human: {
+    temple: { src: 'models/buildings/human/temple.glb' },
+    supplyHouse: { src: 'models/buildings/human/supplyHouse.glb' },
+    barracks: { src: 'models/buildings/human/barracks.glb' },
+    techLab: { src: 'models/buildings/human/techLab.glb' },
+    forge: { src: 'models/buildings/human/forge.glb' },
+    airForge: { src: 'models/buildings/human/airForge.glb' },
+    fireplace: { src: 'models/buildings/human/fireplace.glb' },
+    turret: { src: 'models/buildings/human/turret.glb' }
+  },
+  alien: {
+    temple: { src: 'models/buildings/alien/temple.glb' },
+    supplyHouse: { src: 'models/buildings/alien/supplyHouse.glb' },
+    barracks: { src: 'models/buildings/alien/barracks.glb' },
+    techLab: { src: 'models/buildings/alien/techLab.glb' },
+    forge: { src: 'models/buildings/alien/forge.glb' },
+    airForge: { src: 'models/buildings/alien/airForge.glb' },
+    fireplace: { src: 'models/buildings/alien/fireplace.glb' },
+    turret: { src: 'models/buildings/alien/turret.glb' }
+  },
+  bio: {
+    temple: { src: 'models/buildings/bio/temple.glb' },
+    supplyHouse: { src: 'models/buildings/bio/supplyHouse.glb' },
+    barracks: { src: 'models/buildings/bio/barracks.glb' },
+    techLab: { src: 'models/buildings/bio/techLab.glb' },
+    forge: { src: 'models/buildings/bio/forge.glb' },
+    airForge: { src: 'models/buildings/bio/airForge.glb' },
+    fireplace: { src: 'models/buildings/bio/fireplace.glb' },
+    turret: { src: 'models/buildings/bio/turret.glb' }
+  }
+}
 
 /** Approximate model heights, used for click colliders and damage VFX anchors. */
 export const BUILDING_MODEL_HEIGHTS: Record<BuildableKind, number> = {
@@ -86,6 +126,8 @@ type AnimatedPart = {
 type BuildingRig = {
   parts: BuildingPart[]
   animated: AnimatedPart[]
+  /** GLB container entities (Meshy buildings). Visibility toggles cover them; damage charring does not. */
+  glbEntities: Entity[]
   time: number
   damageLevel: number
 }
@@ -133,11 +175,21 @@ export function buildBuildingModel(root: Entity, race: RaceId, kind: BuildableKi
     return part
   }
 
-  if (race === 'human') buildHumanBuilding(kind, addPart)
+  const glbEntities: Entity[] = []
+  const glb = GLB_BUILDINGS[race]?.[kind]
+  if (glb) {
+    const model = engine.addEntity()
+    Transform.create(model, {
+      parent: root,
+      rotation: Quaternion.fromEulerDegrees(0, glb.yaw ?? 0, 0)
+    })
+    GltfContainer.create(model, { src: glb.src })
+    glbEntities.push(model)
+  } else if (race === 'human') buildHumanBuilding(kind, addPart)
   else if (race === 'alien') buildAlienBuilding(kind, addPart)
   else buildBioBuilding(kind, addPart)
 
-  buildingRigs.set(root, { parts, animated, time: Math.random() * 20, damageLevel: 0 })
+  buildingRigs.set(root, { parts, animated, glbEntities, time: Math.random() * 20, damageLevel: 0 })
 }
 
 /** Drives the moving parts (radar dishes, floating crystals, pulsing sacs) on every building. */
@@ -196,6 +248,9 @@ export function setBuildingModelVisible(entity: Entity, visible: boolean): void 
   for (const part of rig.parts) {
     VisibilityComponent.createOrReplace(part.entity, { visible })
   }
+  for (const entity of rig.glbEntities) {
+    VisibilityComponent.createOrReplace(entity, { visible })
+  }
 }
 
 /**
@@ -235,6 +290,7 @@ export function disposeBuildingModel(entity: Entity, removeParts: boolean): void
 
   if (removeParts) {
     for (const part of rig.parts) engine.removeEntity(part.entity)
+    for (const glbEntity of rig.glbEntities) engine.removeEntity(glbEntity)
   }
   buildingRigs.delete(entity)
 }

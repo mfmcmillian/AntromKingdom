@@ -1,19 +1,28 @@
-import { Entity, Material, MeshRenderer, Transform, engine } from '@dcl/sdk/ecs'
-import { Quaternion, Vector3 } from '@dcl/sdk/math'
+import { Entity, Material, MaterialTransparencyMode, MeshRenderer, Transform, engine } from '@dcl/sdk/ecs'
+import { Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { COLORS } from './config'
+
+// StarCraft-style selection circle: one flat plane per selected unit carrying
+// a crisp ring texture (thin circle + dash accents + soft glow), tinted by
+// relationship and slowly rotating so the dashes give it life.
 
 export type SelectionMarkerTarget = {
   position: Vector3
   diameter: number
+  /** Relationship color: green own, yellow ally, red enemy. */
+  color?: Color4
 }
 
-const RING_SEGMENTS = 8
-const SEGMENT_SIZE = 0.14
-const MARKER_Y = 0.08
-const SPIN_DEGREES_PER_SECOND = 45
+const MARKER_Y = 0.06
+const SPIN_DEGREES_PER_SECOND = 30
 const HIDDEN_POSITION = Vector3.create(0, -20, 0)
+// The ring artwork spans ~87% of the texture; overscale so the painted circle
+// matches the requested diameter.
+const TEXTURE_FILL = 1 / 0.875
 
-const markerPool: Entity[] = []
+type Marker = { entity: Entity; color: Color4 }
+
+const markerPool: Marker[] = []
 let activeMarkerCount = 0
 let spinAngle = 0
 
@@ -21,14 +30,16 @@ let spinAngle = 0
 export function updateSelectionMarkers(targets: SelectionMarkerTarget[]): void {
   for (let i = 0; i < targets.length; i++) {
     const marker = getOrCreateMarker(i)
-    const transform = Transform.getMutable(marker)
+    const size = targets[i].diameter * TEXTURE_FILL
+    const transform = Transform.getMutable(marker.entity)
     transform.position = Vector3.create(targets[i].position.x, MARKER_Y, targets[i].position.z)
-    transform.scale = Vector3.create(targets[i].diameter, 1, targets[i].diameter)
-    transform.rotation = Quaternion.fromEulerDegrees(0, spinAngle, 0)
+    transform.scale = Vector3.create(size, size, 1)
+    transform.rotation = Quaternion.fromEulerDegrees(90, spinAngle, 0)
+    tintMarker(marker, targets[i].color ?? COLORS.selected)
   }
 
   for (let i = targets.length; i < activeMarkerCount; i++) {
-    Transform.getMutable(markerPool[i]).position = HIDDEN_POSITION
+    Transform.getMutable(markerPool[i].entity).position = HIDDEN_POSITION
   }
   activeMarkerCount = targets.length
 }
@@ -37,36 +48,38 @@ export function clearSelectionMarkers(): void {
   updateSelectionMarkers([])
 }
 
-function getOrCreateMarker(index: number): Entity {
+function getOrCreateMarker(index: number): Marker {
   while (markerPool.length <= index) {
     markerPool.push(createRingMarker())
   }
   return markerPool[index]
 }
 
-function createRingMarker(): Entity {
-  const root = engine.addEntity()
-  Transform.create(root, { position: HIDDEN_POSITION })
+/** Re-tints the marker when it gets recycled onto a different team's unit. */
+function tintMarker(marker: Marker, color: Color4): void {
+  if (marker.color.r === color.r && marker.color.g === color.g && marker.color.b === color.b) return
+  marker.color = color
+  applyMarkerMaterial(marker.entity, color)
+}
 
-  for (let i = 0; i < RING_SEGMENTS; i++) {
-    const angle = (i / RING_SEGMENTS) * Math.PI * 2
-    const segment = engine.addEntity()
-    Transform.create(segment, {
-      parent: root,
-      // Radius 0.5 so the root's scale equals the ring's diameter.
-      position: Vector3.create(Math.cos(angle) * 0.5, 0, Math.sin(angle) * 0.5),
-      rotation: Quaternion.fromEulerDegrees(0, -(angle * 180) / Math.PI, 0),
-      scale: Vector3.create(SEGMENT_SIZE, 0.045, SEGMENT_SIZE * 2)
-    })
-    MeshRenderer.setBox(segment)
-    Material.setPbrMaterial(segment, {
-      albedoColor: COLORS.selected,
-      emissiveColor: COLORS.selected,
-      emissiveIntensity: 2.4
-    })
-  }
+function applyMarkerMaterial(entity: Entity, color: Color4): void {
+  Material.setPbrMaterial(entity, {
+    texture: Material.Texture.Common({ src: 'images/selection-ring.png' }),
+    alphaTexture: Material.Texture.Common({ src: 'images/selection-ring.png' }),
+    albedoColor: Color4.create(color.r, color.g, color.b, 0.9),
+    emissiveColor: color,
+    emissiveIntensity: 1.6,
+    transparencyMode: MaterialTransparencyMode.MTM_ALPHA_BLEND,
+    castShadows: false
+  })
+}
 
-  return root
+function createRingMarker(): Marker {
+  const entity = engine.addEntity()
+  Transform.create(entity, { position: HIDDEN_POSITION })
+  MeshRenderer.setPlane(entity)
+  applyMarkerMaterial(entity, COLORS.selected)
+  return { entity, color: COLORS.selected }
 }
 
 function spinSelectionMarkersSystem(dt: number): void {

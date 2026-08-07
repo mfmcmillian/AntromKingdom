@@ -79,19 +79,19 @@ import { createEnemyAi, updateEnemyAi as updateEnemyAiSystem, type EnemyAi } fro
 import { updateSoldierProduction as updateSoldierProductionSystem, updateWorkerProduction as updateWorkerProductionSystem } from './rts/systems/production'
 import { addAttackPing, clearAttackPings, updateAttackPings } from './rts/minimap'
 import { clearHealthBars, updateHealthBars } from './rts/healthBars'
-import { updateUnitSeparation } from './rts/systems/separation'
+import { clampPointOutsideBuildings, updateUnitSeparation } from './rts/systems/separation'
 import { updateWorkers as updateWorkersSystem } from './rts/systems/workers'
 import { mulberry32, type LocalMatchPlan } from './rts/multiplayer/seatMap'
 import { broadcastMyCommand, isRelayActive, stopCommandRelay } from './rts/multiplayer/commandRelay'
 import { getMyAddress, isPlayerPresent, isRankedLobby, reportRankedResult } from './rts/multiplayer/session'
 import type { MatchCommand } from './rts/multiplayer/protocol'
 import { updateDragSelect } from './rts/dragSelect'
-import { initFogOfWar, resetFogOfWar } from './rts/fogOfWar'
+import { initFogOfWar, isPositionVisibleToPlayer, resetFogOfWar } from './rts/fogOfWar'
 import { isPointerOverHud } from './rts/hud'
 import { SelectionMarkerTarget, clearSelectionMarkers, updateSelectionMarkers } from './rts/selectionMarkers'
 import { buildEnvironmentEnclosure } from './rts/environment'
 import { buildTerrain } from './rts/terrain'
-import { buildUnitModel, disposeUnit, getTeamColor, isProceduralUnit, setSiegeDeployProgress, setUnitAnimation, setUnitUpgradeInsignia, updateUnitCargo } from './rts/unitModels'
+import { buildUnitModel, disposeUnit, getTeamColor, isProceduralUnit, setSiegeDeployProgress, setUnitAnimation, setUnitTeamRingVisible, setUnitUpgradeInsignia, updateUnitCargo } from './rts/unitModels'
 import { BUILDING_MODEL_HEIGHTS, buildBuildingModel, disposeBuildingModel, isProceduralBuilding, setBuildingModelDamage } from './rts/buildingModels'
 import { RACES, TRANSPORT_CAPACITY, UNIT_REQUIREMENTS, getBuildingDisplayName, getRace, getSoldierDefinition, getWorkerDefinition, isAirVariant, pickRandomRace } from './rts/races'
 import { buildResourceModel, disposeResourceModel, playResourceDepletion, playResourceGatherPulse } from './rts/resourceModels'
@@ -1769,7 +1769,7 @@ function createWorker(position: Vector3, team: Team = 'player'): Worker {
     position,
     team,
     // Generous click box: units are small targets from the overhead camera.
-    Vector3.create(1.1, 1.8, 1.1)
+    Vector3.create(1.5, 2.2, 1.5)
   ) as Worker
 
   worker.hp = definition.hp
@@ -1821,13 +1821,13 @@ function createSoldier(position: Vector3, team: Team = 'player', variant: Soldie
 
 /** Generous click boxes sized to each silhouette: flyers hover high, titans are huge. */
 function getSoldierColliderScale(variant: SoldierVariant): Vector3 {
-  if (variant === 'hero') return Vector3.create(3, 4.2, 3)
-  if (variant === 'titan') return Vector3.create(2.4, 3.2, 2.4)
-  if (variant === 'flyer') return Vector3.create(1.8, 3.2, 1.8)
-  if (variant === 'transport') return Vector3.create(2.6, 3.4, 2.6)
-  if (variant === 'heavyAir') return Vector3.create(3, 4, 3)
-  if (variant === 'siege') return Vector3.create(2, 2.4, 2)
-  return Vector3.create(1.4, 2, 1.4)
+  if (variant === 'hero') return Vector3.create(3.4, 4.6, 3.4)
+  if (variant === 'titan') return Vector3.create(3, 4, 3)
+  if (variant === 'flyer') return Vector3.create(2.2, 3.6, 2.2)
+  if (variant === 'transport') return Vector3.create(3, 3.8, 3)
+  if (variant === 'heavyAir') return Vector3.create(3.6, 4.6, 3.6)
+  if (variant === 'siege') return Vector3.create(2.6, 3, 2.6)
+  return Vector3.create(1.8, 2.6, 1.8)
 }
 
 /** Info-panel blurb for siege artillery, reflecting its current mode. */
@@ -2110,6 +2110,13 @@ function registerSelectable(selectable: Selectable): void {
   // Procedural roots have no mesh of their own, so registering them only triggers warnings.
   if (selectable.colliderEntity && (GltfContainer.has(selectable.entity) || MeshRenderer.has(selectable.entity))) {
     registerPointerHandler(selectable.entity, selectable)
+  }
+
+  // StarCraft-style hover feedback: the owner-colored ring lights up underfoot
+  // while the pointer is over a unit.
+  if (selectable.kind === 'worker' || selectable.kind === 'soldier') {
+    pointerEventsSystem.onPointerHoverEnter({ entity: pointerTarget }, () => setUnitTeamRingVisible(selectable.entity, true))
+    pointerEventsSystem.onPointerHoverLeave({ entity: pointerTarget }, () => setUnitTeamRingVisible(selectable.entity, false))
   }
 }
 
@@ -2409,7 +2416,9 @@ function sendWorkerToRally(worker: Worker, rallyPoint: Vector3): void {
   worker.timer = 0
   worker.carrying = 0
   worker.carryingResource = undefined
-  worker.rallyPoint = cloneVector(rallyPoint)
+  // Buildings are solid: a destination on a roof becomes its nearest wall.
+  const walkable = clampPointOutsideBuildings(rallyPoint)
+  worker.rallyPoint = Vector3.create(walkable.x, rallyPoint.y, walkable.z)
   setWorkerAnimation(worker, 'walk')
 }
 
@@ -2426,7 +2435,13 @@ function sendSoldierToRally(soldier: Soldier, rallyPoint: Vector3): void {
   soldier.patrolPointA = undefined
   soldier.patrolPointB = undefined
   soldier.autoEngaged = false
-  soldier.rallyPoint = cloneVector(rallyPoint)
+  // Ground troops can't stand inside buildings; air units may hover anywhere.
+  if (isAirVariant(soldier.variant)) {
+    soldier.rallyPoint = cloneVector(rallyPoint)
+  } else {
+    const walkable = clampPointOutsideBuildings(rallyPoint)
+    soldier.rallyPoint = Vector3.create(walkable.x, rallyPoint.y, walkable.z)
+  }
   soldier.attackTimer = 0
   setSoldierAnimation(soldier, 'walk')
 }
@@ -2690,18 +2705,34 @@ const dragSelectDeps = {
 
 function isPointerPressOnSelectable(): boolean {
   const command = inputSystem.getInputCommand(InputAction.IA_POINTER, PointerEventType.PET_DOWN)
-  const hitEntityId = command?.hit?.entityId
-  if (hitEntityId === undefined) return false
+  let hit = command?.hit?.entityId as Entity | undefined
+  if (hit === undefined) return false
 
-  for (const selectable of selectables.values()) {
-    if (selectable.entity === hitEntityId) return true
-    if (selectable.colliderEntity === hitEntityId) return true
+  // The ray can land on a child mesh of a unit or building (GLB body part,
+  // cargo prop) instead of the registered collider box; climb the parent chain
+  // so those presses still count as "on a selectable" and never issue a move.
+  for (let hops = 0; hops < 6 && hit !== undefined; hops++) {
+    for (const selectable of selectables.values()) {
+      if (selectable.entity === hit) return true
+      if (selectable.colliderEntity === hit) return true
+    }
+    hit = Transform.getOrNull(hit)?.parent
   }
   return false
 }
 
 /** Plain ground click with units selected = walk there, classic RTS style. */
 function moveSelectedUnitsTo(point: { x: number; z: number }): void {
+  // From the steep RTS camera a click on a unit can slip past its click box and
+  // hit the ground at its feet. A ground click landing on top of a unit is
+  // really a click on that unit: yours get selected, hostiles get attacked,
+  // exactly as if the click had hit the unit itself.
+  const clickedUnit = findUnitAtPoint(point)
+  if (clickedUnit) {
+    handleSelectableClick(clickedUnit.id)
+    return
+  }
+
   const movableWorkers = getSelectedWorkers().filter(
     (worker) =>
       worker.alive &&
@@ -2738,6 +2769,30 @@ function moveSelectedUnitsTo(point: { x: number; z: number }): void {
   showMoveMarker(point)
   playAcknowledge()
   setStatus(`${unitCount} unit${unitCount === 1 ? '' : 's'} moving.`)
+}
+
+/** The living unit (any team) whose footprint covers this ground point, nearest first. */
+function findUnitAtPoint(point: { x: number; z: number }): Worker | Soldier | undefined {
+  let best: Worker | Soldier | undefined
+  let bestDistanceSq = Infinity
+
+  const consider = (unit: Worker | Soldier) => {
+    if (!unit.alive || unit.inTransportId) return
+    const position = Transform.get(unit.entity).position
+    // Units shrouded by fog can't be clicked, so this can't order attacks blind.
+    if (getTeam(unit) !== 'player' && !isPositionVisibleToPlayer(position)) return
+    const dx = position.x - point.x
+    const dz = position.z - point.z
+    const radius = getUnitSelectionFootprint(unit) / 2 + 0.35
+    const distanceSq = dx * dx + dz * dz
+    if (distanceSq > radius * radius || distanceSq >= bestDistanceSq) return
+    best = unit
+    bestDistanceSq = distanceSq
+  }
+
+  for (const worker of workers) consider(worker)
+  for (const soldier of soldiers) consider(soldier)
+  return best
 }
 
 // ---------------------------------------------------------------------------
@@ -3144,16 +3199,37 @@ function getSelectionMarkerTargets(): SelectionMarkerTarget[] {
   return selected?.alive ? [getSelectionMarkerTarget(selected)] : []
 }
 
+const SELECTION_ALLY_COLOR = Color4.create(0.95, 0.85, 0.25, 1)
+const SELECTION_ENEMY_COLOR = Color4.create(1, 0.3, 0.25, 1)
+
 function getSelectionMarkerTarget(selectable: Selectable): SelectionMarkerTarget {
   const transform = Transform.get(selectable.entity)
   // Procedural building roots have unit scale, so size the ring from the footprint definition.
   const definition = isBuildableKind(selectable.kind as Building['kind']) ? BUILDING_DEFINITIONS[selectable.kind as BuildableKind] : undefined
-  const footprint = definition ? Math.max(definition.scale.x, definition.scale.z) : Math.max(transform.scale.x, transform.scale.z)
+  const footprint = definition ? Math.max(definition.scale.x, definition.scale.z) : getUnitSelectionFootprint(selectable)
+
+  // StarCraft-style relationship color: green own, yellow ally, red enemy.
+  const team = getTeam(selectable)
+  const color = team === 'player' ? COLORS.selected : isPlayerAlly(team) ? SELECTION_ALLY_COLOR : SELECTION_ENEMY_COLOR
 
   return {
     position: transform.position,
-    diameter: footprint + 0.55
+    diameter: footprint + 0.55,
+    color
   }
+}
+
+/** Selection ring footprint per unit silhouette (the roots all have scale 1). */
+function getUnitSelectionFootprint(selectable: Selectable): number {
+  if (selectable.kind === 'worker') return 1.1
+  const variant = (selectable as Soldier).variant
+  if (variant === 'hero') return 2.9
+  if (variant === 'titan') return 2.5
+  if (variant === 'heavyAir') return 2.6
+  if (variant === 'transport' || variant === 'siege') return 2.2
+  if (variant === 'flyer') return 1.7
+  if (variant === 'caster') return 1.4
+  return 1.3
 }
 
 function updateMatchTimer(dt: number): void {
@@ -4817,6 +4893,8 @@ function removeSelectableInteractivity(selectable: Selectable): void {
   const pointerTarget = selectable.colliderEntity ?? selectable.entity
 
   pointerEventsSystem.removeOnPointerDown(pointerTarget)
+  pointerEventsSystem.removeOnPointerHoverEnter(pointerTarget)
+  pointerEventsSystem.removeOnPointerHoverLeave(pointerTarget)
   MeshCollider.deleteFrom(pointerTarget)
   if (selectable.colliderEntity) {
     pointerEventsSystem.removeOnPointerDown(selectable.entity)

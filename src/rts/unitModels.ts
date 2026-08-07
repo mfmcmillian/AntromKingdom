@@ -1,4 +1,4 @@
-import { Entity, GltfContainer, Material, MeshRenderer, Transform, VisibilityComponent, engine } from '@dcl/sdk/ecs'
+import { Entity, GltfContainer, Material, MaterialTransparencyMode, MeshRenderer, Transform, VisibilityComponent, engine } from '@dcl/sdk/ecs'
 import { Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { isPlayerAlly } from './state'
 import { RaceId, ResourceKind, Team } from './types'
@@ -63,6 +63,9 @@ interface UnitRig {
   /** Ground rings/discs under hero feet - hidden on the map, shown as a showcase pedestal. */
   groundFx: Entity[]
   groundFxVisible: boolean
+  /** Owner-colored ring underfoot, StarCraft style: hidden until hovered. */
+  teamRing?: Entity
+  teamRingVisible: boolean
   /** Siege units: the deployed-mode cannon group, grown from scale 0 while digging in. */
   siegeCannon?: Entity
   /** GLB units: model top in meters (primitive-part scan can't see inside a GLB). */
@@ -181,8 +184,29 @@ type GlbUnit = {
   src: string
   /** Extra yaw (degrees) so the model faces the game's +Z forward. */
   yaw: number
-  /** Model top in meters (anchors the upgrade insignia above the silhouette). */
+  /** Model top in meters at bake scale (anchors the upgrade insignia above the silhouette). */
   topY: number
+}
+
+/**
+ * Runtime scale-up over the baked model size. The GLBs were baked matching the
+ * old procedural silhouettes, which read too small from the RTS camera - this
+ * boosts them without re-processing. Infantry gets the biggest push; capital
+ * pieces grow less so they don't crowd the buildings.
+ */
+const GLB_ROLE_SCALE: Record<UnitRole, number> = {
+  worker: 1.45,
+  melee: 1.45,
+  ranged: 1.45,
+  healer: 1.45,
+  caster: 1.4,
+  antiAir: 1.4,
+  flyer: 1.35,
+  transport: 1.3,
+  heavyAir: 1.2,
+  siege: 1.35,
+  titan: 1.3,
+  hero: 1.35
 }
 
 const GLB_UNITS: Partial<Record<RaceId, Partial<Record<UnitRole, GlbUnit>>>> = {
@@ -267,17 +291,22 @@ function glbProfiles(role: UnitRole): Record<UnitAnimState, MotionProfile> {
 }
 
 function buildGlbUnit(rig: UnitRig, config: GlbUnit, race: RaceId, role: UnitRole): void {
+  const boost = GLB_ROLE_SCALE[role] ?? 1
   const model = engine.addEntity()
-  Transform.create(model, { parent: rig.bodyRoot, rotation: Quaternion.fromEulerDegrees(0, config.yaw, 0) })
+  Transform.create(model, {
+    parent: rig.bodyRoot,
+    rotation: Quaternion.fromEulerDegrees(0, config.yaw, 0),
+    scale: Vector3.create(boost, boost, boost)
+  })
   GltfContainer.create(model, { src: config.src })
   rig.parts.push(model)
-  rig.topYOverride = config.topY
+  rig.topYOverride = config.topY * boost
   rig.profiles = glbProfiles(role)
 
-  // Same hover altitudes as the procedural air units.
-  if (role === 'flyer') rig.baseHeight = 2.0
-  else if (role === 'transport') rig.baseHeight = 2.1
-  else if (role === 'heavyAir') rig.baseHeight = 2.6
+  // Hover altitudes for air units, lifted a touch since the craft grew.
+  if (role === 'flyer') rig.baseHeight = 2.3
+  else if (role === 'transport') rig.baseHeight = 2.5
+  else if (role === 'heavyAir') rig.baseHeight = 3.0
 
   // Siege mode still grows a deployed cannon while dug in, flavored per race:
   // steel howitzer / gold-and-crystal lance / fleshy acid stalk.
@@ -285,13 +314,14 @@ function buildGlbUnit(rig: UnitRig, config: GlbUnit, race: RaceId, role: UnitRol
     const base = race === 'bio' ? BIO_CARAPACE : race === 'alien' ? ALIEN_GOLD : METAL_DARK
     const barrel = race === 'bio' ? BIO_FLESH : race === 'alien' ? ALIEN_GOLD : METAL_LIGHT
     const tip = race === 'bio' ? GAS_BARREL_GLOW : race === 'alien' ? ALIEN_CRYSTAL : BLADE_STEEL
+    const top = config.topY * boost
     const group = createSiegeCannonGroup(rig)
-    addChildPart(rig, group, Vector3.create(0, config.topY - 0.15, 0), Vector3.create(0.55, 0.18, 0.55), base, { cylinder: true })
-    addChildPart(rig, group, Vector3.create(0, config.topY + 0.25, 0.45), Vector3.create(0.16, 1.3, 0.16), barrel, {
+    addChildPart(rig, group, Vector3.create(0, top - 0.15, 0), Vector3.create(0.55, 0.18, 0.55), base, { cylinder: true })
+    addChildPart(rig, group, Vector3.create(0, top + 0.25, 0.45), Vector3.create(0.16, 1.3, 0.16), barrel, {
       cylinder: true,
       rotation: Quaternion.fromEulerDegrees(55, 0, 0)
     })
-    addChildPart(rig, group, Vector3.create(0, config.topY + 0.62, 0.98), Vector3.create(0.2, 0.12, 0.2), tip, {
+    addChildPart(rig, group, Vector3.create(0, top + 0.62, 0.98), Vector3.create(0.2, 0.12, 0.2), tip, {
       cylinder: race !== 'bio',
       sphere: race === 'bio',
       emissive: race === 'human' ? undefined : tip,
@@ -317,6 +347,7 @@ export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team:
     fx: [],
     groundFx: [],
     groundFxVisible: false,
+    teamRingVisible: false,
     state: 'idle',
     time: Math.random() * 10,
     profiles: { idle: STILL, walk: STILL, talk: STILL, attack: STILL, impact: STILL }
@@ -385,16 +416,32 @@ export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team:
     else buildBioBehemoth(rig, addPart, glow)
   }
 
-  if (role === 'worker') addWorkerCargo(rig, addPart)
+  if (role === 'worker') addWorkerCargo(rig, addPart, glbConfig ? GLB_ROLE_SCALE.worker : 1)
 
-  // Always-on ownership disc underfoot: race decides the silhouette, but this
-  // is what tells armies apart when two factions field the same race.
-  const ringSize = TEAM_RING_SIZE[role]
-  addPart(Vector3.create(0, 0.02, 0), Vector3.create(ringSize, 0.015, ringSize), Color4.create(glow.r, glow.g, glow.b, 0.32), {
-    cylinder: true,
-    emissive: glow,
-    emissiveIntensity: 1.5
+  // Ownership ring underfoot, StarCraft style: hidden on the open field, shown
+  // in the owner's color while the pointer hovers the unit. (Selection uses
+  // the spinning marker, colored by relationship, instead.)
+  const ringSize = TEAM_RING_SIZE[role] * (GLB_ROLE_SCALE[role] ?? 1)
+  const ring = engine.addEntity()
+  Transform.create(ring, {
+    parent: bodyRoot,
+    position: Vector3.create(0, 0.03, 0),
+    rotation: Quaternion.fromEulerDegrees(90, 0, 0),
+    scale: Vector3.create(ringSize, ringSize, 1)
   })
+  MeshRenderer.setPlane(ring)
+  Material.setPbrMaterial(ring, {
+    texture: Material.Texture.Common({ src: 'images/team-ring.png' }),
+    alphaTexture: Material.Texture.Common({ src: 'images/team-ring.png' }),
+    albedoColor: Color4.create(glow.r, glow.g, glow.b, 0.85),
+    emissiveColor: glow,
+    emissiveIntensity: 1.2,
+    transparencyMode: MaterialTransparencyMode.MTM_ALPHA_BLEND,
+    castShadows: false
+  })
+  VisibilityComponent.create(ring, { visible: false })
+  rig.teamRing = ring
+  rig.parts.push(ring)
 
   // Ground rings start hidden; only the showcase pedestal turns them on.
   applyGroundFxVisibility(rig)
@@ -2393,31 +2440,33 @@ function buildBioHero(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
 }
 
 /** Cargo strapped to a worker's back: faceted mineral crystals or a banded gas barrel. */
-function addWorkerCargo(rig: UnitRig, addPart: PartAdder): void {
+function addWorkerCargo(rig: UnitRig, addPart: PartAdder, boost = 1): void {
+  const at = (x: number, y: number, z: number) => Vector3.create(x * boost, y * boost, z * boost)
+  const dim = (x: number, y: number, z: number) => Vector3.create(x * boost, y * boost, z * boost)
   rig.mineralCargo = [
-    addPart(Vector3.create(0, 0.95, -0.42), Vector3.create(0.24, 0.34, 0.24), MINERAL_CARGO_BLUE, {
+    addPart(at(0, 0.95, -0.42), dim(0.24, 0.34, 0.24), MINERAL_CARGO_BLUE, {
       emissive: MINERAL_CARGO_GLOW,
       emissiveIntensity: 1,
       rotation: Quaternion.fromEulerDegrees(18, 45, 0)
     }),
-    addPart(Vector3.create(0.12, 0.82, -0.4), Vector3.create(0.14, 0.2, 0.14), MINERAL_CARGO_BLUE, {
+    addPart(at(0.12, 0.82, -0.4), dim(0.14, 0.2, 0.14), MINERAL_CARGO_BLUE, {
       emissive: MINERAL_CARGO_GLOW,
       emissiveIntensity: 1,
       rotation: Quaternion.fromEulerDegrees(-12, 70, 8)
     })
   ]
   rig.gasCargo = [
-    addPart(Vector3.create(0, 0.9, -0.42), Vector3.create(0.22, 0.34, 0.22), GAS_BARREL_GREEN, {
+    addPart(at(0, 0.9, -0.42), dim(0.22, 0.34, 0.22), GAS_BARREL_GREEN, {
       cylinder: true,
       emissive: GAS_BARREL_GLOW,
       emissiveIntensity: 0.5,
       rotation: Quaternion.fromEulerDegrees(10, 0, 0)
     }),
-    addPart(Vector3.create(0, 0.99, -0.445), Vector3.create(0.24, 0.04, 0.24), METAL_LIGHT, {
+    addPart(at(0, 0.99, -0.445), dim(0.24, 0.04, 0.24), METAL_LIGHT, {
       cylinder: true,
       rotation: Quaternion.fromEulerDegrees(10, 0, 0)
     }),
-    addPart(Vector3.create(0, 0.81, -0.415), Vector3.create(0.24, 0.04, 0.24), METAL_LIGHT, {
+    addPart(at(0, 0.81, -0.415), dim(0.24, 0.04, 0.24), METAL_LIGHT, {
       cylinder: true,
       rotation: Quaternion.fromEulerDegrees(10, 0, 0)
     })
@@ -2503,7 +2552,7 @@ export function setUnitVisible(root: Entity, visible: boolean): void {
   const cargoParts = new Set([...rig.mineralCargo, ...rig.gasCargo])
   const groundParts = new Set(rig.groundFx)
   for (const part of rig.parts) {
-    if (cargoParts.has(part) || groundParts.has(part)) continue
+    if (cargoParts.has(part) || groundParts.has(part) || part === rig.teamRing) continue
     VisibilityComponent.createOrReplace(part, { visible })
   }
   for (const pip of rig.insignia) {
@@ -2513,6 +2562,21 @@ export function setUnitVisible(root: Entity, visible: boolean): void {
   applyCargoVisibility(rig)
   // Ground rings stay hidden on the map regardless of fog.
   applyGroundFxVisibility(rig)
+  // The hover ring keeps its own state, gated by the fog like everything else.
+  applyTeamRingVisibility(rig)
+}
+
+function applyTeamRingVisibility(rig: UnitRig): void {
+  if (!rig.teamRing) return
+  VisibilityComponent.createOrReplace(rig.teamRing, { visible: rig.teamRingVisible && !rig.fogHidden })
+}
+
+/** Shows/hides the owner-colored ring under a unit (pointer hover). */
+export function setUnitTeamRingVisible(root: Entity, visible: boolean): void {
+  const rig = rigs.get(root)
+  if (!rig || rig.teamRingVisible === visible) return
+  rig.teamRingVisible = visible
+  applyTeamRingVisibility(rig)
 }
 
 // Upgrade rank pips: orange diamonds for Weapons levels, cyan for Propulsion.

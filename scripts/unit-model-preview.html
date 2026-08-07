@@ -26,11 +26,14 @@
 
     const params = new URLSearchParams(location.search)
     const race = params.get('race') || 'human'
-    // ?only=<role> renders a single model close up (orientation checks).
-    const ROLES = params.get('only')
-      ? [params.get('only')]
+    // ?set=buildings previews models/buildings/<race>/ instead of units.
+    const set = params.get('set') || 'units'
+    const DEFAULT_ROLES = set === 'buildings'
+      ? ['fireplace', 'turret', 'supplyHouse', 'forge', 'barracks', 'airForge', 'techLab', 'temple']
       : ['worker', 'melee', 'ranged', 'healer', 'caster', 'antiAir', 'flyer', 'transport', 'heavyAir', 'siege', 'titan', 'hero']
-    const COLS = 6, SPACING = 4
+    // ?only=<role> renders a single model close up (orientation checks).
+    const ROLES = params.get('only') ? [params.get('only')] : DEFAULT_ROLES
+    const COLS = set === 'buildings' ? 4 : 6, SPACING = set === 'buildings' ? 12 : 4
 
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0x202830)
@@ -47,7 +50,7 @@
       const z = ROLES.length === 1 ? 0 : (Math.floor(i / COLS) - 0.5) * SPACING
       // Red arrow = the game's +Z forward direction.
       scene.add(new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(x, 0.05, z), 1.6, 0xff3333, 0.4, 0.25))
-      loader.load(`../models/units/${race}/${role}.glb`, (gltf) => {
+      loader.load(`../models/${set}/${race}/${role}.glb`, (gltf) => {
         gltf.scene.position.set(x, 0, z)
         scene.add(gltf.scene)
         document.getElementById('labels').textContent += `${role} `
@@ -63,13 +66,17 @@
     // ?top=1 switches to a straight top-down view (+Z toward screen bottom)
     // for reading each model's facing axis.
     const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 200)
+    const big = set === 'buildings'
     if (params.get('only')) {
       // Single model at the origin; view it from the +X/+Z quarter.
-      camera.position.set(4, 3, 4.5)
-      camera.lookAt(0, 0.6, 0)
+      if (big) { camera.position.set(9, 7, 11); camera.lookAt(0, 3, 0) }
+      else { camera.position.set(4, 3, 4.5); camera.lookAt(0, 0.6, 0) }
     } else if (params.get('top')) {
-      camera.position.set(0, 24, 0.01)
+      camera.position.set(0, big ? 60 : 24, 0.01)
       camera.lookAt(0, 0, 0)
+    } else if (big) {
+      camera.position.set(0, 20, 34)
+      camera.lookAt(0, 3, 0)
     } else {
       camera.position.set(0, 9, 15)
       camera.lookAt(0, 0.6, 0)
