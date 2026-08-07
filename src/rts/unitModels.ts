@@ -217,6 +217,22 @@ const GLB_UNITS: Partial<Record<RaceId, Partial<Record<UnitRole, GlbUnit>>>> = {
     siege: { src: 'models/units/alien/siege.glb', yaw: -90, topY: 1.4 },
     titan: { src: 'models/units/alien/titan.glb', yaw: 0, topY: 2.8 },
     hero: { src: 'models/units/alien/hero.glb', yaw: 0, topY: 2.0 }
+  },
+  bio: {
+    worker: { src: 'models/units/bio/worker.glb', yaw: 0, topY: 0.7 },
+    melee: { src: 'models/units/bio/melee.glb', yaw: 0, topY: 1.05 },
+    ranged: { src: 'models/units/bio/ranged.glb', yaw: 0, topY: 0.9 },
+    healer: { src: 'models/units/bio/healer.glb', yaw: 0, topY: 1.1 },
+    caster: { src: 'models/units/bio/caster.glb', yaw: 0, topY: 1.5 },
+    antiAir: { src: 'models/units/bio/antiAir.glb', yaw: 0, topY: 1.3 },
+    // The shrieker flies head-first along -X like the Vanguard vehicles; the
+    // broodwing jellyfish is radially symmetric so yaw is moot.
+    flyer: { src: 'models/units/bio/flyer.glb', yaw: -90, topY: 1.4 },
+    transport: { src: 'models/units/bio/transport.glb', yaw: 0, topY: 2.6 },
+    heavyAir: { src: 'models/units/bio/heavyAir.glb', yaw: 0, topY: 2.4 },
+    siege: { src: 'models/units/bio/siege.glb', yaw: 0, topY: 1.7 },
+    titan: { src: 'models/units/bio/titan.glb', yaw: 0, topY: 2.4 },
+    hero: { src: 'models/units/bio/hero.glb', yaw: 0, topY: 2.2 }
   }
 }
 
@@ -250,7 +266,7 @@ function glbProfiles(role: UnitRole): Record<UnitAnimState, MotionProfile> {
   }
 }
 
-function buildGlbUnit(rig: UnitRig, config: GlbUnit, role: UnitRole): void {
+function buildGlbUnit(rig: UnitRig, config: GlbUnit, race: RaceId, role: UnitRole): void {
   const model = engine.addEntity()
   Transform.create(model, { parent: rig.bodyRoot, rotation: Quaternion.fromEulerDegrees(0, config.yaw, 0) })
   GltfContainer.create(model, { src: config.src })
@@ -263,16 +279,23 @@ function buildGlbUnit(rig: UnitRig, config: GlbUnit, role: UnitRole): void {
   else if (role === 'transport') rig.baseHeight = 2.1
   else if (role === 'heavyAir') rig.baseHeight = 2.6
 
-  // Siege mode still grows a deployed cannon out of the hull while dug in.
+  // Siege mode still grows a deployed cannon while dug in, flavored per race:
+  // steel howitzer / gold-and-crystal lance / fleshy acid stalk.
   if (role === 'siege') {
+    const base = race === 'bio' ? BIO_CARAPACE : race === 'alien' ? ALIEN_GOLD : METAL_DARK
+    const barrel = race === 'bio' ? BIO_FLESH : race === 'alien' ? ALIEN_GOLD : METAL_LIGHT
+    const tip = race === 'bio' ? GAS_BARREL_GLOW : race === 'alien' ? ALIEN_CRYSTAL : BLADE_STEEL
     const group = createSiegeCannonGroup(rig)
-    addChildPart(rig, group, Vector3.create(0, config.topY - 0.15, 0), Vector3.create(0.55, 0.18, 0.55), METAL_DARK, { cylinder: true })
-    addChildPart(rig, group, Vector3.create(0, config.topY + 0.25, 0.45), Vector3.create(0.16, 1.3, 0.16), METAL_LIGHT, {
+    addChildPart(rig, group, Vector3.create(0, config.topY - 0.15, 0), Vector3.create(0.55, 0.18, 0.55), base, { cylinder: true })
+    addChildPart(rig, group, Vector3.create(0, config.topY + 0.25, 0.45), Vector3.create(0.16, 1.3, 0.16), barrel, {
       cylinder: true,
       rotation: Quaternion.fromEulerDegrees(55, 0, 0)
     })
-    addChildPart(rig, group, Vector3.create(0, config.topY + 0.62, 0.98), Vector3.create(0.2, 0.12, 0.2), BLADE_STEEL, {
-      cylinder: true,
+    addChildPart(rig, group, Vector3.create(0, config.topY + 0.62, 0.98), Vector3.create(0.2, 0.12, 0.2), tip, {
+      cylinder: race !== 'bio',
+      sphere: race === 'bio',
+      emissive: race === 'human' ? undefined : tip,
+      emissiveIntensity: race === 'human' ? 0 : 2,
       rotation: Quaternion.fromEulerDegrees(55, 0, 0)
     })
   }
@@ -320,7 +343,7 @@ export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team:
 
   const glbConfig = GLB_UNITS[race]?.[role]
   if (glbConfig) {
-    buildGlbUnit(rig, glbConfig, role)
+    buildGlbUnit(rig, glbConfig, race, role)
   } else if (race === 'human') {
     if (role === 'worker') buildHumanMiner(rig, addPart, glow)
     else if (role === 'melee') buildHumanVanguard(rig, addPart, glow)

@@ -58,6 +58,24 @@ const UNITS = {
     { role: 'siege', match: 'sunlance', size: 2.6, mode: 'footprint', tris: 5000 },
     { role: 'titan', match: 'avatar', size: 2.8, mode: 'height', tris: 7000 },
     { role: 'hero', match: 'auren', size: 2.0, mode: 'height', tris: 7000 }
+  ],
+  // Myriad swarm reads smaller than the other races; low-slung crawlers scale
+  // by footprint so a long body doesn't blow up when measured by height.
+  bio: [
+    { role: 'worker', match: 'grub', size: 1.0, mode: 'footprint', tris: 3500 },
+    { role: 'melee', match: 'mauler', size: 1.4, mode: 'footprint', tris: 3500 },
+    { role: 'ranged', match: 'spitter', size: 1.3, mode: 'footprint', tris: 3500 },
+    { role: 'healer', match: 'broodtender', size: 1.1, mode: 'height', tris: 3500 },
+    { role: 'caster', match: 'plagueweaver', size: 1.5, mode: 'height', tris: 4000 },
+    { role: 'antiAir', match: 'sporelasher', size: 1.3, mode: 'height', tris: 4000 },
+    { role: 'flyer', match: 'shrieker', size: 2.0, mode: 'footprint', tris: 4500 },
+    // The broodwing is a jellyfish - its height (dome + tendrils) dwarfs its
+    // footprint, so scale by height or it becomes a 4m monster.
+    { role: 'transport', match: 'broodwing', size: 2.6, mode: 'height', tris: 4500 },
+    { role: 'heavyAir', match: 'skyleviathan', size: 3.8, mode: 'footprint', tris: 7000 },
+    { role: 'siege', match: 'acidmaw', size: 2.3, mode: 'footprint', tris: 5000 },
+    { role: 'titan', match: 'behemoth', size: 2.4, mode: 'height', tris: 7000 },
+    { role: 'hero', match: 'szel', size: 2.2, mode: 'height', tris: 7000 }
   ]
 }
 
