@@ -16,14 +16,14 @@
   <!-- ====================== NAV ====================== -->
   <header class="nav" id="top">
     <a class="nav-brand" href="#top">
-      <img src="assets/logo-decentracraft.png" alt="DecentraCraft logo" />
-      <span>DECENTRA<em>CRAFT</em></span>
+      <img src="assets/logo-decentracraft.png" alt="DecentraCraft" />
     </a>
     <nav class="nav-links">
       <a href="#lore">Lore</a>
       <a href="#factions">Factions</a>
       <a href="#wiki">Wiki</a>
       <a href="#maps">Maps</a>
+      <a href="#ladder">Ladder</a>
       <a href="#team">Team</a>
     </nav>
     <a class="btn btn-play nav-play" href="https://decentraland.org/play/?position=-12%2C127" target="_blank" rel="noopener">▶ PLAY NOW</a>
@@ -34,8 +34,7 @@
   <section class="hero">
     <div class="hero-bg" style="background-image:url('assets/title-bg-decentracraft.jpg')"></div>
     <div class="hero-content">
-      <img class="hero-logo" src="assets/logo-decentracraft.png" alt="DecentraCraft" />
-      <h1>DECENTRA<em>CRAFT</em></h1>
+      <h1 class="hero-title"><img class="hero-logo" src="assets/logo-decentracraft.png" alt="DecentraCraft" /></h1>
       <p class="hero-tag">Build the base. Raise the army. Break the enemy.<br/>A full real-time strategy game living inside Decentraland.</p>
       <div class="hero-cta">
         <a class="btn btn-play" href="https://decentraland.org/play/?position=-12%2C127" target="_blank" rel="noopener">▶ PLAY IN DECENTRALAND</a>
@@ -168,9 +167,30 @@
     </div>
   </section>
 
+  <!-- ====================== RANKED LADDER ====================== -->
+  <section class="section" id="ladder">
+    <h2 class="section-title"><span>06</span> RANKED LADDER</h2>
+    <p class="ladder-intro">
+      The <strong>RANKED LADDER</strong> battle room in-game is a strict free-for-all — humans only,
+      no alliances, no computers. Win and you take Elo from every commander you buried; lose and the
+      ladder remembers. Everyone starts at 1200. Standings below sync from the game server after
+      every rated match.
+    </p>
+    <div class="ladder-wrap">
+      <table class="ladder-table" id="ladderTable" hidden>
+        <thead>
+          <tr><th>#</th><th>Commander</th><th>Rating</th><th>W</th><th>L</th><th>Win %</th></tr>
+        </thead>
+        <tbody id="ladderRows"></tbody>
+      </table>
+      <p class="ladder-note" id="ladderNote">Loading standings...</p>
+      <p class="ladder-updated" id="ladderUpdated"></p>
+    </div>
+  </section>
+
   <!-- ====================== TEAM ====================== -->
   <section class="section" id="team">
-    <h2 class="section-title"><span>06</span> THE TEAM</h2>
+    <h2 class="section-title"><span>07</span> THE TEAM</h2>
     <div class="team-grid">
       <div class="team-card">
         <div class="team-avatar" style="background-image:url('assets/icons/icon-unit-hero.jpg')"></div>
@@ -219,5 +239,6 @@
 
   <script src="js/data.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/ladder.js"></script>
 </body>
 </html>
