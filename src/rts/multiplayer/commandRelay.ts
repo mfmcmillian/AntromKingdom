@@ -28,6 +28,7 @@ export function startCommandRelay(matchPlan: LocalMatchPlan, address: string, ap
 
   room.onMessage('commandRelayed', (data) => {
     if (!plan || !applier) return
+    if (data.lobbyId !== plan.lobbyId) return // another room's match; not ours
     if (data.sender.toLowerCase() === myAddress) return // we already applied it locally
     const team = plan.seatToTeam[data.seat]
     if (!team || team === 'player') return
@@ -48,7 +49,7 @@ export function stopCommandRelay(): void {
 /** Broadcast a command for a seat we control (our own, or an AI seat if leader). */
 export function broadcastCommand(seatIndex: number, command: MatchCommand): void {
   if (!plan) return
-  room.send('matchCommand', { seat: seatIndex, json: JSON.stringify(command) })
+  room.send('matchCommand', { lobbyId: plan.lobbyId, seat: seatIndex, json: JSON.stringify(command) })
 }
 
 /** Convenience: broadcast a command issued by the local player. */

@@ -3,7 +3,7 @@ import { syncEntity } from '@dcl/sdk/network'
 import {
   MAX_SEATS,
   PROTOCOL_VERSION,
-  createDefaultLobby,
+  createDefaultLobbies,
   createDefaultSeat,
   type LobbyConfig,
   type LobbyRequest,
@@ -15,12 +15,12 @@ import { LOBBY_SYNC_ID, MpLobbyState, room } from '../rts/multiplayer/transport'
 
 // DecentraCraft authoritative server. Runs headlessly alongside the world and
 // owns everything the clients must agree on:
-//   - the lobby (seats, races, teams, ready flags, the leader)
-//   - match start (freezes the lobby, rolls the shared seed)
+//   - the lobby rooms (seats, races, teams, ready flags, the leader of each)
+//   - match starts (freezes a room's lobby, rolls its shared seed)
 //   - the command relay (validates seat ownership, rebroadcasts in one
-//     canonical order so every client applies commands identically)
+//     canonical order, scoped to the room so concurrent matches don't mix)
 
-let lobby: LobbyConfig = createDefaultLobby()
+const lobbies: LobbyConfig[] = createDefaultLobbies()
 
 /** Players currently in the scene (lowercase addresses). */
 const present = new Set<string>()
@@ -29,38 +29,53 @@ export function startServer(): void {
   console.log('[Server] DecentraCraft authoritative server starting')
 
   const lobbyEntity = engine.addEntity()
-  MpLobbyState.create(lobbyEntity, { json: JSON.stringify(lobby), revision: 0 })
+  let revision = 0
+  MpLobbyState.create(lobbyEntity, { json: JSON.stringify(lobbies), revision })
   syncEntity(lobbyEntity, [MpLobbyState.componentId], LOBBY_SYNC_ID)
 
-  function publishLobby(): void {
-    lobby.revision += 1
+  function publishLobbies(): void {
+    revision += 1
     const state = MpLobbyState.getMutable(lobbyEntity)
-    state.json = JSON.stringify(lobby)
-    state.revision = lobby.revision
+    state.json = JSON.stringify(lobbies)
+    state.revision = revision
   }
 
-  function seatOf(address: string): LobbySeat | undefined {
+  function seatOf(lobby: LobbyConfig, address: string): LobbySeat | undefined {
     return lobby.seats.find((seat) => seat.kind === 'human' && seat.address === address)
   }
 
-  function resetSeat(seat: LobbySeat): void {
+  function resetSeat(lobby: LobbyConfig, seat: LobbySeat): void {
     const index = lobby.seats.indexOf(seat)
     Object.assign(seat, createDefaultSeat(index))
   }
 
   /** Leader = earliest-seated human still present; re-pick when they leave. */
-  function ensureLeader(): boolean {
-    if (lobby.hostAddress !== '' && seatOf(lobby.hostAddress)) return false
+  function ensureLeader(lobby: LobbyConfig): boolean {
+    if (lobby.hostAddress !== '' && seatOf(lobby, lobby.hostAddress)) return false
     const firstHuman = lobby.seats.find((seat) => seat.kind === 'human' && seat.address)
     lobby.hostAddress = firstHuman?.address ?? ''
     return true
   }
 
-  function canStart(): boolean {
+  function canStart(lobby: LobbyConfig): boolean {
     const active = lobby.seats.filter((seat) => seat.kind !== 'closed')
     const humans = active.filter((seat) => seat.kind === 'human')
     if (active.length < 2 || humans.length === 0) return false
     return humans.every((seat) => seat.ready && seat.address)
+  }
+
+  /** One seat per player across ALL rooms: claiming somewhere frees them everywhere else. */
+  function evictFromOtherRooms(address: string, keep: LobbyConfig): boolean {
+    let dirty = false
+    for (const lobby of lobbies) {
+      if (lobby === keep) continue
+      const seat = seatOf(lobby, address)
+      if (!seat) continue
+      resetSeat(lobby, seat)
+      ensureLeader(lobby)
+      dirty = true
+    }
+    return dirty
   }
 
   // --- Presence: free seats when their owner leaves the scene ---------------
@@ -73,33 +88,38 @@ export function startServer(): void {
     let dirty = false
     for (const address of present) {
       if (inScene.has(address)) continue
-      const seat = seatOf(address)
-      if (seat) {
-        console.log(`[Server] freeing seat of departed player ${address}`)
-        resetSeat(seat)
+      for (const lobby of lobbies) {
+        const seat = seatOf(lobby, address)
+        if (!seat) continue
+        console.log(`[Server] room ${lobby.id}: freeing seat of departed player ${address}`)
+        resetSeat(lobby, seat)
         dirty = true
       }
     }
     present.clear()
     for (const address of inScene) present.add(address)
 
-    // Every human participant left mid-match: reopen the lobby so the next
-    // visitors aren't locked out by a match nobody is playing.
-    if (lobby.phase === 'inMatch' && !lobby.seats.some((seat) => seat.kind === 'human')) {
-      console.log('[Server] all players left during a match; reopening the lobby')
-      lobby.phase = 'lobby'
-      for (const seat of lobby.seats) seat.ready = false
-      dirty = true
+    for (const lobby of lobbies) {
+      // Every human participant left mid-match: reopen the room so the next
+      // visitors aren't locked out by a match nobody is playing.
+      if (lobby.phase === 'inMatch' && !lobby.seats.some((seat) => seat.kind === 'human')) {
+        console.log(`[Server] room ${lobby.id}: all players left during a match; reopening`)
+        lobby.phase = 'lobby'
+        for (const seat of lobby.seats) seat.ready = false
+        dirty = true
+      }
+      if (ensureLeader(lobby)) dirty = true
     }
 
-    if (ensureLeader()) dirty = true
-    if (dirty) publishLobby()
+    if (dirty) publishLobbies()
   })
 
   // --- Lobby requests --------------------------------------------------------
   room.onMessage('lobbyRequest', (data, context) => {
     if (!context) return
     const sender = context.from.toLowerCase()
+    const lobby = lobbies[data.lobbyId]
+    if (!lobby) return
 
     let request: LobbyRequest
     try {
@@ -109,14 +129,15 @@ export function startServer(): void {
     }
 
     const isLeader = sender !== '' && sender === lobby.hostAddress
-    const mySeat = seatOf(sender)
+    const mySeat = seatOf(lobby, sender)
 
     switch (request.type) {
       case 'claimSeat': {
         const target = lobby.seats[request.seat]
         if (!target || target.kind !== 'closed') return
         if (lobby.phase === 'inMatch') return
-        if (mySeat) resetSeat(mySeat) // one seat per player
+        if (mySeat) resetSeat(lobby, mySeat) // one seat per player in this room
+        evictFromOtherRooms(sender, lobby) // ...and none anywhere else
         target.kind = 'human'
         target.address = sender
         target.name = request.name.slice(0, 24)
@@ -125,7 +146,7 @@ export function startServer(): void {
       }
       case 'leaveSeat': {
         if (!mySeat) return
-        resetSeat(mySeat)
+        resetSeat(lobby, mySeat)
         break
       }
       case 'setRace': {
@@ -166,16 +187,16 @@ export function startServer(): void {
         break
       }
       case 'startMatch': {
-        if (!isLeader || lobby.phase === 'inMatch' || !canStart()) return
+        if (!isLeader || lobby.phase === 'inMatch' || !canStart(lobby)) return
         lobby.phase = 'inMatch'
         lobby.seed = Math.floor(Math.random() * 2 ** 31)
-        publishLobby()
-        console.log(`[Server] match starting, seed ${lobby.seed}`)
-        room.send('matchStart', { json: JSON.stringify(lobby) })
+        publishLobbies()
+        console.log(`[Server] room ${lobby.id}: match starting, seed ${lobby.seed}`)
+        room.send('matchStart', { lobbyId: lobby.id, json: JSON.stringify(lobby) })
         return
       }
       case 'resetLobby': {
-        // Any seated participant may reopen the lobby, not just the leader:
+        // Any seated participant may reopen the room, not just the leader:
         // matches end client-side, and if only the host could reset, a host
         // lingering on the end screen would lock everyone else out.
         if (!isLeader && !mySeat) return
@@ -187,14 +208,16 @@ export function startServer(): void {
         return
     }
 
-    ensureLeader()
-    publishLobby()
+    ensureLeader(lobby)
+    publishLobbies()
   })
 
   // --- Match command relay ----------------------------------------------------
   room.onMessage('matchCommand', (data, context) => {
     if (!context) return
     const sender = context.from.toLowerCase()
+    const lobby = lobbies[data.lobbyId]
+    if (!lobby) return
     const seat = lobby.seats[data.seat]
     if (!seat || lobby.phase !== 'inMatch') return
 
@@ -211,8 +234,8 @@ export function startServer(): void {
       return
     }
 
-    room.send('commandRelayed', { seat: data.seat, sender, json: data.json })
+    room.send('commandRelayed', { lobbyId: lobby.id, seat: data.seat, sender, json: data.json })
   })
 
-  console.log(`[Server] ready (protocol v${PROTOCOL_VERSION})`)
+  console.log(`[Server] ready (protocol v${PROTOCOL_VERSION}, ${lobbies.length} rooms)`)
 }

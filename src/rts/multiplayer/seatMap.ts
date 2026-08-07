@@ -9,6 +9,8 @@ import type { LobbyConfig } from './protocol'
 // indexes and each client resolves them through this plan.
 
 export type LocalMatchPlan = {
+  /** Room this match runs in: commands are relayed and filtered by this id. */
+  lobbyId: number
   mySeatIndex: number
   /** Active seat index -> local team on this client. */
   seatToTeam: Record<number, Team>
@@ -92,6 +94,7 @@ export function buildLocalMatchPlan(config: LobbyConfig, myAddress: string): Loc
   }
 
   return {
+    lobbyId: config.id ?? 0,
     mySeatIndex: mine.index,
     seatToTeam,
     teamToSeat,

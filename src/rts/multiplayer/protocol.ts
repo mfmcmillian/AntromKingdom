@@ -11,10 +11,13 @@ import type { Difficulty, GameMode, RaceId } from '../types'
 // locally, everyone else fills enemy1..3) and applies the command to its sim.
 
 /** Bump when the protocol changes shape; mismatched clients refuse to join. */
-export const PROTOCOL_VERSION = 2
+export const PROTOCOL_VERSION = 3
 
 /** Maximum seats per match: one per engine team. */
 export const MAX_SEATS = 6
+
+/** Concurrent lobby rooms per world: independent matches running side by side. */
+export const LOBBY_ROOM_COUNT = 4
 
 export type SeatKind = 'human' | 'computer' | 'closed'
 
@@ -33,9 +36,11 @@ export type LobbySeat = {
   ready: boolean
 }
 
-/** The whole lobby, serialized as JSON into the synced lobby component. */
+/** One lobby room, serialized (with its siblings) into the synced lobby component. */
 export type LobbyConfig = {
   version: number
+  /** Room index (0-based): every request and relayed command is scoped to one room. */
+  id: number
   /** Lobby leader (earliest-seated human): configures computer seats, starts the match. */
   hostAddress: string
   phase: 'lobby' | 'starting' | 'inMatch'
@@ -175,9 +180,10 @@ export function createDefaultSeat(index: number): LobbySeat {
   }
 }
 
-export function createDefaultLobby(): LobbyConfig {
+export function createDefaultLobby(id: number): LobbyConfig {
   return {
     version: PROTOCOL_VERSION,
+    id,
     hostAddress: '',
     phase: 'lobby',
     gameMode: 'team',
@@ -186,4 +192,16 @@ export function createDefaultLobby(): LobbyConfig {
     seed: 0,
     revision: 0
   }
+}
+
+/** The full set of concurrent lobby rooms, in room-id order. */
+export function createDefaultLobbies(): LobbyConfig[] {
+  const lobbies: LobbyConfig[] = []
+  for (let i = 0; i < LOBBY_ROOM_COUNT; i++) lobbies.push(createDefaultLobby(i))
+  return lobbies
+}
+
+/** Display name for a room ("BATTLE ROOM 1"...). */
+export function lobbyRoomName(id: number): string {
+  return `BATTLE ROOM ${id + 1}`
 }

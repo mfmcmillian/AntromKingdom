@@ -3,7 +3,7 @@ import { isStateSyncronized } from '@dcl/sdk/network'
 import { getPlayer, onEnterScene, onLeaveScene } from '@dcl/sdk/src/players'
 import {
   PROTOCOL_VERSION,
-  createDefaultLobby,
+  createDefaultLobbies,
   type LobbyConfig,
   type LobbyRequest,
   type LobbySeat
@@ -11,16 +11,19 @@ import {
 import { MpLobbyState, room } from './transport'
 import type { Difficulty, GameMode, RaceId } from '../types'
 
-// Client side of the multiplayer session. The authoritative server owns the
-// lobby; this module reads the synced lobby state, sends validated requests
-// (claim seat, pick race, ready up...) and surfaces server events to the UI.
-// The "host" here is the lobby leader - the earliest-seated human - who the
-// server allows to manage computer seats and start the match.
+// Client side of the multiplayer session. The authoritative server owns a set
+// of lobby rooms so several matches can run at once; this module reads the
+// synced room list, tracks which room the player is browsing/seated in, sends
+// validated requests (claim seat, pick race, ready up...) scoped to that room
+// and surfaces server events to the UI. The "host" is the room leader - the
+// earliest-seated human - who manages computer seats and starts the match.
 
-let lobby: LobbyConfig = createDefaultLobby()
+let lobbies: LobbyConfig[] = createDefaultLobbies()
 let lastSeenRevision = -1
 let myAddress = ''
 let myName = ''
+/** Room the lobby UI is inside (-1 = the room browser). */
+let viewedLobbyId = -1
 const presentPlayers = new Map<string, string>() // address -> display name
 
 type LobbyListener = (config: LobbyConfig) => void
@@ -48,8 +51,10 @@ export function initMultiplayerSession(): void {
     try {
       const config = JSON.parse(data.json) as LobbyConfig
       if (config.version !== PROTOCOL_VERSION) return
-      lobby = config
-      notifyLobbyChanged()
+      if (lobbies[config.id]) lobbies[config.id] = config
+      notifyLobbyChanged(config)
+      // Every client hears every room's start; listeners only launch a match
+      // if the local player actually holds a seat in that room's config.
       for (const listener of matchStartListeners) listener(config)
     } catch {
       // Malformed payload; ignore.
@@ -73,15 +78,15 @@ function sessionSystem(): void {
 
   if (!isStateSyncronized()) return
 
-  // Pull lobby updates published by the server.
+  // Pull room-list updates published by the server.
   for (const [, state] of engine.getEntitiesWith(MpLobbyState)) {
     if (state.revision === lastSeenRevision) continue
     lastSeenRevision = state.revision
     try {
-      const parsed = JSON.parse(state.json) as LobbyConfig
-      if (parsed.version === PROTOCOL_VERSION) {
-        lobby = parsed
-        notifyLobbyChanged()
+      const parsed = JSON.parse(state.json) as LobbyConfig[]
+      if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].version === PROTOCOL_VERSION) {
+        lobbies = parsed
+        for (const config of lobbies) notifyLobbyChanged(config)
       }
     } catch {
       // Keep the last good state.
@@ -91,21 +96,43 @@ function sessionSystem(): void {
 
 // --- Read API ----------------------------------------------------------------
 
+/** Every lobby room, in room-id order (for the room browser). */
+export function getLobbies(): LobbyConfig[] {
+  return lobbies
+}
+
+/** The room the lobby UI is currently inside (falls back to room 0). */
 export function getLobby(): LobbyConfig {
-  return lobby
+  return lobbies[viewedLobbyId] ?? lobbies[0]
+}
+
+/** Room id the UI is browsing (-1 = room browser). */
+export function getViewedLobbyId(): number {
+  return viewedLobbyId
+}
+
+export function setViewedLobbyId(id: number): void {
+  viewedLobbyId = id
+}
+
+/** Room id where I currently hold a seat, or -1. */
+export function getMyLobbyId(): number {
+  if (myAddress === '') return -1
+  return lobbies.findIndex((lobby) => lobby.seats.some((seat) => seat.kind === 'human' && seat.address === myAddress))
 }
 
 export function getMyAddress(): string {
   return myAddress
 }
 
-/** Am I the lobby leader (manages computer seats, starts the match)? */
+/** Am I the leader of the viewed room (manages computer seats, starts the match)? */
 export function isHost(): boolean {
-  return myAddress !== '' && lobby.hostAddress === myAddress
+  return myAddress !== '' && getLobby().hostAddress === myAddress
 }
 
+/** My seat index within the viewed room, or -1. */
 export function getMySeatIndex(): number {
-  return lobby.seats.findIndex((seat) => seat.kind === 'human' && seat.address === myAddress)
+  return getLobby().seats.findIndex((seat) => seat.kind === 'human' && seat.address === myAddress)
 }
 
 export function getPresentPlayerCount(): number {
@@ -132,7 +159,7 @@ export function onMatchStart(listener: MatchStartListener): void {
   matchStartListeners.push(listener)
 }
 
-// --- Player actions (validated server-side) -----------------------------------
+// --- Player actions (validated server-side, scoped to the viewed room) --------
 
 export function claimSeat(seatIndex: number): void {
   sendRequest({ type: 'claimSeat', seat: seatIndex, name: myName })
@@ -176,13 +203,14 @@ export function hostStartMatch(): void {
   sendRequest({ type: 'startMatch' })
 }
 
-/** Reopen the lobby after a match. The server accepts this from any seated participant. */
+/** Reopen the viewed room after a match. The server accepts this from any seated participant. */
 export function requestLobbyReset(): void {
   sendRequest({ type: 'resetLobby' })
 }
 
 /** Client-side preview of the server's start check (drives the START button). */
 export function canStartMatch(): boolean {
+  const lobby = getLobby()
   const active = lobby.seats.filter((seat) => seat.kind !== 'closed')
   const humans = active.filter((seat) => seat.kind === 'human')
   if (active.length < 2 || humans.length === 0) return false
@@ -191,11 +219,13 @@ export function canStartMatch(): boolean {
 
 function sendRequest(request: LobbyRequest): void {
   if (myAddress === '') return
-  room.send('lobbyRequest', { json: JSON.stringify(request) })
+  const lobbyId = viewedLobbyId >= 0 ? viewedLobbyId : getMyLobbyId()
+  if (lobbyId < 0) return
+  room.send('lobbyRequest', { lobbyId, json: JSON.stringify(request) })
 }
 
-function notifyLobbyChanged(): void {
-  for (const listener of lobbyListeners) listener(lobby)
+function notifyLobbyChanged(config: LobbyConfig): void {
+  for (const listener of lobbyListeners) listener(config)
 }
 
 function shortAddress(address: string): string {

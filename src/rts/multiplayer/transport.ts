@@ -9,10 +9,10 @@ import { AUTH_SERVER_PEER_ID } from '@dcl/sdk/network/message-bus-sync'
 export const LOBBY_SYNC_ID = 5001
 
 /**
- * The whole lobby as a JSON payload plus a revision counter. Written only by
- * the authoritative server (enforced via validateBeforeChange server-side);
- * clients just parse it. Living in a synced component means late joiners get
- * the current lobby without any request round-trip.
+ * Every lobby room as one JSON payload (a LobbyConfig[] in room-id order)
+ * plus a revision counter. Written only by the authoritative server (enforced
+ * via validateBeforeChange server-side); clients just parse it. Living in a
+ * synced component means late joiners get all rooms without a round-trip.
  */
 export const MpLobbyState = engine.defineComponent('dc-mp-lobby-state', {
   json: Schemas.String,
@@ -22,15 +22,17 @@ export const MpLobbyState = engine.defineComponent('dc-mp-lobby-state', {
 // Anti-cheat: only the authoritative server may write the lobby.
 MpLobbyState.validateBeforeChange((value) => value.senderAddress === AUTH_SERVER_PEER_ID)
 
+// Every message carries the room id it belongs to, so concurrent matches
+// never hear each other's traffic.
 export const MpMessages = {
   // Client -> server: a LobbyRequest as JSON (sender comes from the transport).
-  lobbyRequest: Schemas.Map({ json: Schemas.String }),
+  lobbyRequest: Schemas.Map({ lobbyId: Schemas.Int, json: Schemas.String }),
   // Client -> server: one MatchCommand issued for a seat the sender controls.
-  matchCommand: Schemas.Map({ seat: Schemas.Int, json: Schemas.String }),
-  // Server -> clients: frozen lobby snapshot that launches the match everywhere.
-  matchStart: Schemas.Map({ json: Schemas.String }),
+  matchCommand: Schemas.Map({ lobbyId: Schemas.Int, seat: Schemas.Int, json: Schemas.String }),
+  // Server -> clients: frozen lobby snapshot that launches that room's match.
+  matchStart: Schemas.Map({ lobbyId: Schemas.Int, json: Schemas.String }),
   // Server -> clients: a validated command rebroadcast in canonical order.
-  commandRelayed: Schemas.Map({ seat: Schemas.Int, sender: Schemas.String, json: Schemas.String })
+  commandRelayed: Schemas.Map({ lobbyId: Schemas.Int, seat: Schemas.Int, sender: Schemas.String, json: Schemas.String })
 }
 
 export const room = registerMessages(MpMessages)

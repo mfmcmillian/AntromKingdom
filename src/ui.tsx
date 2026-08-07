@@ -52,11 +52,14 @@ import {
 import {
   canStartMatch as canStartMultiplayerMatch,
   claimSeat,
+  getLobbies,
   getLobby,
   getMyAddress,
+  getMyLobbyId,
   getMySeatIndex,
   getPresentPlayerCount,
   getPresentPlayers,
+  getViewedLobbyId,
   requestLobbyReset,
   hostSetMap,
   hostSetSeat,
@@ -66,11 +69,12 @@ import {
   onMatchStart,
   setMyAlliance,
   setMyRace,
-  setMyReady
+  setMyReady,
+  setViewedLobbyId
 } from './rts/multiplayer/session'
 import { buildLocalMatchPlan } from './rts/multiplayer/seatMap'
 import { startCommandRelay } from './rts/multiplayer/commandRelay'
-import type { LobbySeat } from './rts/multiplayer/protocol'
+import { lobbyRoomName, type LobbyConfig, type LobbySeat } from './rts/multiplayer/protocol'
 import { getDragScreenRect } from './rts/dragSelect'
 import { MAPS, getMapById, getNextMapId } from './rts/maps'
 import { minimapPanel } from './rts/minimap'
@@ -1766,6 +1770,9 @@ function startScreenOverlay() {
             uiBackground={{ color: Color4.create(0.95, 0.75, 0.25, 1) }}
             onMouseDown={() => {
               triggerScreenFade()
+              // Land straight in our room if we're already seated somewhere,
+              // otherwise open the room browser.
+              setViewedLobbyId(getMyLobbyId())
               titleStage = 'lobby'
             }}
           >
@@ -2206,6 +2213,114 @@ function lobbyOnlinePlayersPanel() {
 }
 
 function multiplayerLobbyOverlay() {
+  return getViewedLobbyId() < 0 ? lobbyBrowserOverlay() : lobbyRoomOverlay()
+}
+
+/** One row per room in the browser: name, occupancy, phase, and an enter button. */
+function lobbyBrowserRoomRow(config: LobbyConfig) {
+  const humans = config.seats.filter((seat) => seat.kind === 'human').length
+  const computers = config.seats.filter((seat) => seat.kind === 'computer').length
+  const inMatch = config.phase === 'inMatch'
+  const occupancy = humans === 0 && computers === 0 ? 'Empty' : `${humans} player${humans === 1 ? '' : 's'}${computers > 0 ? ` + ${computers} comp${computers === 1 ? '' : 's'}` : ''}`
+
+  return (
+    <UiEntity
+      key={`room-${config.id}`}
+      uiTransform={{ width: '100%', height: 66, flexDirection: 'row', alignItems: 'center', margin: { bottom: 10 }, padding: { left: 18, right: 14 } }}
+      uiBackground={{ color: Color4.create(0.05, 0.06, 0.09, 0.92) }}
+    >
+      <Label value={lobbyRoomName(config.id)} fontSize={18} color={UI.text} textAlign="middle-left" uiTransform={{ width: 220, height: '100%' }} />
+      <Label value={occupancy} fontSize={13} color={UI.dim} textAlign="middle-left" uiTransform={{ width: 200, height: '100%' }} />
+      <UiEntity uiTransform={{ width: 110, height: 26, justifyContent: 'center', alignItems: 'center', margin: { right: 16 } }} uiBackground={{ color: inMatch ? Color4.create(0.35, 0.1, 0.1, 0.95) : Color4.create(0.08, 0.25, 0.12, 0.95) }}>
+        <Label value={inMatch ? 'IN MATCH' : 'OPEN'} fontSize={12} color={inMatch ? UI.red : UI.green} textAlign="middle-center" />
+      </UiEntity>
+      <UiEntity
+        uiTransform={{ width: 110, height: 38, justifyContent: 'center', alignItems: 'center' }}
+        uiBackground={{ color: inMatch ? Color4.create(0.2, 0.24, 0.3, 1) : Color4.create(0.35, 0.65, 1, 1) }}
+        onMouseDown={() => {
+          playUiClick()
+          setViewedLobbyId(config.id)
+        }}
+      >
+        <Label value={inMatch ? 'VIEW' : 'ENTER'} fontSize={14} color={inMatch ? UI.dim : Color4.create(0.06, 0.14, 0.28, 1)} textAlign="middle-center" />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+/** Room browser: pick one of the concurrent battle rooms (or go back to the title). */
+function lobbyBrowserOverlay() {
+  const connected = getMyAddress() !== ''
+
+  return (
+    <UiEntity
+      uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%' }}
+      uiBackground={{ textureMode: 'stretch', texture: { src: 'images/ui/title-bg-decentracraft.jpg' } }}
+    >
+      {titleSkyAmbience()}
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%' }}
+        uiBackground={{ color: Color4.create(0, 0, 0, 0.55) }}
+      />
+
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { top: 70, left: 0 }, width: '100%', flexDirection: 'column', alignItems: 'center' }}
+      >
+        <Label value="MULTIPLAYER" fontSize={44} color={UI.gold} textAlign="middle-center" uiTransform={{ width: '100%', height: 54 }} />
+        <Label
+          value={connected ? `${getPresentPlayerCount()} player(s) in world  ·  pick a battle room` : 'Connecting to world...'}
+          fontSize={16}
+          color={Color4.create(0.75, 0.78, 0.85, 0.9)}
+          textAlign="middle-center"
+          uiTransform={{ width: '100%', height: 22, margin: { top: 8 } }}
+        />
+      </UiEntity>
+
+      {lobbyOnlinePlayersPanel()}
+
+      <UiEntity
+        uiTransform={{
+          positionType: 'absolute',
+          position: { top: 240, left: '50%' },
+          margin: { left: -430 },
+          width: 860,
+          flexDirection: 'column',
+          padding: { top: 24, bottom: 24, left: 26, right: 26 }
+        }}
+        uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.9) }}
+      >
+        <Label value="BATTLE ROOMS" fontSize={18} color={UI.text} textAlign="middle-left" uiTransform={{ margin: { bottom: 14 } }} />
+        {getLobbies().map((config) => lobbyBrowserRoomRow(config))}
+        <Label
+          value="Each room runs its own match, so several battles can happen at once."
+          fontSize={12}
+          color={Color4.create(0.55, 0.58, 0.66, 0.9)}
+          textAlign="middle-left"
+          uiTransform={{ margin: { top: 8 } }}
+        />
+      </UiEntity>
+
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { bottom: 46, left: 0 }, width: '100%', flexDirection: 'row', justifyContent: 'center' }}
+      >
+        <UiEntity
+          uiTransform={{ width: 220, height: 60, padding: 3, justifyContent: 'center', alignItems: 'center' }}
+          uiBackground={{ color: Color4.create(0.3, 0.36, 0.48, 1) }}
+          onMouseDown={() => {
+            triggerScreenFade()
+            titleStage = 'title'
+          }}
+        >
+          <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.07, 0.09, 0.14, 1) }}>
+            <Label value="BACK" fontSize={20} color={UI.dim} textAlign="middle-center" />
+          </UiEntity>
+        </UiEntity>
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+function lobbyRoomOverlay() {
   const lobby = getLobby()
   const connected = getMyAddress() !== ''
   const mySeat = getMySeatIndex()
@@ -2229,7 +2344,7 @@ function multiplayerLobbyOverlay() {
       <UiEntity
         uiTransform={{ positionType: 'absolute', position: { top: 70, left: 0 }, width: '100%', flexDirection: 'column', alignItems: 'center' }}
       >
-        <Label value="MULTIPLAYER LOBBY" fontSize={44} color={UI.gold} textAlign="middle-center" uiTransform={{ width: '100%', height: 54 }} />
+        <Label value={lobbyRoomName(lobby.id)} fontSize={44} color={UI.gold} textAlign="middle-center" uiTransform={{ width: '100%', height: 54 }} />
         <Label
           value={connected ? `${getPresentPlayerCount()} player(s) in world  ·  ${hostLabel}` : 'Connecting to world...'}
           fontSize={16}
@@ -2264,7 +2379,7 @@ function multiplayerLobbyOverlay() {
           uiTransform={{ margin: { top: 8 } }}
         />
         {lobby.phase === 'inMatch' ? (
-          <Label value="A match is currently in progress in this world." fontSize={13} color={UI.red} textAlign="middle-left" uiTransform={{ margin: { top: 6 } }} />
+          <Label value="A match is currently in progress in this room." fontSize={13} color={UI.red} textAlign="middle-left" uiTransform={{ margin: { top: 6 } }} />
         ) : null}
       </UiEntity>
 
@@ -2275,13 +2390,13 @@ function multiplayerLobbyOverlay() {
           uiTransform={{ width: 220, height: 60, margin: { right: 16 }, padding: 3, justifyContent: 'center', alignItems: 'center' }}
           uiBackground={{ color: Color4.create(0.3, 0.36, 0.48, 1) }}
           onMouseDown={() => {
+            // Give up the seat and drop back to the room browser.
             leaveSeat()
-            triggerScreenFade()
-            titleStage = 'title'
+            setViewedLobbyId(-1)
           }}
         >
           <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.07, 0.09, 0.14, 1) }}>
-            <Label value="BACK" fontSize={20} color={UI.dim} textAlign="middle-center" />
+            <Label value="LEAVE ROOM" fontSize={18} color={UI.dim} textAlign="middle-center" />
           </UiEntity>
         </UiEntity>
 
@@ -2481,6 +2596,7 @@ function endGameOverlay() {
               triggerScreenFade()
               if (isMultiplayerMatch()) {
                 requestLobbyReset()
+                setViewedLobbyId(getMyLobbyId())
                 titleStage = 'lobby'
                 returnToMainMenu()
               } else {
