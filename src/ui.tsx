@@ -1,5 +1,6 @@
 import ReactEcs, { Button, Label, ReactEcsRenderer, UiEntity } from '@dcl/sdk/react-ecs'
 import { playUiClick } from './rts/sound'
+import { openExternalUrl } from '~system/RestrictedActions'
 import { InputModifier, UiCanvasInformation, engine } from '@dcl/sdk/ecs'
 import { Color4 } from '@dcl/sdk/math'
 import {
@@ -1832,6 +1833,20 @@ function startScreenOverlay() {
           </UiEntity>
         </UiEntity>
         <Label value="Build. Defend. Conquer." fontSize={12} color={Color4.create(0.6, 0.64, 0.72, 0.85)} textAlign="middle-center" uiTransform={{ width: '100%', height: 16, margin: { top: 14 } }} />
+      </UiEntity>
+
+      {/* Website link: lore, unit wiki and the ranked ladder live off-world. */}
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { bottom: 30, right: 30 }, width: 190, height: 44, padding: 2, justifyContent: 'center', alignItems: 'center' }}
+        uiBackground={{ color: Color4.create(0.35, 0.42, 0.55, 0.9) }}
+        onMouseDown={() => {
+          playUiClick()
+          void openExternalUrl({ url: 'https://mfmcmillian.github.io/AntromKingdom/' })
+        }}
+      >
+        <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.05, 0.07, 0.11, 0.95) }}>
+          <Label value="WIKI & GUIDE" fontSize={15} color={Color4.create(0.75, 0.8, 0.9, 1)} textAlign="middle-center" />
+        </UiEntity>
       </UiEntity>
     </UiEntity>
   )
