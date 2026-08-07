@@ -195,18 +195,18 @@ type GlbUnit = {
  * pieces grow less so they don't crowd the buildings.
  */
 const GLB_ROLE_SCALE: Record<UnitRole, number> = {
-  worker: 1.45,
-  melee: 1.45,
-  ranged: 1.45,
-  healer: 1.45,
-  caster: 1.4,
-  antiAir: 1.4,
-  flyer: 1.35,
-  transport: 1.3,
-  heavyAir: 1.2,
-  siege: 1.35,
-  titan: 1.3,
-  hero: 1.35
+  worker: 1.7,
+  melee: 1.85,
+  ranged: 1.85,
+  healer: 1.8,
+  caster: 1.8,
+  antiAir: 1.8,
+  flyer: 1.7,
+  transport: 1.6,
+  heavyAir: 1.5,
+  siege: 1.7,
+  titan: 1.8,
+  hero: 2.3
 }
 
 const GLB_UNITS: Partial<Record<RaceId, Partial<Record<UnitRole, GlbUnit>>>> = {
@@ -304,9 +304,9 @@ function buildGlbUnit(rig: UnitRig, config: GlbUnit, race: RaceId, role: UnitRol
   rig.profiles = glbProfiles(role)
 
   // Hover altitudes for air units, lifted a touch since the craft grew.
-  if (role === 'flyer') rig.baseHeight = 2.3
-  else if (role === 'transport') rig.baseHeight = 2.5
-  else if (role === 'heavyAir') rig.baseHeight = 3.0
+  if (role === 'flyer') rig.baseHeight = 2.6
+  else if (role === 'transport') rig.baseHeight = 2.9
+  else if (role === 'heavyAir') rig.baseHeight = 3.6
 
   // Siege mode still grows a deployed cannon while dug in, flavored per race:
   // steel howitzer / gold-and-crystal lance / fleshy acid stalk.
