@@ -17,8 +17,8 @@ import { buildings, soldiers, workers } from '../world'
 type Unit = Soldier | Worker
 
 /** Two ground units closer than this (center to center) get pushed apart. */
-const GROUND_RADIUS = 1.4
-const FLYER_RADIUS = 2.2
+const GROUND_RADIUS = 1.25
+const FLYER_RADIUS = 2.0
 /** Push speed in m/s - firm enough to unstack, gentle enough not to fight orders. */
 const PUSH_SPEED = 3
 const MAP_MARGIN = 1.5

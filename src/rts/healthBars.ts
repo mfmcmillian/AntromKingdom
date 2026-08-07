@@ -104,8 +104,8 @@ function createBar(id: string, width: number): BarEntry {
 function unitBarWidth(soldier: Soldier): number {
   if (soldier.variant === 'hero') return 3
   if (soldier.variant === 'titan' || soldier.variant === 'heavyAir') return 2.6
-  if (soldier.variant === 'siege') return 2
-  return 1.6
+  if (soldier.variant === 'siege') return 1.8
+  return 1.4
 }
 
 function unitBarHeight(soldier: Soldier): number {
@@ -115,16 +115,16 @@ function unitBarHeight(soldier: Soldier): number {
     case 'titan':
       return 5.4
     case 'flyer':
-      return 4.8
+      return 4.4
     case 'heavyAir':
       return 6.2
     case 'transport':
-      return 4.8
+      return 4.4
     case 'caster':
-      return 3.4
+      return 3.1
     case 'siege':
-      return 3.6
+      return 3.3
     default:
-      return 3
+      return 2.8
   }
 }

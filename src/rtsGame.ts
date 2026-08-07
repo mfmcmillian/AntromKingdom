@@ -86,7 +86,7 @@ import { broadcastMyCommand, isRelayActive, stopCommandRelay } from './rts/multi
 import { getMyAddress, isPlayerPresent, isRankedLobby, reportRankedResult } from './rts/multiplayer/session'
 import type { MatchCommand } from './rts/multiplayer/protocol'
 import { updateDragSelect } from './rts/dragSelect'
-import { initFogOfWar, isPositionVisibleToPlayer, resetFogOfWar } from './rts/fogOfWar'
+import { initFogOfWar, resetFogOfWar } from './rts/fogOfWar'
 import { isPointerOverHud } from './rts/hud'
 import { SelectionMarkerTarget, clearSelectionMarkers, updateSelectionMarkers } from './rts/selectionMarkers'
 import { buildEnvironmentEnclosure } from './rts/environment'
@@ -184,8 +184,8 @@ const BUILDING_FOOTPRINT_VALID = Color4.create(0.2, 0.95, 0.35, 0.45)
 const BUILDING_FOOTPRINT_BLOCKED = Color4.create(0.95, 0.15, 0.12, 0.5)
 const DEPLETED_GAS_HIDE_DELAY = 180
 const PLAYER_ATTACK_ALERT_DURATION = 4
-const SOLDIER_MOVE_FORMATION_RADIUS = 1.2
-const SOLDIER_ATTACK_SPACING = 1.0
+const SOLDIER_MOVE_FORMATION_RADIUS = 1.0
+const SOLDIER_ATTACK_SPACING = 0.8
 const ENEMY_DEFENSE_RADIUS = 20
 
 // One AI brain per computer opponent, rebuilt from the setup each match.
@@ -1769,7 +1769,7 @@ function createWorker(position: Vector3, team: Team = 'player'): Worker {
     position,
     team,
     // Generous click box: units are small targets from the overhead camera.
-    Vector3.create(1.8, 2.6, 1.8)
+    Vector3.create(1.6, 2.4, 1.6)
   ) as Worker
 
   worker.hp = definition.hp
@@ -1823,11 +1823,11 @@ function createSoldier(position: Vector3, team: Team = 'player', variant: Soldie
 function getSoldierColliderScale(variant: SoldierVariant): Vector3 {
   if (variant === 'hero') return Vector3.create(3.8, 5.2, 3.8)
   if (variant === 'titan') return Vector3.create(3.8, 5.2, 3.8)
-  if (variant === 'flyer') return Vector3.create(2.8, 4.4, 2.8)
-  if (variant === 'transport') return Vector3.create(3.6, 4.8, 3.6)
+  if (variant === 'flyer') return Vector3.create(2.6, 4.2, 2.6)
+  if (variant === 'transport') return Vector3.create(3.4, 4.6, 3.4)
   if (variant === 'heavyAir') return Vector3.create(4.6, 5.8, 4.6)
-  if (variant === 'siege') return Vector3.create(3.2, 3.6, 3.2)
-  return Vector3.create(2.2, 3.2, 2.2)
+  if (variant === 'siege') return Vector3.create(3.0, 3.4, 3.0)
+  return Vector3.create(2.0, 2.9, 2.0)
 }
 
 /** Info-panel blurb for siege artillery, reflecting its current mode. */
@@ -2723,16 +2723,6 @@ function isPointerPressOnSelectable(): boolean {
 
 /** Plain ground click with units selected = walk there, classic RTS style. */
 function moveSelectedUnitsTo(point: { x: number; z: number }): void {
-  // From the steep RTS camera a click on a unit can slip past its click box and
-  // hit the ground at its feet. A ground click landing on top of a unit is
-  // really a click on that unit: yours get selected, hostiles get attacked,
-  // exactly as if the click had hit the unit itself.
-  const clickedUnit = findUnitAtPoint(point)
-  if (clickedUnit) {
-    handleSelectableClick(clickedUnit.id)
-    return
-  }
-
   const movableWorkers = getSelectedWorkers().filter(
     (worker) =>
       worker.alive &&
@@ -2769,30 +2759,6 @@ function moveSelectedUnitsTo(point: { x: number; z: number }): void {
   showMoveMarker(point)
   playAcknowledge()
   setStatus(`${unitCount} unit${unitCount === 1 ? '' : 's'} moving.`)
-}
-
-/** The living unit (any team) whose footprint covers this ground point, nearest first. */
-function findUnitAtPoint(point: { x: number; z: number }): Worker | Soldier | undefined {
-  let best: Worker | Soldier | undefined
-  let bestDistanceSq = Infinity
-
-  const consider = (unit: Worker | Soldier) => {
-    if (!unit.alive || unit.inTransportId) return
-    const position = Transform.get(unit.entity).position
-    // Units shrouded by fog can't be clicked, so this can't order attacks blind.
-    if (getTeam(unit) !== 'player' && !isPositionVisibleToPlayer(position)) return
-    const dx = position.x - point.x
-    const dz = position.z - point.z
-    const radius = getUnitSelectionFootprint(unit) / 2 + 0.35
-    const distanceSq = dx * dx + dz * dz
-    if (distanceSq > radius * radius || distanceSq >= bestDistanceSq) return
-    best = unit
-    bestDistanceSq = distanceSq
-  }
-
-  for (const worker of workers) consider(worker)
-  for (const soldier of soldiers) consider(soldier)
-  return best
 }
 
 // ---------------------------------------------------------------------------
@@ -3221,16 +3187,16 @@ function getSelectionMarkerTarget(selectable: Selectable): SelectionMarkerTarget
 
 /** Selection ring footprint per unit silhouette (the roots all have scale 1). */
 function getUnitSelectionFootprint(selectable: Selectable): number {
-  if (selectable.kind === 'worker') return 1.3
+  if (selectable.kind === 'worker') return 1.2
   const variant = (selectable as Soldier).variant
   if (variant === 'hero') return 3.6
   if (variant === 'titan') return 3.2
   if (variant === 'heavyAir') return 3.4
-  if (variant === 'transport') return 2.9
-  if (variant === 'siege') return 2.8
-  if (variant === 'flyer') return 2.2
-  if (variant === 'caster') return 1.8
-  return 1.7
+  if (variant === 'transport') return 2.7
+  if (variant === 'siege') return 2.6
+  if (variant === 'flyer') return 2.0
+  if (variant === 'caster') return 1.6
+  return 1.5
 }
 
 function updateMatchTimer(dt: number): void {
