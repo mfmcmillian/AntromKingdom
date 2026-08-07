@@ -1,5 +1,8 @@
 package-lock.json
 *.js
+# The promo/wiki site's scripts are source, not build output.
+!website/js/*.js
+!scripts/*.mjs
 node_modules
 bin/
 .DS_Store
