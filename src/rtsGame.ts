@@ -185,8 +185,10 @@ const MATCH_ACTIVE = 'active'
 const MATCH_ENDED = 'ended'
 
 export function initRtsGame(): void {
+  // Only the static scenery loads up front: bases, units and resource nodes
+  // spawn at match start, so nothing pokes through (or hover-hints under) the
+  // title and setup menus.
   createStaticScene()
-  createStartingBase()
   initFogOfWar()
   engine.addSystem(rtsTickSystem)
 }
@@ -261,7 +263,9 @@ export function endRtsMatch(): void {
 export function returnToMainMenu(): void {
   multiplayerPlan = undefined
   stopCommandRelay()
-  resetRtsGame()
+  // Teardown only - no rebuild. The world stays empty behind the menus until
+  // the next match starts.
+  clearMatchWorld()
   gameState.matchStatus = MATCH_NOT_STARTED
   gameState.matchResult = 'none'
   gameState.status = ''
@@ -1214,14 +1218,15 @@ function saveResourcePlacement(resource: ResourceKind, position: Vector3): void 
   printResourcePlacementLists()
 }
 
-export function resetRtsGame(): void {
-  applyOpponentSetup()
-  resetEconomy()
-  resetMatchState(MATCH_ACTIVE)
+/**
+ * Tears down every match entity and per-match state: units, buildings,
+ * resources, VFX, selections, fog. Leaves the static scenery in place and
+ * does NOT rebuild anything - callers decide whether a new base spawns.
+ */
+function clearMatchWorld(): void {
   gameState.selectedId = ''
   gameState.selectedKind = ''
   gameState.selectedUnitIds = []
-  gameState.status = 'Reset complete. Select a worker to start gathering.'
   gameState.attackAlert = ''
   gameState.attackAlertTimer = 0
   gameState.placementMode = 'none'
@@ -1255,6 +1260,14 @@ export function resetRtsGame(): void {
   clearSelectionMarkers()
   clearHealthBars()
   resetFogOfWar()
+}
+
+export function resetRtsGame(): void {
+  applyOpponentSetup()
+  resetEconomy()
+  resetMatchState(MATCH_ACTIVE)
+  gameState.status = 'Reset complete. Select a worker to start gathering.'
+  clearMatchWorld()
 
   createStartingBase()
   enableTopDownView()

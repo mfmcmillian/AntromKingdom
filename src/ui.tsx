@@ -2291,13 +2291,6 @@ function lobbyBrowserOverlay() {
       >
         <Label value="BATTLE ROOMS" fontSize={18} color={UI.text} textAlign="middle-left" uiTransform={{ margin: { bottom: 14 } }} />
         {getLobbies().map((config) => lobbyBrowserRoomRow(config))}
-        <Label
-          value="Each room runs its own match, so several battles can happen at once."
-          fontSize={12}
-          color={Color4.create(0.55, 0.58, 0.66, 0.9)}
-          textAlign="middle-left"
-          uiTransform={{ margin: { top: 8 } }}
-        />
       </UiEntity>
 
       <UiEntity
