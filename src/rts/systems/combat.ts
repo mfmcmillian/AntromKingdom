@@ -318,10 +318,11 @@ function findNearestEnemyInRange(soldier: Soldier, range: number): CombatTarget 
   const buildingRange = holdsGround(soldier) ? range : Math.max(range, BUILDING_ACQUIRE_RANGE)
 
   return (
-    // Melee scanners skip flyers they could never reach instead of chasing them.
+    // Melee scanners skip flyers they could never reach instead of chasing them,
+    // and anti-air troopers ignore everything on the ground entirely.
     nearestInRange(position, soldiers, range, (candidate) => candidate.alive && areHostile(getTeam(candidate), team) && canAttackTarget(soldier, candidate)) ??
-    nearestInRange(position, workers, range, (candidate) => candidate.alive && areHostile(getTeam(candidate), team)) ??
-    nearestInRange(position, buildings, buildingRange, (candidate) => candidate.alive && areHostile(getTeam(candidate), team))
+    nearestInRange(position, workers, range, (candidate) => candidate.alive && areHostile(getTeam(candidate), team) && canAttackTarget(soldier, candidate)) ??
+    nearestInRange(position, buildings, buildingRange, (candidate) => candidate.alive && areHostile(getTeam(candidate), team) && canAttackTarget(soldier, candidate))
   )
 }
 

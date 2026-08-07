@@ -831,7 +831,7 @@ function hasHostileWithinRange(soldier: Soldier, range: number): boolean {
   const position = Transform.get(soldier.entity).position
 
   for (const other of soldiers) {
-    if (!other.alive || other.variant === 'flyer' || !areHostile(team, getTeam(other))) continue
+    if (!other.alive || isAirVariant(other.variant) || !areHostile(team, getTeam(other))) continue
     if (distanceToPoint(position, Transform.get(other.entity).position) <= range) return true
   }
   for (const worker of workers) {
@@ -1017,8 +1017,9 @@ export function cancelBuildingPlacement(): void {
 export function queueSoldier(variant: SoldierVariant = 'melee'): void {
   if (!isMatchActive()) return
 
-  // Melee/ranged/healer train at the barracks; caster/flyer/siege/titan need the advanced structure.
-  const trainerKind: BuildableKind = variant === 'melee' || variant === 'ranged' || variant === 'healer' ? 'barracks' : 'techLab'
+  // Infantry (melee/ranged/healer/caster/anti-air) trains at the barracks; air and heavy machinery need the advanced structure.
+  const trainerKind: BuildableKind =
+    variant === 'melee' || variant === 'ranged' || variant === 'healer' || variant === 'caster' || variant === 'antiAir' ? 'barracks' : 'techLab'
   const selected = getSelected()
   const trainer = selected?.kind === trainerKind ? (selected as Building) : undefined
   const soldierDef = getSoldierDefinition('player', variant)
@@ -1538,11 +1539,14 @@ export function getSelectedSummary(): SelectedSummary {
       selectedUnitCount <= 1 && soldier.variant === 'transport'
         ? `Cargo: ${getCargoCount(soldier)}/${TRANSPORT_CAPACITY}. Select ground units and click this carrier to load; UNLOAD drops them over land. `
         : ''
-    // Close-quarters units can't reach flyers - surface that in the panel (healers never attack at all).
+    // Close-quarters units can't reach flyers - surface that in the panel (healers
+    // never attack at all, and anti-air troopers have the opposite restriction).
     const airLine =
-      selectedUnitCount <= 1 && soldier.variant !== 'healer' && soldier.variant !== 'transport' && !canAttackTarget(soldier, { kind: 'soldier', variant: 'flyer' } as Soldier)
-        ? 'Cannot attack air. '
-        : ''
+      selectedUnitCount <= 1 && soldier.variant === 'antiAir'
+        ? 'Only attacks air targets. '
+        : selectedUnitCount <= 1 && soldier.variant !== 'healer' && soldier.variant !== 'transport' && !canAttackTarget(soldier, { kind: 'soldier', variant: 'flyer' } as Soldier)
+          ? 'Cannot attack air. '
+          : ''
     const killLine = selectedUnitCount <= 1 ? ` · Kills: ${soldier.kills ?? 0}` : ''
     return {
       name: selectedUnitCount > 1 ? `${selectedUnitCount} Units` : soldier.name,
@@ -1821,6 +1825,7 @@ function getSoldierColliderScale(variant: SoldierVariant): Vector3 {
   if (variant === 'titan') return Vector3.create(2.4, 3.2, 2.4)
   if (variant === 'flyer') return Vector3.create(1.8, 3.2, 1.8)
   if (variant === 'transport') return Vector3.create(2.6, 3.4, 2.6)
+  if (variant === 'heavyAir') return Vector3.create(3, 4, 3)
   if (variant === 'siege') return Vector3.create(2, 2.4, 2)
   return Vector3.create(1.4, 2, 1.4)
 }
@@ -2430,7 +2435,13 @@ function assignSoldierToAttack(soldier: Soldier, target: Building | Soldier | Wo
   if (!soldier.alive || !target.alive) return
   if (getTeam(soldier) === getTeam(target)) return
   if (!canAttackTarget(soldier, target)) {
-    if (announce && getTeam(soldier) === 'player') setStatus(`${soldier.name} can't reach ${target.name}: only ranged weapons hit air.`)
+    if (announce && getTeam(soldier) === 'player') {
+      setStatus(
+        soldier.variant === 'antiAir'
+          ? `${soldier.name} only attacks airborne targets.`
+          : `${soldier.name} can't reach ${target.name}: only ranged weapons hit air.`
+      )
+    }
     return
   }
 
@@ -3656,7 +3667,9 @@ function damageCombatTarget(target: Building | Soldier | Worker, amount: number,
     const isRangedShot =
       attacker.variant === 'ranged' ||
       attacker.variant === 'caster' ||
+      attacker.variant === 'antiAir' ||
       attacker.variant === 'flyer' ||
+      attacker.variant === 'heavyAir' ||
       attacker.variant === 'siege' ||
       (attacker.variant === 'hero' && attacker.attackRange > 3)
 
@@ -3820,7 +3833,7 @@ function damageSoldier(soldier: Soldier, amount: number, attacker?: Soldier | Wo
 
   creditUnitKill(attacker, soldier)
   const deathScale =
-    soldier.variant === 'hero' ? 2.6 : soldier.variant === 'titan' ? 2.2 : soldier.variant === 'siege' || soldier.variant === 'transport' ? 1.6 : soldier.variant === 'flyer' || soldier.variant === 'caster' ? 1.2 : 1
+    soldier.variant === 'hero' ? 2.6 : soldier.variant === 'titan' || soldier.variant === 'heavyAir' ? 2.2 : soldier.variant === 'siege' || soldier.variant === 'transport' ? 1.6 : soldier.variant === 'flyer' || soldier.variant === 'caster' ? 1.2 : 1
   spawnDeathBurst(cloneVector(Transform.get(soldier.entity).position), getRace(getTeam(soldier)).accent, deathScale)
   playExplosion(Transform.get(soldier.entity).position)
 
@@ -4297,7 +4310,7 @@ function isEnemyAttackTarget(selectable: Selectable): selectable is Building | S
 /** Anything the armed repair order accepts: damaged friendly buildings, plus damaged mech fighters for humans. */
 /** The Vanguard's machines: the units a repair crew can actually weld back together. */
 function isMechSoldier(worker: Worker, soldier: Soldier): boolean {
-  return getRace(getTeam(worker)).id === 'human' && (soldier.variant === 'flyer' || soldier.variant === 'transport' || soldier.variant === 'titan')
+  return getRace(getTeam(worker)).id === 'human' && (isAirVariant(soldier.variant) || soldier.variant === 'titan')
 }
 
 function isPlayerRepairableTarget(selectable: Selectable): selectable is Building | Soldier {
@@ -4308,7 +4321,7 @@ function isPlayerRepairableTarget(selectable: Selectable): selectable is Buildin
   return (
     getTeam(soldier) === 'player' &&
     getRace('player').id === 'human' &&
-    (soldier.variant === 'flyer' || soldier.variant === 'transport' || soldier.variant === 'titan') &&
+    (isAirVariant(soldier.variant) || soldier.variant === 'titan') &&
     soldier.hp < soldier.maxHp
   )
 }

@@ -57,7 +57,7 @@ export function getCargoUnits(transport: Soldier): GroundUnit[] {
 
 function isBoardable(unit: GroundUnit, transport: Soldier): boolean {
   if (!unit.alive || unit.inTransportId) return false
-  if (unit.kind === 'soldier' && (unit.variant === 'flyer' || unit.variant === 'transport')) return false
+  if (unit.kind === 'soldier' && (unit.variant === 'flyer' || unit.variant === 'transport' || unit.variant === 'heavyAir')) return false
   return getTeam(unit) === getTeam(transport)
 }
 

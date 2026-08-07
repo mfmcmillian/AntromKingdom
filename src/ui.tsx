@@ -81,7 +81,7 @@ import { getDragScreenRect } from './rts/dragSelect'
 import { MAPS, getMapById, getNextMapId } from './rts/maps'
 import { minimapPanel } from './rts/minimap'
 import { BUILDING_DEFINITIONS } from './rts/config'
-import { RACES, RACE_IDS, TRANSPORT_CAPACITY, getBuildingDisplayName, getRace, getSoldierDefinition, getWorkerDefinition } from './rts/races'
+import { RACES, RACE_IDS, TRANSPORT_CAPACITY, UNIT_REQUIREMENTS, getBuildingDisplayName, getRace, getSoldierDefinition, getWorkerDefinition, isAirVariant } from './rts/races'
 import { UPGRADE_INFO, UPGRADE_MAX_LEVEL, getNextUpgradeCost, getUpgradeLevel, getUpgradeProgress, isUpgradeInProgress } from './rts/upgrades'
 import { isTopDownViewActive, toggleTopDownView } from './rts/topDownCamera'
 import { CONSOLE_HEIGHT } from './rts/hud'
@@ -125,8 +125,10 @@ const UNIT_ICON_FILES: Record<SoldierVariant | 'worker', string> = {
   ranged: 'icon-unit-ranged',
   healer: 'icon-unit-healer',
   caster: 'icon-unit-caster',
+  antiAir: 'icon-unit-antiair',
   flyer: 'icon-unit-flyer',
   transport: 'icon-unit-transport',
+  heavyAir: 'icon-unit-heavyair',
   siege: 'icon-unit-siege',
   titan: 'icon-unit-titan',
   hero: 'icon-unit-hero'
@@ -700,7 +702,7 @@ function researchQueuePanel(selected: SelectedSummary) {
 /** SC-style upgrade icons under the unit details: the researched weapon /
  * propulsion levels that apply to this unit (air tracks for flyers). */
 function upgradeBadgesRow(team: Team, variant?: SoldierVariant) {
-  const kinds: UpgradeKind[] = variant === 'flyer' ? ['airDamage', 'airSpeed'] : ['damage', 'speed']
+  const kinds: UpgradeKind[] = variant && isAirVariant(variant) ? ['airDamage', 'airSpeed'] : ['damage', 'speed']
   const upgrades = kinds
     .map((kind) => ({ kind, level: getUpgradeLevel(team, kind) }))
     .filter((upgrade) => upgrade.level > 0)
@@ -1066,13 +1068,15 @@ function getCommandSlots(selected: SelectedSummary): CommandSlot[] {
     slots.push(trainSlot('melee', 'Frontline melee fighter.'))
     slots.push(trainSlot('ranged', 'Ranged attacker. Fires from a distance.'))
     slots.push(trainSlot('healer', getHealerDescription()))
+    slots.push(trainSlot('caster', 'Spellcaster. Slow blasts that splash nearby enemies.'))
+    slots.push(trainSlot('antiAir', 'Anti-air trooper. Long-range weapon that ONLY hits flyers.'))
     slots.push(rallySlot())
   }
 
   if (selected.kind === 'techLab') {
-    slots.push(trainSlot('caster', 'Spellcaster. Slow blasts that splash nearby enemies.'))
     slots.push(trainSlot('flyer', 'Fast flyer. Hovers over the battlefield.'))
     slots.push(trainSlot('transport', `Unarmed air carrier. Ferries ${TRANSPORT_CAPACITY} ground units across the water.`))
+    slots.push(trainSlot('heavyAir', 'Capital ship. Slow, heavily armored, splash damage against ground and air.'))
     slots.push(trainSlot('siege', getSiegeDescription()))
     slots.push(trainSlot('titan', 'Giant assault monster. Splash stomps, huge HP.'))
     slots.push(rallySlot())
@@ -1192,7 +1196,7 @@ function getSiegeDescription(): string {
 function trainSlot(variant: SoldierVariant, description: string): CommandSlot {
   const definition = getSoldierDefinition('player', variant)
   const unlocked = isUnitUnlocked(variant)
-  const requiredKind = variant === 'titan' || variant === 'siege' ? 'forge' : undefined
+  const requiredKind = UNIT_REQUIREMENTS[variant]
 
   return {
     id: `train-${variant}`,

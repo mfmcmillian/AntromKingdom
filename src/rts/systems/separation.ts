@@ -24,7 +24,7 @@ const MAP_MARGIN = 1.5
 const CELL_SIZE = 2
 
 function isFlyer(unit: Unit): boolean {
-  return unit.kind === 'soldier' && (unit.variant === 'flyer' || unit.variant === 'transport')
+  return unit.kind === 'soldier' && (unit.variant === 'flyer' || unit.variant === 'transport' || unit.variant === 'heavyAir')
 }
 
 /** Busy harvesters and builders phase through the crowd (SC harvester rule). */

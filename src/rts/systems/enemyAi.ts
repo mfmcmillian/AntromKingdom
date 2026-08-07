@@ -206,8 +206,10 @@ function queueEnemyProduction(ai: EnemyAi): void {
   queueEnemyAdvancedProduction(ai)
 
   if (barracks && guardCount < ai.settings.targetGuards) {
-    // Roughly one ranged per two melee, one medic per six units; fall back to melee if gas is short.
-    let variant: SoldierVariant = guardCount % 6 === 5 ? 'healer' : guardCount % 3 === 2 ? 'ranged' : 'melee'
+    // Infantry mix out of an 8-slot cycle: mostly melee/ranged with one medic,
+    // one anti-air trooper and one caster sprinkled in; melee if gas is short.
+    const mod = guardCount % 8
+    let variant: SoldierVariant = mod === 5 ? 'healer' : mod === 3 ? 'antiAir' : mod === 7 ? 'caster' : mod === 2 || mod === 6 ? 'ranged' : 'melee'
     let soldierDef = getSoldierDefinition(team, variant)
     if (variant !== 'melee' && !hasResources(team, soldierDef.cost)) {
       variant = 'melee'
@@ -221,7 +223,7 @@ function queueEnemyProduction(ai: EnemyAi): void {
   }
 }
 
-/** With the advanced structure up, the AI folds casters, flyers and the occasional titan into its army. */
+/** With the advanced structure up, the AI folds flyers, siege, capital ships and the occasional titan into its army. */
 function queueEnemyAdvancedProduction(ai: EnemyAi): void {
   const team = ai.team
   const techLab = getCompletedTeamBuildings(team, 'techLab')[0]
@@ -248,22 +250,23 @@ function queueEnemyAdvancedProduction(ai: EnemyAi): void {
     (soldier) =>
       soldier.alive &&
       getTeam(soldier) === team &&
-      (soldier.variant === 'caster' || soldier.variant === 'flyer' || soldier.variant === 'siege' || soldier.variant === 'titan')
+      (soldier.variant === 'flyer' || soldier.variant === 'heavyAir' || soldier.variant === 'siege' || soldier.variant === 'titan')
   ).length
   // Island maps: air power decides the game, so the advanced army runs bigger.
   const advancedCap = isIslandMap() ? Math.ceil(ai.settings.maxAdvancedUnits * 1.5) : ai.settings.maxAdvancedUnits
   if (advancedCount >= advancedCap) return
 
   const hasForge = getCompletedTeamBuildings(team, 'forge').length > 0
+  const hasAirForge = getCompletedTeamBuildings(team, 'airForge').length > 0
   const slot = advancedCount % 4
   let variant: SoldierVariant
   if (isIslandMap()) {
-    // Island cycle leans hard on wings: flyer, caster, flyer, titan. Flyers
-    // cross the void on their own; the occasional titan rides the ferry.
-    variant = slot === 1 ? 'caster' : slot === 3 ? (hasForge ? 'titan' : 'flyer') : 'flyer'
+    // Island cycle leans hard on wings: flyer, capital ship, flyer, titan.
+    // Flyers cross the water on their own; the occasional titan rides the ferry.
+    variant = slot === 1 ? (hasAirForge ? 'heavyAir' : 'flyer') : slot === 3 ? (hasForge ? 'titan' : 'flyer') : 'flyer'
   } else {
-    // Forge-gated cycle: caster, flyer, siege, titan (siege/titan downgrade until the forge stands).
-    variant = slot === 3 ? (hasForge ? 'titan' : 'flyer') : slot === 2 ? (hasForge ? 'siege' : 'caster') : slot === 0 ? 'caster' : 'flyer'
+    // Tech-gated cycle: flyer, siege, capital ship, titan (each downgrades to a flyer until its building stands).
+    variant = slot === 1 ? (hasForge ? 'siege' : 'flyer') : slot === 2 ? (hasAirForge ? 'heavyAir' : 'flyer') : slot === 3 ? (hasForge ? 'titan' : 'flyer') : 'flyer'
   }
   const soldierDef = getSoldierDefinition(team, variant)
 
@@ -286,7 +289,7 @@ function queueEnemyResearch(ai: EnemyAi): void {
 
   // Air tracks only matter once the AI actually fields flyers.
   const airForge = getCompletedTeamBuildings(team, 'airForge')[0]
-  const hasFlyers = soldiers.some((soldier) => soldier.alive && getTeam(soldier) === team && soldier.variant === 'flyer')
+  const hasFlyers = soldiers.some((soldier) => soldier.alive && getTeam(soldier) === team && (soldier.variant === 'flyer' || soldier.variant === 'heavyAir'))
   if (airForge && hasFlyers) {
     tryStartResearchTrack(team, 'airDamage', 'airSpeed', airForge.id)
   }
@@ -401,8 +404,8 @@ function sendEnemyAttackWave(ai: EnemyAi, deps: EnemyAiDeps): void {
 
 /** Kick off a ferry run (flyers attack immediately; ground units board). */
 function sendFerriedAttackWave(ai: EnemyAi, attackers: Soldier[], targets: (Building | Soldier | Worker)[], targetTeam: Team, deps: EnemyAiDeps): void {
-  const airborne = attackers.filter((soldier) => soldier.variant === 'flyer')
-  const ground = attackers.filter((soldier) => soldier.variant !== 'flyer' && soldier.variant !== 'transport')
+  const airborne = attackers.filter((soldier) => soldier.variant === 'flyer' || soldier.variant === 'heavyAir')
+  const ground = attackers.filter((soldier) => soldier.variant !== 'flyer' && soldier.variant !== 'heavyAir' && soldier.variant !== 'transport')
 
   let slot = 0
   for (const flyer of airborne) {

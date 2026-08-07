@@ -8,7 +8,7 @@ import { RaceId, ResourceKind, Team } from './types'
 // per-state motion (hover bob, tilt, spinners, attack lunges) to mirror the
 // animation clips the game logic requests (idle / walk / talk / attack / impact).
 
-export type UnitRole = 'worker' | 'melee' | 'ranged' | 'caster' | 'flyer' | 'transport' | 'titan' | 'hero' | 'healer' | 'siege'
+export type UnitRole = 'worker' | 'melee' | 'ranged' | 'caster' | 'antiAir' | 'flyer' | 'transport' | 'heavyAir' | 'titan' | 'hero' | 'healer' | 'siege'
 
 type UnitAnimState = 'idle' | 'walk' | 'talk' | 'attack' | 'impact'
 
@@ -212,8 +212,10 @@ export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team:
     else if (role === 'melee') buildHumanVanguard(rig, addPart, glow)
     else if (role === 'ranged') buildHumanGunner(rig, addPart, glow)
     else if (role === 'caster') buildHumanStormcaller(rig, addPart, glow)
+    else if (role === 'antiAir') buildHumanFlakgunner(rig, addPart, glow)
     else if (role === 'flyer') buildHumanRaptor(rig, addPart, glow)
     else if (role === 'transport') buildHumanSkyhauler(rig, addPart, glow)
+    else if (role === 'heavyAir') buildHumanDreadnought(rig, addPart, glow)
     else if (role === 'hero') buildHumanHero(rig, addPart, glow)
     else if (role === 'healer') buildHumanMedic(rig, addPart, glow)
     else if (role === 'siege') buildHumanThunderhead(rig, addPart, glow)
@@ -223,8 +225,10 @@ export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team:
     else if (role === 'melee') buildAlienStalker(rig, addPart, glow)
     else if (role === 'ranged') buildAlienDisruptor(rig, addPart, glow)
     else if (role === 'caster') buildAlienOracle(rig, addPart, glow)
+    else if (role === 'antiAir') buildAlienStarlance(rig, addPart, glow)
     else if (role === 'flyer') buildAlienTempest(rig, addPart, glow)
     else if (role === 'transport') buildAlienRiftbarge(rig, addPart, glow)
+    else if (role === 'heavyAir') buildAlienSolarArk(rig, addPart, glow)
     else if (role === 'hero') buildAlienHero(rig, addPart, glow)
     else if (role === 'healer') buildAlienLightmender(rig, addPart, glow)
     else if (role === 'siege') buildAlienSunlance(rig, addPart, glow)
@@ -234,8 +238,10 @@ export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team:
     else if (role === 'melee') buildBioRavager(rig, addPart, glow)
     else if (role === 'ranged') buildBioSpitter(rig, addPart, glow)
     else if (role === 'caster') buildBioPlagueWeaver(rig, addPart, glow)
+    else if (role === 'antiAir') buildBioSporeLasher(rig, addPart, glow)
     else if (role === 'flyer') buildBioShrieker(rig, addPart, glow)
     else if (role === 'transport') buildBioBroodwing(rig, addPart, glow)
+    else if (role === 'heavyAir') buildBioSkyLeviathan(rig, addPart, glow)
     else if (role === 'hero') buildBioHero(rig, addPart, glow)
     else if (role === 'healer') buildBioBroodtender(rig, addPart, glow)
     else if (role === 'siege') buildBioAcidmaw(rig, addPart, glow)
@@ -265,8 +271,10 @@ const TEAM_RING_SIZE: Record<UnitRole, number> = {
   ranged: 1.15,
   healer: 1.15,
   caster: 1.25,
+  antiAir: 1.15,
   flyer: 1.25,
   transport: 1.7,
+  heavyAir: 2,
   siege: 1.6,
   titan: 1.9,
   hero: 2.2
@@ -852,6 +860,124 @@ function buildHumanSkyhauler(rig: UnitRig, addPart: PartAdder, glow: Color4): vo
   }
 }
 
+/** Human anti-air trooper: heavy infantry hauling a quad missile pod and a spinning radar dish. */
+function buildHumanFlakgunner(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  addPart(Vector3.create(0, 0.16, 0), Vector3.create(0.52, 0.05, 0.52), glow, { cylinder: true, emissive: glow, emissiveIntensity: 2 })
+  addPart(Vector3.create(0, 0.34, 0), Vector3.create(0.6, 0.24, 0.6), METAL_DARK, { cylinder: true })
+
+  // Armored torso with chest light.
+  addPart(Vector3.create(0, 0.82, 0), Vector3.create(0.6, 0.52, 0.44), HUMAN_HULL)
+  addPart(Vector3.create(0, 0.9, 0.21), Vector3.create(0.18, 0.1, 0.05), glow, { emissive: glow, emissiveIntensity: 2.2 })
+
+  // Helmet with an upward-canted targeting visor: this trooper watches the sky.
+  addPart(Vector3.create(0, 1.28, 0), Vector3.create(0.32, 0.26, 0.32), METAL_DARK)
+  addPart(Vector3.create(0, 1.34, 0.14), Vector3.create(0.26, 0.08, 0.06), glow, {
+    emissive: glow,
+    emissiveIntensity: 2.8,
+    rotation: Quaternion.fromEulerDegrees(-20, 0, 0)
+  })
+
+  // Quad flak-missile pod on the right shoulder, angled skyward with visible warheads.
+  addPart(Vector3.create(0.38, 1.16, -0.05), Vector3.create(0.3, 0.26, 0.44), METAL_DARK, { rotation: Quaternion.fromEulerDegrees(-35, 0, 0) })
+  for (const [mx, my] of [[-0.06, 0.05], [0.06, 0.05], [-0.06, -0.05], [0.06, -0.05]] as const) {
+    addPart(Vector3.create(0.38 + mx, 1.24 + my, 0.14), Vector3.create(0.05, 0.16, 0.05), BLADE_STEEL, {
+      cone: true,
+      metallic: 0.7,
+      roughness: 0.3,
+      rotation: Quaternion.fromEulerDegrees(55, 0, 0)
+    })
+  }
+  addPart(Vector3.create(0.38, 1.12, 0.2), Vector3.create(0.2, 0.05, 0.05), glow, {
+    emissive: glow,
+    emissiveIntensity: 2.4,
+    rotation: Quaternion.fromEulerDegrees(-35, 0, 0)
+  })
+
+  // Backpack tracking station: support mast plus a spinning radar dish.
+  addPart(Vector3.create(-0.2, 1.06, -0.26), Vector3.create(0.2, 0.3, 0.14), METAL_LIGHT)
+  addPart(Vector3.create(-0.2, 1.32, -0.26), Vector3.create(0.04, 0.2, 0.04), METAL_DARK, { cylinder: true })
+  rig.spinner = addPart(Vector3.create(-0.2, 1.46, -0.26), Vector3.create(0.3, 0.04, 0.3), METAL_LIGHT, { cylinder: true, emissive: glow, emissiveIntensity: 1 })
+
+  // Left arm plate.
+  addPart(Vector3.create(-0.4, 0.78, 0), Vector3.create(0.15, 0.4, 0.17), METAL_DARK)
+
+  rig.spinAxis = 'y'
+  rig.profiles = {
+    idle: { amplitude: 0.025, speed: 2, tilt: 0, spin: 60, lunge: 0 },
+    walk: { amplitude: 0.055, speed: 7, tilt: 7, spin: 120, lunge: 0 },
+    talk: { amplitude: 0.03, speed: 10, tilt: 6, spin: 240, lunge: 0 },
+    attack: { amplitude: 0.03, speed: 14, tilt: 8, spin: 480, lunge: 0.1 },
+    impact: { amplitude: 0.05, speed: 20, tilt: -8, spin: 60, lunge: 0 }
+  }
+}
+
+/** Human capital ship: a long battlecruiser hull with a bridge tower, twin turrets and a triple engine block. */
+function buildHumanDreadnought(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  rig.baseHeight = 2.6
+
+  // --- Main hull: long armored wedge with layered decks and a reinforced prow.
+  addPart(Vector3.create(0, 0.6, 0), Vector3.create(0.85, 0.42, 2.2), HUMAN_HULL)
+  addPart(Vector3.create(0, 0.42, 0.1), Vector3.create(0.7, 0.2, 1.9), METAL_DARK)
+  addPart(Vector3.create(0, 0.86, -0.25), Vector3.create(0.62, 0.16, 1.3), METAL_LIGHT)
+  // Prow ram with a warning stripe.
+  addPart(Vector3.create(0, 0.58, 1.28), Vector3.create(0.5, 0.28, 0.5), METAL_LIGHT, { rotation: Quaternion.fromEulerDegrees(0, 45, 0) })
+  addPart(Vector3.create(0, 0.58, 1.42), Vector3.create(0.2, 0.1, 0.2), glow, { emissive: glow, emissiveIntensity: 2.6 })
+
+  // --- Bridge tower astern with a glowing command deck. --------------------
+  addPart(Vector3.create(0, 1.06, -0.72), Vector3.create(0.42, 0.34, 0.5), HUMAN_HULL)
+  addPart(Vector3.create(0, 1.28, -0.72), Vector3.create(0.3, 0.16, 0.34), METAL_LIGHT)
+  addPart(Vector3.create(0, 1.28, -0.54), Vector3.create(0.24, 0.09, 0.05), glow, { emissive: glow, emissiveIntensity: 2.8 })
+  // Comms mast with beacon.
+  addPart(Vector3.create(0, 1.5, -0.78), Vector3.create(0.03, 0.24, 0.03), METAL_DARK, { cylinder: true })
+  addPart(Vector3.create(0, 1.64, -0.78), Vector3.create(0.05, 0.05, 0.05), glow, { sphere: true, emissive: glow, emissiveIntensity: 3.5 })
+
+  // --- Twin dorsal cannon turrets, barrels trained forward. -----------------
+  for (const z of [0.55, -0.05]) {
+    addPart(Vector3.create(0, 0.9, z), Vector3.create(0.34, 0.14, 0.34), METAL_DARK, { cylinder: true })
+    for (const side of [-1, 1]) {
+      addPart(Vector3.create(side * 0.08, 0.94, z + 0.35), Vector3.create(0.05, 0.05, 0.55), METAL_LIGHT, {
+        cylinder: true,
+        rotation: Quaternion.fromEulerDegrees(90, 0, 0)
+      })
+      addPart(Vector3.create(side * 0.08, 0.94, z + 0.64), Vector3.create(0.06, 0.06, 0.05), glow, {
+        cylinder: true,
+        emissive: glow,
+        emissiveIntensity: 2.6,
+        rotation: Quaternion.fromEulerDegrees(90, 0, 0)
+      })
+    }
+  }
+
+  // --- Side sponsons: armored wings with wingtip nav lights. ----------------
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.62, 0.58, -0.2), Vector3.create(0.45, 0.12, 0.9), METAL_LIGHT)
+    addPart(Vector3.create(side * 0.85, 0.58, -0.2), Vector3.create(0.16, 0.16, 0.5), METAL_DARK)
+    addPart(Vector3.create(side * 0.9, 0.66, 0.02), Vector3.create(0.05, 0.05, 0.05), glow, { sphere: true, emissive: glow, emissiveIntensity: 3.2 })
+  }
+
+  // --- Engine block: three glowing exhausts trailing heat shimmer. ----------
+  addPart(Vector3.create(0, 0.6, -1.15), Vector3.create(0.6, 0.3, 0.25), METAL_DARK)
+  for (const ex of [-0.2, 0, 0.2]) {
+    addPart(Vector3.create(ex, 0.6, -1.3), Vector3.create(0.13, 0.13, 0.06), glow, {
+      cylinder: true,
+      emissive: glow,
+      emissiveIntensity: 3,
+      rotation: Quaternion.fromEulerDegrees(90, 0, 0)
+    })
+    const heat = addPart(Vector3.create(ex, 0.6, -1.42), Vector3.create(0.07, 0.07, 0.07), glow, { sphere: true, emissive: glow, emissiveIntensity: 2.8 })
+    rig.fx.push({ entity: heat, mode: 'ember', anchor: Vector3.create(ex, 0.6, -1.42), radius: 0.03, height: -0.5, speed: 1.9, phase: ex * 10, size: 0.07 })
+  }
+
+  rig.spinAxis = 'y'
+  rig.profiles = {
+    idle: { amplitude: 0.08, speed: 1.1, tilt: 0, spin: 0, lunge: 0 },
+    walk: { amplitude: 0.05, speed: 2.4, tilt: 6, spin: 0, lunge: 0 },
+    talk: { amplitude: 0.06, speed: 2.6, tilt: 2, spin: 0, lunge: 0 },
+    attack: { amplitude: 0.04, speed: 8, tilt: 3, spin: 0, lunge: -0.05 },
+    impact: { amplitude: 0.1, speed: 13, tilt: -5, spin: 0, lunge: 0 }
+  }
+}
+
 /** Alien transport: a golden antigrav barge with a crystal field dome over the cargo bay. */
 function buildAlienRiftbarge(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
   rig.baseHeight = 2.2
@@ -900,6 +1026,129 @@ function buildAlienRiftbarge(rig: UnitRig, addPart: PartAdder, glow: Color4): vo
     talk: { amplitude: 0.08, speed: 2.6, tilt: 3, spin: 0, lunge: 0 },
     attack: { amplitude: 0.07, speed: 4, tilt: 4, spin: 0, lunge: 0 },
     impact: { amplitude: 0.13, speed: 13, tilt: -7, spin: 0, lunge: 0 }
+  }
+}
+
+/** Alien anti-air walker: a gilded tripod pedestal raising a sky-piercing crystal lance. */
+function buildAlienStarlance(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  const gild = { metallic: 0.8, roughness: 0.25 }
+
+  // --- Tripod pedestal: three gilded legs around a dark core. ---------------
+  for (const angle of [0, 120, 240]) {
+    const rad = (angle * Math.PI) / 180
+    addPart(Vector3.create(Math.cos(rad) * 0.32, 0.28, Math.sin(rad) * 0.32), Vector3.create(0.1, 0.56, 0.1), ALIEN_GOLD, {
+      ...gild,
+      rotation: Quaternion.fromEulerDegrees(Math.sin(rad) * -22, 0, Math.cos(rad) * 22)
+    })
+  }
+  addPart(Vector3.create(0, 0.52, 0), Vector3.create(0.44, 0.24, 0.44), ALIEN_DARK, { cylinder: true, ...gild })
+  addPart(Vector3.create(0, 0.68, 0), Vector3.create(0.52, 0.08, 0.52), ALIEN_GOLD, { cylinder: true, ...gild })
+
+  // --- Rotating targeting ring around the emitter throat. --------------------
+  rig.spinner = addPart(Vector3.create(0, 0.86, 0), Vector3.create(0.6, 0.05, 0.6), ALIEN_GOLD, {
+    cylinder: true,
+    ...gild,
+    emissive: ALIEN_CRYSTAL,
+    emissiveIntensity: 0.8
+  })
+
+  // --- The lance itself: a tall crystal spike aimed straight up. -------------
+  addPart(Vector3.create(0, 1.3, 0), Vector3.create(0.14, 0.9, 0.14), ALIEN_CRYSTAL, {
+    cone: true,
+    emissive: ALIEN_CRYSTAL,
+    emissiveIntensity: 2.6
+  })
+  const charge = addPart(Vector3.create(0, 0.95, 0), Vector3.create(0.22, 0.22, 0.22), ALIEN_CRYSTAL, {
+    sphere: true,
+    emissive: ALIEN_CRYSTAL,
+    emissiveIntensity: 2.2
+  })
+  rig.fx.push({ entity: charge, mode: 'pulse', anchor: Vector3.create(0, 0.95, 0), radius: 0.05, height: 0, speed: 2.4, phase: 0, size: 0.22 })
+  // Spark rising along the lance toward the tip.
+  const spark = addPart(Vector3.create(0, 1.1, 0), Vector3.create(0.06, 0.06, 0.06), glow, { sphere: true, emissive: glow, emissiveIntensity: 3.2 })
+  rig.fx.push({ entity: spark, mode: 'ember', anchor: Vector3.create(0, 1.1, 0), radius: 0.02, height: 0.7, speed: 1.6, phase: 0, size: 0.06 })
+
+  // --- Team glow trim and orbiting focus motes. -------------------------------
+  addPart(Vector3.create(0, 0.6, 0.24), Vector3.create(0.16, 0.08, 0.05), glow, { emissive: glow, emissiveIntensity: 2.4 })
+  for (let i = 0; i < 3; i++) {
+    const mote = addPart(Vector3.create(0, 1.1, 0), Vector3.create(0.05, 0.05, 0.05), ALIEN_CRYSTAL, {
+      sphere: true,
+      emissive: ALIEN_CRYSTAL,
+      emissiveIntensity: 3
+    })
+    rig.fx.push({ entity: mote, mode: 'orbit', anchor: Vector3.create(0, 1.1, 0), radius: 0.4, height: 0.2, speed: 2, phase: (i / 3) * Math.PI * 2, size: 0.05 })
+  }
+
+  rig.spinAxis = 'y'
+  rig.profiles = {
+    idle: { amplitude: 0.03, speed: 1.6, tilt: 0, spin: 40, lunge: 0 },
+    walk: { amplitude: 0.06, speed: 5, tilt: 6, spin: 90, lunge: 0 },
+    talk: { amplitude: 0.03, speed: 6, tilt: 4, spin: 160, lunge: 0 },
+    attack: { amplitude: 0.03, speed: 12, tilt: 0, spin: 540, lunge: 0 },
+    impact: { amplitude: 0.06, speed: 18, tilt: -6, spin: 40, lunge: 0 }
+  }
+}
+
+/** Alien capital ship: a golden crescent ark built around a blazing solar core. */
+function buildAlienSolarArk(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  rig.baseHeight = 2.7
+  const gild = { metallic: 0.8, roughness: 0.25 }
+  const SUN = Color4.create(1, 0.8, 0.35, 1)
+
+  // --- Crescent hull: two swept gilded slabs meeting at the stern core. ------
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.55, 0.6, 0.25), Vector3.create(0.4, 0.16, 1.5), ALIEN_GOLD, {
+      ...gild,
+      rotation: Quaternion.fromEulerDegrees(0, side * -24, 0)
+    })
+    addPart(Vector3.create(side * 0.85, 0.6, 0.62), Vector3.create(0.22, 0.1, 0.7), ALIEN_DARK, {
+      ...gild,
+      rotation: Quaternion.fromEulerDegrees(0, side * -28, 0)
+    })
+    // Prow lances at the crescent tips.
+    addPart(Vector3.create(side * 1.02, 0.6, 1.05), Vector3.create(0.08, 0.08, 0.5), ALIEN_CRYSTAL, {
+      cone: true,
+      emissive: ALIEN_CRYSTAL,
+      emissiveIntensity: 2.4,
+      rotation: Quaternion.fromEulerDegrees(90, side * -28, 0)
+    })
+  }
+  // Stern bridge deck bridging the crescent horns.
+  addPart(Vector3.create(0, 0.66, -0.35), Vector3.create(0.9, 0.2, 0.6), ALIEN_DARK, gild)
+  addPart(Vector3.create(0, 0.82, -0.35), Vector3.create(0.5, 0.12, 0.4), ALIEN_GOLD, gild)
+
+  // --- Solar core: the blazing heart that powers the ark's guns. -------------
+  const core = addPart(Vector3.create(0, 0.72, 0.05), Vector3.create(0.42, 0.42, 0.42), SUN, {
+    sphere: true,
+    emissive: SUN,
+    emissiveIntensity: 3
+  })
+  rig.fx.push({ entity: core, mode: 'pulse', anchor: Vector3.create(0, 0.72, 0.05), radius: 0.06, height: 0, speed: 1.6, phase: 0, size: 0.42 })
+  // Containment ring around the core.
+  addPart(Vector3.create(0, 0.72, 0.05), Vector3.create(0.62, 0.05, 0.62), ALIEN_GOLD, { cylinder: true, ...gild })
+
+  // --- Antigrav disc below and team-glow stern light. -------------------------
+  const grav = addPart(Vector3.create(0, 0.34, 0), Vector3.create(1.1, 0.03, 1.1), Color4.create(ALIEN_CRYSTAL.r, ALIEN_CRYSTAL.g, ALIEN_CRYSTAL.b, 0.5), {
+    cylinder: true,
+    emissive: ALIEN_CRYSTAL,
+    emissiveIntensity: 1.8
+  })
+  rig.fx.push({ entity: grav, mode: 'pulse', anchor: Vector3.create(0, 0.34, 0), radius: 0.05, height: 0, speed: 1.2, phase: 1, size: 1.1 })
+  addPart(Vector3.create(0, 0.66, -0.68), Vector3.create(0.34, 0.08, 0.06), glow, { emissive: glow, emissiveIntensity: 2.8 })
+
+  // --- Escort motes wheeling around the ark like a tiny fighter screen. ------
+  for (let i = 0; i < 4; i++) {
+    const mote = addPart(Vector3.create(0, 0.75, 0), Vector3.create(0.06, 0.06, 0.06), SUN, { sphere: true, emissive: SUN, emissiveIntensity: 3 })
+    rig.fx.push({ entity: mote, mode: 'orbit', anchor: Vector3.create(0, 0.75, 0), radius: 0.85, height: 0.12, speed: 1.6, phase: (i / 4) * Math.PI * 2, size: 0.06 })
+  }
+
+  rig.spinAxis = 'y'
+  rig.profiles = {
+    idle: { amplitude: 0.09, speed: 1, tilt: 0, spin: 0, lunge: 0 },
+    walk: { amplitude: 0.06, speed: 2.2, tilt: 5, spin: 0, lunge: 0 },
+    talk: { amplitude: 0.07, speed: 2.4, tilt: 2, spin: 0, lunge: 0 },
+    attack: { amplitude: 0.05, speed: 7, tilt: 3, spin: 0, lunge: -0.04 },
+    impact: { amplitude: 0.11, speed: 12, tilt: -5, spin: 0, lunge: 0 }
   }
 }
 
@@ -956,6 +1205,151 @@ function buildBioBroodwing(rig: UnitRig, addPart: PartAdder, glow: Color4): void
     talk: { amplitude: 0.09, speed: 3.2, tilt: 4, spin: 0, lunge: 0 },
     attack: { amplitude: 0.08, speed: 5, tilt: 5, spin: 0, lunge: 0 },
     impact: { amplitude: 0.14, speed: 15, tilt: -8, spin: 0, lunge: 0 }
+  }
+}
+
+/** Bio anti-air bug: a squat beetle whose back is one giant upward-facing spore cannon. */
+function buildBioSporeLasher(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  const ACID = Color4.create(0.55, 0.85, 0.2, 1)
+  const flesh = { metallic: 0.05, roughness: 0.85 }
+
+  // --- Squat body: low thorax under a hard carapace dome. -------------------
+  addPart(Vector3.create(0, 0.34, 0), Vector3.create(0.62, 0.36, 0.72), BIO_FLESH, { sphere: true, ...flesh })
+  addPart(Vector3.create(0, 0.5, -0.05), Vector3.create(0.52, 0.24, 0.6), BIO_CARAPACE, { sphere: true })
+
+  // --- Spore cannon: a fleshy sphincter barrel aimed at the sky. -------------
+  addPart(Vector3.create(0, 0.66, -0.1), Vector3.create(0.3, 0.34, 0.3), BIO_FLESH, { cylinder: true, ...flesh, rotation: Quaternion.fromEulerDegrees(-10, 0, 0) })
+  addPart(Vector3.create(0, 0.86, -0.14), Vector3.create(0.34, 0.1, 0.34), BIO_CARAPACE, { cylinder: true, rotation: Quaternion.fromEulerDegrees(-10, 0, 0) })
+  const maw = addPart(Vector3.create(0, 0.92, -0.15), Vector3.create(0.2, 0.06, 0.2), ACID, {
+    cylinder: true,
+    emissive: ACID,
+    emissiveIntensity: 2.6,
+    rotation: Quaternion.fromEulerDegrees(-10, 0, 0)
+  })
+  rig.fx.push({ entity: maw, mode: 'pulse', anchor: Vector3.create(0, 0.92, -0.15), radius: 0.03, height: 0, speed: 2.8, phase: 0, size: 0.2 })
+  // Spore round drifting up out of the barrel, always chambering the next shot.
+  const round = addPart(Vector3.create(0, 0.98, -0.16), Vector3.create(0.07, 0.07, 0.07), ACID, { sphere: true, emissive: ACID, emissiveIntensity: 3 })
+  rig.fx.push({ entity: round, mode: 'ember', anchor: Vector3.create(0, 0.98, -0.16), radius: 0.04, height: 0.55, speed: 1.4, phase: 0, size: 0.07 })
+
+  // --- Venom sac feeding the cannon, slung at the rear. ----------------------
+  const sac = addPart(Vector3.create(0, 0.36, -0.42), Vector3.create(0.26, 0.22, 0.26), ACID, {
+    sphere: true,
+    emissive: ACID,
+    emissiveIntensity: 1.6,
+    ...flesh
+  })
+  rig.fx.push({ entity: sac, mode: 'pulse', anchor: Vector3.create(0, 0.36, -0.42), radius: 0, height: 0, speed: 3, phase: 1, size: 0.26 })
+
+  // --- Head: glow eyes and short sensing horns tilted skyward. ---------------
+  addPart(Vector3.create(0, 0.42, 0.42), Vector3.create(0.24, 0.2, 0.26), BIO_CARAPACE, { sphere: true })
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.07, 0.48, 0.52), Vector3.create(0.045, 0.045, 0.04), glow, { sphere: true, emissive: glow, emissiveIntensity: 3.2 })
+    addPart(Vector3.create(side * 0.1, 0.58, 0.44), Vector3.create(0.035, 0.18, 0.035), BIO_BONE, {
+      cone: true,
+      rotation: Quaternion.fromEulerDegrees(-35, 0, side * 15)
+    })
+  }
+
+  // --- Six stubby legs splayed for recoil. ------------------------------------
+  for (const side of [-1, 1]) {
+    for (const zOff of [0.28, 0, -0.28]) {
+      addPart(Vector3.create(side * 0.36, 0.18, zOff), Vector3.create(0.055, 0.3, 0.055), BIO_CARAPACE, {
+        rotation: Quaternion.fromEulerDegrees(0, 0, side * 40)
+      })
+    }
+  }
+
+  rig.spinAxis = 'z'
+  rig.profiles = {
+    idle: { amplitude: 0.03, speed: 2.4, tilt: 0, spin: 0, lunge: 0 },
+    walk: { amplitude: 0.06, speed: 8, tilt: 8, spin: 0, lunge: 0 },
+    talk: { amplitude: 0.04, speed: 9, tilt: 5, spin: 0, lunge: 0 },
+    attack: { amplitude: 0.05, speed: 15, tilt: -6, spin: 0, lunge: 0.08 },
+    impact: { amplitude: 0.07, speed: 20, tilt: -9, spin: 0, lunge: 0 }
+  }
+}
+
+/** Bio capital ship: a vast sky leviathan - domed jelly body, fin wings and hanging feeder tentacles. */
+function buildBioSkyLeviathan(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
+  rig.baseHeight = 2.8
+  const ACID = Color4.create(0.55, 0.85, 0.2, 1)
+  const flesh = { metallic: 0.05, roughness: 0.85 }
+  const SACK = Color4.create(0.62, 0.32, 0.3, 1)
+
+  // --- Vast domed body with a carapace crown. --------------------------------
+  addPart(Vector3.create(0, 0.75, 0), Vector3.create(1.35, 0.85, 1.7), BIO_FLESH, { sphere: true, ...flesh })
+  addPart(Vector3.create(0, 1.1, -0.1), Vector3.create(1.05, 0.5, 1.3), BIO_CARAPACE, { sphere: true })
+  // Crown spikes along the dorsal ridge.
+  for (const [sz, tiltX] of [[0.4, -18], [0, 0], [-0.45, 20]] as const) {
+    addPart(Vector3.create(0, 1.42, sz), Vector3.create(0.09, 0.4, 0.09), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(tiltX, 0, 0) })
+  }
+
+  // --- Glowing brood sacs dotting the flanks. ---------------------------------
+  for (const [sx, sy, sz] of [[-0.55, 0.85, 0.35], [0.6, 0.8, -0.1], [-0.4, 0.7, -0.6], [0.45, 0.9, 0.5]] as const) {
+    const sac = addPart(Vector3.create(sx, sy, sz), Vector3.create(0.26, 0.24, 0.26), SACK, { sphere: true, ...flesh, emissive: glow, emissiveIntensity: 0.6 })
+    rig.fx.push({ entity: sac, mode: 'pulse', anchor: Vector3.create(sx, sy, sz), radius: 0.02, height: 0, speed: 1, phase: sx * 5, size: 0.26 })
+  }
+
+  // --- Face: a rank of glow eyes over tusked feeding mandibles. ---------------
+  for (const side of [-1, 1]) {
+    addPart(Vector3.create(side * 0.14, 0.85, 0.82), Vector3.create(0.08, 0.08, 0.05), glow, { sphere: true, emissive: glow, emissiveIntensity: 3.4 })
+    addPart(Vector3.create(side * 0.3, 0.8, 0.76), Vector3.create(0.05, 0.05, 0.04), glow, { sphere: true, emissive: glow, emissiveIntensity: 3 })
+    addPart(Vector3.create(side * 0.2, 0.55, 0.82), Vector3.create(0.07, 0.4, 0.07), BIO_BONE, {
+      cone: true,
+      rotation: Quaternion.fromEulerDegrees(150, 0, side * 12)
+    })
+  }
+
+  // --- Broad fin wings on flap pivots, slow like a ray's. ---------------------
+  for (const side of [-1, 1]) {
+    const pivot = engine.addEntity()
+    Transform.create(pivot, { parent: rig.bodyRoot, position: Vector3.create(side * 0.5, 0.85, 0) })
+    rig.parts.push(pivot)
+    addChildPart(rig, pivot, Vector3.create(side * 0.65, 0.02, 0), Vector3.create(1.2, 0.05, 1), BIO_FLESH, {
+      ...flesh,
+      emissive: Color4.create(0.4, 0.1, 0.1, 1),
+      emissiveIntensity: 0.5,
+      rotation: Quaternion.fromEulerDegrees(0, side * -8, 0)
+    })
+    addChildPart(rig, pivot, Vector3.create(side * 1.25, 0.05, -0.15), Vector3.create(0.6, 0.04, 0.65), SACK, {
+      ...flesh,
+      rotation: Quaternion.fromEulerDegrees(0, side * -20, 0)
+    })
+    // Bone spars through the fin membrane.
+    for (const [zOff, yaw] of [[0.25, -10], [-0.15, -26]] as const) {
+      addChildPart(rig, pivot, Vector3.create(side * 0.8, 0.06, zOff), Vector3.create(0.05, 0.045, 0.8), BIO_BONE, {
+        metallic: 0.1,
+        roughness: 0.6,
+        rotation: Quaternion.fromEulerDegrees(0, side * yaw, 0)
+      })
+    }
+    rig.fx.push({ entity: pivot, mode: 'flap', anchor: Vector3.Zero(), radius: side * -16, height: side * 6, speed: 3.2, phase: side, size: 0 })
+  }
+
+  // --- Hanging feeder tentacles that rain acid on targets below. --------------
+  for (const [tx, tz, phase] of [[-0.35, 0.3, 0], [0.35, 0.25, 1.1], [-0.25, -0.35, 2.2], [0.3, -0.4, 3.3], [0, 0, 4.4]] as const) {
+    addPart(Vector3.create(tx, 0.3, tz), Vector3.create(0.09, 0.55, 0.09), BIO_FLESH, { cone: true, ...flesh, rotation: Quaternion.fromEulerDegrees(180, 0, 0) })
+    const tip = addPart(Vector3.create(tx, 0.02, tz), Vector3.create(0.05, 0.05, 0.05), ACID, { sphere: true, emissive: ACID, emissiveIntensity: 2.8 })
+    rig.fx.push({ entity: tip, mode: 'ember', anchor: Vector3.create(tx, 0.02, tz), radius: 0.03, height: -0.6, speed: 1.2, phase, size: 0.05 })
+  }
+
+  // --- Stubby barbed tail. ------------------------------------------------------
+  addPart(Vector3.create(0, 0.8, -0.95), Vector3.create(0.3, 0.24, 0.5), BIO_CARAPACE, { sphere: true })
+  addPart(Vector3.create(0, 0.85, -1.25), Vector3.create(0.07, 0.3, 0.07), BIO_BONE, { cone: true, rotation: Quaternion.fromEulerDegrees(105, 0, 0) })
+
+  // Spore motes drifting in the leviathan's wake.
+  for (let i = 0; i < 3; i++) {
+    const spore = addPart(Vector3.create(0, 0.9, 0), Vector3.create(0.05, 0.05, 0.05), ACID, { sphere: true, emissive: ACID, emissiveIntensity: 3 })
+    rig.fx.push({ entity: spore, mode: 'orbit', anchor: Vector3.create(0, 0.9, 0), radius: 1, height: 0.2, speed: 1.4, phase: (i / 3) * Math.PI * 2, size: 0.05 })
+  }
+
+  rig.spinAxis = 'z'
+  rig.profiles = {
+    idle: { amplitude: 0.14, speed: 1.2, tilt: 0, spin: 0, lunge: 0 },
+    walk: { amplitude: 0.1, speed: 2.4, tilt: 7, spin: 0, lunge: 0 },
+    talk: { amplitude: 0.11, speed: 2.6, tilt: 3, spin: 0, lunge: 0 },
+    attack: { amplitude: 0.09, speed: 6, tilt: 5, spin: 0, lunge: 0.06 },
+    impact: { amplitude: 0.16, speed: 12, tilt: -6, spin: 0, lunge: 0 }
   }
 }
 
