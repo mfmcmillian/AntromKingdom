@@ -1,5 +1,5 @@
-// Renders the Skybridge Islands top-down diagram (islands + anchors + fields
-// from src/rts/maps.ts) to scripts/skybridge-layout.png for the map selector.
+// Renders the Islands top-down diagram (islands + anchors + fields from
+// src/rts/maps.ts) to scripts/islands-layout.png for the map selector.
 import sharp from 'sharp'
 
 const S = 6 // px per meter
@@ -11,7 +11,7 @@ const H = SIZE + PAD * 2 + 80 // extra strip for the legend
 const px = (x) => PAD + x * S
 const py = (z) => PAD + (160 - z) * S // world +z is north (up)
 
-// Mirrors SKYBRIDGE_ISLANDS in src/rts/maps.ts.
+// Mirrors ISLANDS_ZONES in src/rts/maps.ts.
 const PLAYER_ISLANDS = [
   { x: 128.5, z: 108, radius: 18 },
   { x: 80, z: 136, radius: 18 },
@@ -30,7 +30,7 @@ const EXPANSION_ISLANDS = [
 ]
 const CENTER_ISLAND = { x: 80, z: 80, radius: 14 }
 
-// Mirrors SKYBRIDGE_ANCHORS in order (seat 1 = the player), colors matching
+// Mirrors ISLANDS_ANCHORS in order (seat 1 = the player), colors matching
 // the classic diagram.
 const ANCHORS = [
   { x: 132, z: 110, label: 'START 1 (YOU)', color: '#35a4ff' },
@@ -41,7 +41,7 @@ const ANCHORS = [
   { x: 132, z: 50, label: 'START 6', color: '#ff59b4' }
 ]
 
-// Mirrors SKYBRIDGE_FIELDS: k = m(inerals) | g(as).
+// Mirrors ISLANDS_FIELDS: k = m(inerals) | g(as).
 const FIELDS = [
   { k: 'm', x: 139, z: 114, c: 6, r: 4 }, { k: 'g', x: 124, z: 117 }, { k: 'g', x: 134, z: 99 },
   { k: 'm', x: 80, z: 148, c: 6, r: 4 }, { k: 'g', x: 70, z: 136 }, { k: 'g', x: 90, z: 136 },
@@ -60,25 +60,24 @@ const FIELDS = [
 
 let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">`
 svg += `<rect width="${W}" height="${H}" fill="#0b0e14"/>`
-// The battlefield is deep space: a near-black void with stars.
-svg += `<rect x="${PAD}" y="${PAD}" width="${SIZE}" height="${SIZE}" fill="#0a0c18" stroke="#3a4356" stroke-width="3"/>`
+// The battlefield is open ocean: deep blue water with waves and foam.
+svg += `<rect x="${PAD}" y="${PAD}" width="${SIZE}" height="${SIZE}" fill="#14508c" stroke="#3a4356" stroke-width="3"/>`
 
-// Star glints scattered in the void.
-for (let i = 0; i < 90; i++) {
-  const a = (i * 2654435761) % 4294967296
-  const cx = PAD + ((a % 997) / 997) * SIZE
-  const cy = PAD + (((a >> 8) % 991) / 991) * SIZE
-  const r = 1 + ((a >> 16) % 3)
-  const warm = (a >> 20) % 4 === 0
-  svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${warm ? '#ffd9a0' : '#dfe9ff'}" opacity="${0.5 + ((a >> 24) % 50) / 100}"/>`
-}
-// A couple of faint nebula wisps for color depth.
-for (let i = 0; i < 6; i++) {
+// Lighter current patches for tonal depth.
+for (let i = 0; i < 10; i++) {
   const a = ((i + 7) * 2654435761) % 4294967296
   const cx = PAD + ((a % 997) / 997) * SIZE
   const cy = PAD + (((a >> 8) % 991) / 991) * SIZE
   const rw = 60 + ((a >> 16) % 80)
-  svg += `<ellipse cx="${cx}" cy="${cy}" rx="${rw}" ry="${rw * 0.4}" fill="${i % 2 === 0 ? '#3a2c66' : '#1f4066'}" opacity="0.28"/>`
+  svg += `<ellipse cx="${cx}" cy="${cy}" rx="${rw}" ry="${rw * 0.4}" fill="${i % 2 === 0 ? '#2a72b8' : '#0e3f74'}" opacity="0.4"/>`
+}
+// Whitecap foam flecks scattered across the water.
+for (let i = 0; i < 90; i++) {
+  const a = (i * 2654435761) % 4294967296
+  const cx = PAD + ((a % 997) / 997) * SIZE
+  const cy = PAD + (((a >> 8) % 991) / 991) * SIZE
+  const rw = 2 + ((a >> 16) % 5)
+  svg += `<ellipse cx="${cx}" cy="${cy}" rx="${rw}" ry="${Math.max(1, rw * 0.4)}" fill="#dff0ff" opacity="${0.35 + ((a >> 24) % 40) / 100}"/>`
 }
 
 // Islands: player isles (large), expansions (mid), rich center.
@@ -86,7 +85,8 @@ const drawIsland = (isle, fill, stroke) => {
   const cx = px(isle.x)
   const cy = py(isle.z)
   const r = isle.radius * S
-  svg += `<circle cx="${cx}" cy="${cy}" r="${r + 5}" fill="#0e1523" opacity="0.9"/>`
+  // Sandy beach ring where the land meets the water.
+  svg += `<circle cx="${cx}" cy="${cy}" r="${r + 5}" fill="#cfb377" opacity="0.9"/>`
   svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="3"/>`
 }
 for (const isle of PLAYER_ISLANDS) drawIsland(isle, '#2b4a22', '#4a7038')
@@ -133,7 +133,7 @@ for (const a of ANCHORS) {
 
 // Compass, title, legend.
 svg += `<text x="${PAD + 10}" y="${PAD - 14}" fill="#697a94" font-family="Arial" font-size="20" font-weight="bold">N ^</text>`
-svg += `<text x="${W / 2}" y="${PAD - 24}" fill="#e8edf5" font-family="Arial" font-size="30" font-weight="bold" text-anchor="middle">SKYBRIDGE ISLANDS - NO LAND ROUTES (160m x 160m)</text>`
+svg += `<text x="${W / 2}" y="${PAD - 24}" fill="#e8edf5" font-family="Arial" font-size="30" font-weight="bold" text-anchor="middle">ISLANDS - NO LAND ROUTES (160m x 160m)</text>`
 const ly = PAD + SIZE + 44
 svg += `<rect x="${PAD}" y="${ly - 12}" width="14" height="14" fill="#5aa0ff" transform="rotate(45 ${PAD + 7} ${ly - 5})"/>`
 svg += `<text x="${PAD + 24}" y="${ly}" fill="#c7d2e4" font-family="Arial" font-size="20">Crystal field</text>`
@@ -147,5 +147,5 @@ svg += `<rect x="${PAD + 810}" y="${ly - 18}" width="22" height="22" fill="#35a4
 svg += `<text x="${PAD + 842}" y="${ly}" fill="#c7d2e4" font-family="Arial" font-size="20">Base start</text>`
 svg += `</svg>`
 
-await sharp(Buffer.from(svg)).png().toFile('scripts/skybridge-layout.png')
-console.log('written scripts/skybridge-layout.png')
+await sharp(Buffer.from(svg)).png().toFile('scripts/islands-layout.png')
+console.log('written scripts/islands-layout.png')

@@ -1072,7 +1072,7 @@ function getCommandSlots(selected: SelectedSummary): CommandSlot[] {
   if (selected.kind === 'techLab') {
     slots.push(trainSlot('caster', 'Spellcaster. Slow blasts that splash nearby enemies.'))
     slots.push(trainSlot('flyer', 'Fast flyer. Hovers over the battlefield.'))
-    slots.push(trainSlot('transport', `Unarmed air carrier. Ferries ${TRANSPORT_CAPACITY} ground units across the void.`))
+    slots.push(trainSlot('transport', `Unarmed air carrier. Ferries ${TRANSPORT_CAPACITY} ground units across the water.`))
     slots.push(trainSlot('siege', getSiegeDescription()))
     slots.push(trainSlot('titan', 'Giant assault monster. Splash stomps, huge HP.'))
     slots.push(rallySlot())

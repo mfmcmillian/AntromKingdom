@@ -25,9 +25,9 @@ export type MapDefinition = {
 }
 
 // ---------------------------------------------------------------------------
-// Skybridge Islands: 6 floating player islands around the rim (hex ring), 6
-// neutral expansion isles between them, and a rich contested island dead
-// center. No land routes at all: expanding or attacking means transports.
+// Islands: 6 player islands around the rim (hex ring), 6 neutral expansion
+// isles between them, and a rich contested island dead center - all in open
+// ocean. No land routes at all: expanding or attacking means transports.
 // Layout math: player islands on a ring of radius 56 at 30/90/150/210/270/330
 // degrees, expansion isles on a ring of 66 at 0/60/.../300 degrees.
 // ---------------------------------------------------------------------------
@@ -52,10 +52,10 @@ const SKY_EXPANSION_ISLANDS: IslandZone[] = [
 
 const SKY_CENTER_ISLAND: IslandZone = { x: 80, z: 80, radius: 14 }
 
-export const SKYBRIDGE_ISLANDS: IslandZone[] = [...SKY_PLAYER_ISLANDS, ...SKY_EXPANSION_ISLANDS, SKY_CENTER_ISLAND]
+export const ISLANDS_ZONES: IslandZone[] = [...SKY_PLAYER_ISLANDS, ...SKY_EXPANSION_ISLANDS, SKY_CENTER_ISLAND]
 
 /** Temple sits slightly outward of each island's center, facing the map middle. */
-const SKYBRIDGE_ANCHORS: { temple: Vector3; rotationY: number }[] = [
+const ISLANDS_ANCHORS: { temple: Vector3; rotationY: number }[] = [
   { temple: Vector3.create(132, 5, 110), rotationY: -120 },
   { temple: Vector3.create(80, 5, 140), rotationY: 180 },
   { temple: Vector3.create(28, 5, 110), rotationY: 120 },
@@ -67,7 +67,7 @@ const SKYBRIDGE_ANCHORS: { temple: Vector3; rotationY: number }[] = [
 // Field order matters: the 18 main-island entries come first (minerals + two
 // vents per start, all fixed), mirroring the classic map's "mains never move"
 // rule. Island maps skip position jitter entirely so nodes stay on land.
-const SKYBRIDGE_FIELDS: ResourceField[] = [
+const ISLANDS_FIELDS: ResourceField[] = [
   // --- Player island mains (minerals behind the temple, vents on the flanks) ---
   // Island 0 (E-NE, 30 deg).
   { kind: 'minerals', center: Vector3.create(139, 0, 114), count: 6, radius: 4 },
@@ -125,14 +125,14 @@ export const MAPS: MapDefinition[] = [
     fields: RESOURCE_FIELDS
   },
   {
-    id: 'skybridge-islands',
-    name: 'Skybridge Islands',
-    tagline: 'Floating islands with no land routes. Ferry armies by transport, claim empty isles, and fight for the rich center.',
-    thumbnail: 'images/maps/skybridge-islands.jpg',
+    id: 'islands',
+    name: 'Islands',
+    tagline: 'Islands in an open ocean with no land routes. Ferry armies by transport, claim empty isles, and fight for the rich center.',
+    thumbnail: 'images/maps/islands.jpg',
     maxPlayers: 6,
-    anchors: SKYBRIDGE_ANCHORS,
-    fields: SKYBRIDGE_FIELDS,
-    islands: SKYBRIDGE_ISLANDS
+    anchors: ISLANDS_ANCHORS,
+    fields: ISLANDS_FIELDS,
+    islands: ISLANDS_ZONES
   }
 ]
 
