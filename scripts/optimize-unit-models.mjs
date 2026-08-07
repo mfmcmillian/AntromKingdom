@@ -43,6 +43,21 @@ const UNITS = {
     { role: 'siege', match: 'thunderhead', size: 2.5, mode: 'footprint', tris: 5000 },
     { role: 'titan', match: 'juggernaut', size: 2.6, mode: 'height', tris: 7000 },
     { role: 'hero', match: 'kael', size: 1.9, mode: 'height', tris: 7000 }
+  ],
+  // Aethyr read slightly bigger than Vanguard: fewer, costlier, more imposing.
+  alien: [
+    { role: 'worker', match: 'seeker', size: 0.9, mode: 'height', tris: 3500 },
+    { role: 'melee', match: 'sentinel', size: 1.5, mode: 'height', tris: 3500 },
+    { role: 'ranged', match: 'lancer', size: 1.4, mode: 'height', tris: 3500 },
+    { role: 'healer', match: 'lightmender', size: 1.35, mode: 'height', tris: 3500 },
+    { role: 'caster', match: 'riftweaver', size: 1.5, mode: 'height', tris: 4000 },
+    { role: 'antiAir', match: 'starlance', size: 1.45, mode: 'height', tris: 4000 },
+    { role: 'flyer', match: 'zephyr', size: 2.4, mode: 'footprint', tris: 4500 },
+    { role: 'transport', match: 'riftbarge', size: 2.8, mode: 'footprint', tris: 4500 },
+    { role: 'heavyAir', match: 'solar_ark', size: 4.2, mode: 'footprint', tris: 7000 },
+    { role: 'siege', match: 'sunlance', size: 2.6, mode: 'footprint', tris: 5000 },
+    { role: 'titan', match: 'avatar', size: 2.8, mode: 'height', tris: 7000 },
+    { role: 'hero', match: 'auren', size: 2.0, mode: 'height', tris: 7000 }
   ]
 }
 

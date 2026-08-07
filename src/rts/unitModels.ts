@@ -201,6 +201,22 @@ const GLB_UNITS: Partial<Record<RaceId, Partial<Record<UnitRole, GlbUnit>>>> = {
     siege: { src: 'models/units/human/siege.glb', yaw: -90, topY: 1.45 },
     titan: { src: 'models/units/human/titan.glb', yaw: 0, topY: 2.6 },
     hero: { src: 'models/units/human/hero.glb', yaw: 0, topY: 1.9 }
+  },
+  alien: {
+    worker: { src: 'models/units/alien/worker.glb', yaw: 0, topY: 0.9 },
+    melee: { src: 'models/units/alien/melee.glb', yaw: 0, topY: 1.5 },
+    ranged: { src: 'models/units/alien/ranged.glb', yaw: 0, topY: 1.4 },
+    healer: { src: 'models/units/alien/healer.glb', yaw: 0, topY: 1.35 },
+    caster: { src: 'models/units/alien/caster.glb', yaw: 0, topY: 1.5 },
+    antiAir: { src: 'models/units/alien/antiAir.glb', yaw: 0, topY: 1.45 },
+    // Zephyr and Solar Ark fly apex-first along Z already; the barge and the
+    // lance platform are X-aligned like the Vanguard vehicles.
+    flyer: { src: 'models/units/alien/flyer.glb', yaw: 0, topY: 0.9 },
+    transport: { src: 'models/units/alien/transport.glb', yaw: -90, topY: 1.4 },
+    heavyAir: { src: 'models/units/alien/heavyAir.glb', yaw: 0, topY: 2.55 },
+    siege: { src: 'models/units/alien/siege.glb', yaw: -90, topY: 1.4 },
+    titan: { src: 'models/units/alien/titan.glb', yaw: 0, topY: 2.8 },
+    hero: { src: 'models/units/alien/hero.glb', yaw: 0, topY: 2.0 }
   }
 }
 
