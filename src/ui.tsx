@@ -2720,16 +2720,17 @@ function endGameOverlay() {
 
         {incomeGraph(entries)}
 
-        <UiEntity uiTransform={{ width: '100%', height: 58, flexDirection: 'row', justifyContent: 'center', margin: { top: 26 } }}>
+        <UiEntity uiTransform={{ width: '100%', height: 76, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', margin: { top: 24 } }}>
           {/* A multiplayer rematch goes through the lobby (everyone re-readies);
               only single-player can restart on the spot. */}
-          <Button
-            value={isMultiplayerMatch() ? 'BACK TO LOBBY' : 'PLAY AGAIN'}
-            variant="primary"
-            fontSize={24}
-            uiTransform={{ width: 240, height: 58, margin: { right: 12 } }}
-            uiBackground={{ color: UI.accent }}
+          <UiEntity
+            uiTransform={{ width: 230, height: isMultiplayerMatch() ? 71 : 78, margin: { right: 14 } }}
+            uiBackground={{
+              textureMode: 'stretch',
+              texture: { src: isMultiplayerMatch() ? 'images/ui/buttons/btn-back-to-lobby.png' : 'images/ui/buttons/btn-play-again.png' }
+            }}
             onMouseDown={() => {
+              playUiClick()
               triggerScreenFade()
               if (isMultiplayerMatch()) {
                 requestLobbyReset()
@@ -2741,13 +2742,11 @@ function endGameOverlay() {
               }
             }}
           />
-          <Button
-            value="MAIN MENU"
-            variant="secondary"
-            fontSize={24}
-            uiTransform={{ width: 240, height: 58, margin: { left: 12 } }}
-            uiBackground={{ color: Color4.create(0.25, 0.32, 0.45, 0.95) }}
+          <UiEntity
+            uiTransform={{ width: 230, height: 72, margin: { left: 14 } }}
+            uiBackground={{ textureMode: 'stretch', texture: { src: 'images/ui/buttons/btn-main-menu.png' } }}
             onMouseDown={() => {
+              playUiClick()
               triggerScreenFade()
               titleStage = 'title'
               if (isMultiplayerMatch()) requestLobbyReset() // reopen the lobby for everyone

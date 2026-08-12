@@ -19,7 +19,10 @@ const BUTTONS = [
   { raw: 'btn-unready-raw.png', out: 'btn-unready.png', width: 560 },
   { raw: 'btn-leave-room-raw.png', out: 'btn-leave-room.png', width: 560 },
   { raw: 'btn-enter-raw.png', out: 'btn-enter.png', width: 330 },
-  { raw: 'btn-view-raw.png', out: 'btn-view.png', width: 330 }
+  { raw: 'btn-view-raw.png', out: 'btn-view.png', width: 330 },
+  { raw: 'btn-play-again-raw.png', out: 'btn-play-again.png', width: 560 },
+  { raw: 'btn-back-to-lobby-raw.png', out: 'btn-back-to-lobby.png', width: 560 },
+  { raw: 'btn-main-menu-raw.png', out: 'btn-main-menu.png', width: 560 }
 ]
 
 mkdirSync(OUT_DIR, { recursive: true })
