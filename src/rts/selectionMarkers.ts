@@ -13,7 +13,10 @@ export type SelectionMarkerTarget = {
   color?: Color4
 }
 
-const MARKER_Y = 0.06
+// Above every terrain decal layer (tone patches 0.04-0.08, tracks ~0.1, crater
+// floors 0.13) so the ring never sinks into the ground art, but still under the
+// fog-of-war tiles (~0.18).
+const MARKER_Y = 0.16
 const SPIN_DEGREES_PER_SECOND = 30
 const HIDDEN_POSITION = Vector3.create(0, -20, 0)
 // The ring artwork spans ~87% of the texture; overscale so the painted circle
