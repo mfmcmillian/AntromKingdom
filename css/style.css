@@ -105,7 +105,7 @@ img { max-width: 100%; display: block; }
 .hero-bg {
   position: absolute; inset: 0;
   background-size: cover; background-position: center 30%;
-  filter: brightness(.42) saturate(1.1);
+  filter: brightness(.55) saturate(1.1);
 }
 .hero-fade {
   position: absolute; left: 0; right: 0; bottom: 0; height: 180px;
