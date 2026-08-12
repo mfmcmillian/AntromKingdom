@@ -545,6 +545,28 @@ function matchRosterPanel() {
           />
         </UiEntity>
       ))}
+
+      {/* Single-player only for now: multiplayer leaves go through the menu's
+          networked surrender so opponents see the concession. */}
+      {!isMultiplayerMatch() ? (
+        <UiEntity
+          uiTransform={{ width: '100%', height: 46, flexDirection: 'row', justifyContent: 'center', margin: { top: 12 } }}
+        >
+          <UiEntity
+            uiTransform={{ width: 200, height: 42, padding: 2, justifyContent: 'center', alignItems: 'center' }}
+            uiBackground={{ color: Color4.create(0.55, 0.16, 0.14, 0.95) }}
+            onMouseDown={() => {
+              playUiClick()
+              showRosterPanel = false
+              endRtsMatch()
+            }}
+          >
+            <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.16, 0.05, 0.05, 0.98) }}>
+              <Label value="LEAVE GAME" fontSize={15} color={Color4.create(1, 0.72, 0.68, 1)} textAlign="middle-center" />
+            </UiEntity>
+          </UiEntity>
+        </UiEntity>
+      ) : null}
     </UiEntity>
   )
 }
