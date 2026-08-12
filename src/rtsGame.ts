@@ -91,7 +91,7 @@ import { isPointerOverHud } from './rts/hud'
 import { SelectionMarkerTarget, clearSelectionMarkers, updateSelectionMarkers } from './rts/selectionMarkers'
 import { buildEnvironmentEnclosure } from './rts/environment'
 import { buildTerrain } from './rts/terrain'
-import { buildUnitModel, disposeUnit, getTeamColor, isProceduralUnit, setSiegeDeployProgress, setUnitAnimation, setUnitTeamRingVisible, setUnitUpgradeInsignia, updateUnitCargo } from './rts/unitModels'
+import { buildUnitModel, disposeUnit, getTeamColor, isProceduralUnit, setSiegeDeployProgress, setUnitAnimation, setUnitUpgradeInsignia, updateUnitCargo } from './rts/unitModels'
 import { BUILDING_MODEL_HEIGHTS, buildBuildingModel, disposeBuildingModel, isProceduralBuilding, setBuildingModelDamage } from './rts/buildingModels'
 import { RACES, TRANSPORT_CAPACITY, UNIT_REQUIREMENTS, getBuildingDisplayName, getRace, getSoldierDefinition, getWorkerDefinition, isAirVariant, pickRandomRace } from './rts/races'
 import { buildResourceModel, disposeResourceModel, playResourceDepletion, playResourceGatherPulse } from './rts/resourceModels'
@@ -1769,7 +1769,7 @@ function createWorker(position: Vector3, team: Team = 'player'): Worker {
     position,
     team,
     // Generous click box: units are small targets from the overhead camera.
-    Vector3.create(1.5, 2.2, 1.5)
+    Vector3.create(1.1, 1.8, 1.1)
   ) as Worker
 
   worker.hp = definition.hp
@@ -1821,13 +1821,13 @@ function createSoldier(position: Vector3, team: Team = 'player', variant: Soldie
 
 /** Generous click boxes sized to each silhouette: flyers hover high, titans are huge. */
 function getSoldierColliderScale(variant: SoldierVariant): Vector3 {
-  if (variant === 'hero') return Vector3.create(3.4, 4.6, 3.4)
-  if (variant === 'titan') return Vector3.create(3, 4, 3)
-  if (variant === 'flyer') return Vector3.create(2.2, 3.6, 2.2)
-  if (variant === 'transport') return Vector3.create(3, 3.8, 3)
-  if (variant === 'heavyAir') return Vector3.create(3.6, 4.6, 3.6)
-  if (variant === 'siege') return Vector3.create(2.6, 3, 2.6)
-  return Vector3.create(1.8, 2.6, 1.8)
+  if (variant === 'hero') return Vector3.create(3, 4.2, 3)
+  if (variant === 'titan') return Vector3.create(2.4, 3.2, 2.4)
+  if (variant === 'flyer') return Vector3.create(1.8, 3.2, 1.8)
+  if (variant === 'transport') return Vector3.create(2.6, 3.4, 2.6)
+  if (variant === 'heavyAir') return Vector3.create(3, 4, 3)
+  if (variant === 'siege') return Vector3.create(2, 2.4, 2)
+  return Vector3.create(1.4, 2, 1.4)
 }
 
 /** Info-panel blurb for siege artillery, reflecting its current mode. */
@@ -2111,13 +2111,9 @@ function registerSelectable(selectable: Selectable): void {
   if (selectable.colliderEntity && (GltfContainer.has(selectable.entity) || MeshRenderer.has(selectable.entity))) {
     registerPointerHandler(selectable.entity, selectable)
   }
-
-  // StarCraft-style hover feedback: the owner-colored ring lights up underfoot
-  // while the pointer is over a unit.
-  if (selectable.kind === 'worker' || selectable.kind === 'soldier') {
-    pointerEventsSystem.onPointerHoverEnter({ entity: pointerTarget }, () => setUnitTeamRingVisible(selectable.entity, true))
-    pointerEventsSystem.onPointerHoverLeave({ entity: pointerTarget }, () => setUnitTeamRingVisible(selectable.entity, false))
-  }
+  // NOTE: no hover-enter/leave events here. Registering hover on every unit
+  // floods the pointer event queue when the cursor sweeps a packed army or
+  // mineral line, and pointer-down clicks get lost in the churn.
 }
 
 function registerPointerHandler(target: Entity, selectable: Selectable): void {
@@ -4853,8 +4849,6 @@ function removeSelectableInteractivity(selectable: Selectable): void {
   const pointerTarget = selectable.colliderEntity ?? selectable.entity
 
   pointerEventsSystem.removeOnPointerDown(pointerTarget)
-  pointerEventsSystem.removeOnPointerHoverEnter(pointerTarget)
-  pointerEventsSystem.removeOnPointerHoverLeave(pointerTarget)
   MeshCollider.deleteFrom(pointerTarget)
   if (selectable.colliderEntity) {
     pointerEventsSystem.removeOnPointerDown(selectable.entity)
