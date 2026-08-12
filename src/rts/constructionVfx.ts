@@ -2,9 +2,10 @@ import { Material, MeshRenderer, Transform, engine, type Entity } from '@dcl/sdk
 import { Color4, Vector3 } from '@dcl/sdk/math'
 import { BUILDING_DEFINITIONS } from './config'
 import { BUILDING_MODEL_HEIGHTS } from './buildingModels'
+import { spawnBlastRing } from './impactVfx'
 import { getRace } from './races'
 import { buildings, getTeam } from './world'
-import type { BuildableKind, Building } from './types'
+import type { BuildableKind, Building, RaceId } from './types'
 
 // Holographic construction effect, in the owner's race color, on every site
 // that is still being built: a slowly rotating base ring marking the footprint,
@@ -29,6 +30,8 @@ type ConstructionRig = {
   time: number
   ringRadius: number
   modelHeight: number
+  /** Owner's race flavors the rig: welder sparks vs drifting shards vs pulsing blobs. */
+  race: RaceId
 }
 
 type CompletionBurst = {
@@ -55,7 +58,12 @@ function createRig(site: Building): ConstructionRig {
   const kind = site.kind as BuildableKind
   const definition = BUILDING_DEFINITIONS[kind]
   const position = Transform.get(site.entity).position
-  const accent = getRace(getTeam(site)).accent
+  const race = getRace(getTeam(site))
+  const accent = race.accent
+
+  // Groundbreaking moment: a shockwave ring kicks out the instant work starts,
+  // so a new site reads even before the hologram rig fades in.
+  spawnBlastRing(position, accent, Math.max(definition.scale.x, definition.scale.z) / 2 + 0.5)
 
   const ringRadius = Math.max(definition.scale.x, definition.scale.z) / 2 + 0.7
   const modelHeight = BUILDING_MODEL_HEIGHTS[kind]
@@ -103,7 +111,11 @@ function createRig(site: Building): ConstructionRig {
       position: Vector3.create(0, 0.3, 0),
       scale: Vector3.create(SPARK_SIZE, SPARK_SIZE, SPARK_SIZE)
     })
-    MeshRenderer.setBox(spark)
+    // Race-flavored workers: human welder sparks (boxes), alien crystal shards
+    // (cones), bio builder blobs (spheres).
+    if (race.id === 'alien') MeshRenderer.setCylinder(spark, 1, 0)
+    else if (race.id === 'bio') MeshRenderer.setSphere(spark)
+    else MeshRenderer.setBox(spark)
     Material.setPbrMaterial(spark, {
       albedoColor: accent,
       emissiveColor: accent,
@@ -114,7 +126,7 @@ function createRig(site: Building): ConstructionRig {
     sparks.push(spark)
   }
 
-  return { root, baseRing, scanRing, sparks, time: Math.random() * 10, ringRadius, modelHeight }
+  return { root, baseRing, scanRing, sparks, time: Math.random() * 10, ringRadius, modelHeight, race: race.id }
 }
 
 function removeRig(rig: ConstructionRig): void {
@@ -139,16 +151,21 @@ function animateRig(rig: ConstructionRig, site: Building, dt: number): void {
   const scanTransform = Transform.getMutable(rig.scanRing)
   scanTransform.position = Vector3.create(0, 0.12 + sweep * grownHeight, 0)
   // Narrow slightly as it climbs so tall buildings read as tapering print passes.
-  const scanScale = rig.ringRadius * 1.5 * (1 - sweep * 0.25)
+  // Bio sites also breathe: the pass swells and shrinks like living tissue growing.
+  const breathe = rig.race === 'bio' ? 1 + Math.sin(rig.time * 4) * 0.08 : 1
+  const scanScale = rig.ringRadius * 1.5 * (1 - sweep * 0.25) * breathe
   scanTransform.scale = Vector3.create(scanScale, 0.09, scanScale)
 
   // Sparks orbit at the working height, bobbing and pulsing out of phase.
+  // Human crews buzz fast and tight; alien shards glide slow and serene; bio
+  // blobs wallow lazily with a fat squash-pulse.
+  const orbitSpeed = rig.race === 'human' ? 1 : rig.race === 'alien' ? 0.55 : 0.4
   const orbitRadius = rig.ringRadius * 0.85
   for (let i = 0; i < rig.sparks.length; i++) {
     const phase = (i / rig.sparks.length) * Math.PI * 2
-    const angle = phase + rig.time * SPARK_ORBIT_DEGREES_PER_SECOND * (Math.PI / 180)
-    const bob = Math.sin(rig.time * 5 + phase * 3) * 0.25
-    const pulse = 1 + Math.sin(rig.time * 9 + phase * 5) * 0.35
+    const angle = phase + rig.time * SPARK_ORBIT_DEGREES_PER_SECOND * orbitSpeed * (Math.PI / 180)
+    const bob = Math.sin(rig.time * 5 + phase * 3) * (rig.race === 'alien' ? 0.5 : 0.25)
+    const pulse = 1 + Math.sin(rig.time * 9 + phase * 5) * (rig.race === 'bio' ? 0.55 : 0.35)
     const sparkTransform = Transform.getMutable(rig.sparks[i])
     sparkTransform.position = Vector3.create(Math.cos(angle) * orbitRadius, grownHeight + 0.25 + bob, Math.sin(angle) * orbitRadius)
     sparkTransform.scale = Vector3.create(SPARK_SIZE * pulse, SPARK_SIZE * pulse, SPARK_SIZE * pulse)

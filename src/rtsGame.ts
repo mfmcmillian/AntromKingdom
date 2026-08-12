@@ -91,7 +91,7 @@ import { isPointerOverHud } from './rts/hud'
 import { SelectionMarkerTarget, clearSelectionMarkers, updateSelectionMarkers } from './rts/selectionMarkers'
 import { buildEnvironmentEnclosure } from './rts/environment'
 import { buildTerrain } from './rts/terrain'
-import { buildUnitModel, disposeUnit, getTeamColor, isProceduralUnit, setSiegeDeployProgress, setUnitAnimation, setUnitUpgradeInsignia, updateUnitCargo } from './rts/unitModels'
+import { buildUnitModel, disposeUnit, isProceduralUnit, setSiegeDeployProgress, setUnitAnimation, setUnitUpgradeInsignia, updateUnitCargo } from './rts/unitModels'
 import { BUILDING_MODEL_HEIGHTS, buildBuildingModel, disposeBuildingModel, isProceduralBuilding, setBuildingModelDamage } from './rts/buildingModels'
 import { RACES, TRANSPORT_CAPACITY, UNIT_REQUIREMENTS, getBuildingDisplayName, getRace, getSoldierDefinition, getWorkerDefinition, isAirVariant, pickRandomRace } from './rts/races'
 import { buildResourceModel, disposeResourceModel, playResourceDepletion, playResourceGatherPulse } from './rts/resourceModels'
@@ -1952,46 +1952,11 @@ function createBuilding(kind: Building['kind'], name: string, position: Vector3,
   building.buildTime = definition?.buildTime ?? 0
   building.isComplete = constructionState === 'complete'
   building.team = team
-  if (building.isComplete) ensureBuildingBeacon(building)
   return building
 }
 
-// Race identity marker: a floating glowing orb in the owner's race color above the roof.
-const BEACON_HEIGHTS: Record<BuildableKind, number> = {
-  temple: 13.5,
-  supplyHouse: 5.5,
-  barracks: 7.5,
-  techLab: 8.5,
-  forge: 6.5,
-  airForge: 7.5,
-  fireplace: 3.5,
-  turret: 5.5
-}
-
-// Ownership marker, not race identity: the architecture already says which
-// race built it, the beacon says whose side it fights for.
-function ensureBuildingBeacon(building: Building): void {
-  if (building.beaconEntity || !isBuildableKind(building.kind)) return
-
-  const teamColor = getTeamColor(getTeam(building))
-  const position = Transform.get(building.entity).position
-  const beacon = engine.addEntity()
-  Transform.create(beacon, {
-    position: Vector3.create(position.x, position.y + BEACON_HEIGHTS[building.kind], position.z),
-    scale: Vector3.create(0.55, 0.55, 0.55)
-  })
-  MeshRenderer.setSphere(beacon)
-  Material.setPbrMaterial(beacon, {
-    albedoColor: teamColor,
-    emissiveColor: teamColor,
-    emissiveIntensity: 2.4,
-    metallic: 0.2,
-    roughness: 0.4,
-    castShadows: false
-  })
-  building.beaconEntity = beacon
-}
-
+// The floating team-colored beacon orb was removed as visual clutter; this
+// remains to clean up any legacy entity still referenced on old buildings.
 function removeBuildingBeacon(selectable: Selectable): void {
   const building = selectable as Building
   if (!building.beaconEntity) return
@@ -3684,7 +3649,6 @@ function completeConstruction(site: Building, builder?: Worker): void {
   }
   updateConstructionVisual(site)
   updateLabel(site, displayName)
-  ensureBuildingBeacon(site)
 
   if (definition.supplyAdds > 0) {
     addSupplyCap(getTeam(site), definition.supplyAdds)
@@ -3997,7 +3961,8 @@ function castCasterAbility(caster: Soldier, target: Building | Soldier | Worker,
     const arcDamage = Math.max(1, Math.round(caster.damage * getDamageMultiplier(team, caster.variant) * 0.7))
     for (const unit of arcs) {
       const unitPosition = cloneVector(Transform.get(unit.entity).position)
-      fireProjectile(targetPosition, unitPosition, team)
+      // The ability is literally called Chain Lightning - always arc, whatever the race default.
+      fireProjectile(targetPosition, unitPosition, team, 'lightning')
       spawnImpactFlash(unitPosition, accent)
       if (unit.kind === 'soldier') damageSoldier(unit, arcDamage, caster)
       else damageWorker(unit, arcDamage, caster)

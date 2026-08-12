@@ -1,5 +1,6 @@
 import { Entity, GltfContainer, Material, MeshRenderer, Transform, VisibilityComponent, engine } from '@dcl/sdk/ecs'
 import { Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
+import { BUILDING_DEFINITIONS } from './config'
 import type { BuildableKind, RaceId } from './types'
 
 // Procedural race-styled buildings, replacing the shared GLB models so each
@@ -101,6 +102,8 @@ type PartOptions = {
   emissiveIntensity?: number
   metallic?: number
   roughness?: number
+  /** Translucent FX parts (smoke, light rays) must not throw shadows. */
+  castShadows?: boolean
   motion?: PartMotion
 }
 
@@ -113,6 +116,7 @@ type BuildingPart = {
   emissiveIntensity: number
   metallic: number
   roughness: number
+  castShadows: boolean
 }
 
 type AnimatedPart = {
@@ -158,7 +162,8 @@ export function buildBuildingModel(root: Entity, race: RaceId, kind: BuildableKi
       emissive: options.emissive ?? Color4.Black(),
       emissiveIntensity: options.emissiveIntensity ?? 0,
       metallic: options.metallic ?? 0.2,
-      roughness: options.roughness ?? 0.75
+      roughness: options.roughness ?? 0.75,
+      castShadows: options.castShadows ?? true
     }
     applyPartMaterial(material, 0)
 
@@ -178,18 +183,98 @@ export function buildBuildingModel(root: Entity, race: RaceId, kind: BuildableKi
   const glbEntities: Entity[] = []
   const glb = GLB_BUILDINGS[race]?.[kind]
   if (glb) {
+    const rotation = Quaternion.fromEulerDegrees(0, glb.yaw ?? 0, 0)
     const model = engine.addEntity()
-    Transform.create(model, {
-      parent: root,
-      rotation: Quaternion.fromEulerDegrees(0, glb.yaw ?? 0, 0)
-    })
+    Transform.create(model, { parent: root, rotation })
     GltfContainer.create(model, { src: glb.src })
     glbEntities.push(model)
+    addGlbAmbientFx(race, kind, addPart, animated, model, rotation)
   } else if (race === 'human') buildHumanBuilding(kind, addPart)
   else if (race === 'alien') buildAlienBuilding(kind, addPart)
   else buildBioBuilding(kind, addPart)
 
   buildingRigs.set(root, { parts, animated, glbEntities, time: Math.random() * 20, damageLevel: 0 })
+}
+
+// ---------------------------------------------------------------------------
+// Ambient life for the Meshy GLB buildings. The models themselves are static,
+// so each race gets a signature idle effect layered on top:
+//   human - black industrial smoke coughing out of the roofline.
+//   alien - a soft light pillar plus glowing rays slowly orbiting the spire.
+//   bio   - the whole structure breathes, swelling in and out like a lung.
+// ---------------------------------------------------------------------------
+
+const SMOKE_DARK = Color4.create(0.12, 0.12, 0.14, 0.55)
+
+function addGlbAmbientFx(
+  race: RaceId,
+  kind: BuildableKind,
+  addPart: PartAdder,
+  animated: AnimatedPart[],
+  model: Entity,
+  modelRotation: Quaternion
+): void {
+  const definition = BUILDING_DEFINITIONS[kind]
+  const width = Math.max(definition.scale.x, definition.scale.z)
+  const height = BUILDING_MODEL_HEIGHTS[kind]
+
+  if (race === 'bio') {
+    // Breathing: pulse the GLB container itself. Slow, shallow, phase-offset so
+    // a base full of mounds heaves like a sleeping herd instead of a metronome.
+    animated.push({
+      entity: model,
+      motion: { mode: 'pulse', speed: 1.05, amplitude: 0.035, phase: Math.random() * Math.PI * 2 },
+      basePosition: Vector3.Zero(),
+      baseScale: Vector3.One(),
+      baseRotation: modelRotation
+    })
+    return
+  }
+
+  // Turrets are small military hardware; smokestacks and light shows read wrong on them.
+  if (kind === 'turret') return
+
+  if (race === 'human') {
+    // Chimney smoke: fat dark puffs rising off the roofline, dissolving as they
+    // climb. Two stacks on the big buildings so the skyline looks industrial.
+    const stacks = height >= 7 ? 2 : 1
+    for (let s = 0; s < stacks; s++) {
+      const side = s === 0 ? 1 : -1
+      const anchor = Vector3.create(width * 0.16 * side, height * 0.8, -width * 0.12 * side)
+      for (let i = 0; i < 4; i++) {
+        addPart(anchor, Vector3.create(0.5, 0.5, 0.5), SMOKE_DARK, {
+          sphere: true,
+          metallic: 0,
+          roughness: 1,
+          castShadows: false,
+          motion: { mode: 'ember', speed: 0.22, radius: 0.4, height: 2.8, phase: i / 4 + s * 0.37 }
+        })
+      }
+    }
+    return
+  }
+
+  // Alien: a translucent light pillar rising through the structure, ringed by
+  // thin glowing rays that drift around the spire and pulse out of phase.
+  addPart(Vector3.create(0, height * 0.72, 0), Vector3.create(0.4, height * 0.85, 0.4), Color4.create(ALIEN_CRYSTAL.r, ALIEN_CRYSTAL.g, ALIEN_CRYSTAL.b, 0.2), {
+    cylinder: true,
+    emissive: ALIEN_CRYSTAL,
+    emissiveIntensity: 1.5,
+    metallic: 0,
+    roughness: 1,
+    castShadows: false,
+    motion: { mode: 'pulse', speed: 1.5, amplitude: 0.16 }
+  })
+  for (let i = 0; i < 3; i++) {
+    addPart(Vector3.create(0, height * 0.68, 0), Vector3.create(0.09, height * 0.5, 0.09), Color4.create(ALIEN_CRYSTAL.r, ALIEN_CRYSTAL.g, ALIEN_CRYSTAL.b, 0.5), {
+      emissive: ALIEN_CRYSTAL,
+      emissiveIntensity: 2.4,
+      metallic: 0,
+      roughness: 1,
+      castShadows: false,
+      motion: { mode: 'orbit', speed: 0.45, radius: width * 0.24, height: 0.35, phase: (i / 3) * Math.PI * 2 }
+    })
+  }
 }
 
 /** Drives the moving parts (radar dishes, floating crystals, pulsing sacs) on every building. */
@@ -280,7 +365,8 @@ function applyPartMaterial(part: BuildingPart, char: number): void {
     emissiveColor: Color4.create(part.emissive.r * glowFade, part.emissive.g * glowFade, part.emissive.b * glowFade, 1),
     emissiveIntensity: part.emissiveIntensity * glowFade,
     metallic: part.metallic * (1 - char),
-    roughness: Math.min(1, part.roughness + char * 0.4)
+    roughness: Math.min(1, part.roughness + char * 0.4),
+    castShadows: part.castShadows
   })
 }
 
