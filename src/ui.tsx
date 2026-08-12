@@ -1859,6 +1859,17 @@ function startScreenOverlay() {
 // to scene bounds, which breaks the staged shot that worked in Worlds.
 // ---------------------------------------------------------------------------
 
+/**
+ * StarCraft-style gunmetal frame for menu content panels, matching the button
+ * art. Nine-slice keeps the riveted corners crisp at any panel size; the
+ * texture's interior is flat near-black so content reads like before.
+ */
+const PANEL_FRAME_BACKGROUND = {
+  textureMode: 'nine-slices' as const,
+  texture: { src: 'images/ui/panel-frame.png' },
+  textureSlices: { top: 0.12, bottom: 0.12, left: 0.12, right: 0.12 }
+}
+
 function matchSetupOverlay() {
   const race = RACES[gameState.playerRace]
 
@@ -1902,9 +1913,9 @@ function matchSetupOverlay() {
           height: 324,
           flexDirection: 'column',
           alignItems: 'center',
-          padding: { top: 20, bottom: 20, left: 30, right: 30 }
+          padding: { top: 26, bottom: 24, left: 34, right: 34 }
         }}
-        uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.9) }}
+        uiBackground={PANEL_FRAME_BACKGROUND}
       >
         <Label value="YOUR RACE" fontSize={22} color={UI.text} textAlign="middle-center" uiTransform={{ width: '100%', height: 26, margin: { bottom: 12 } }} />
         <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { bottom: 8 } }}>
@@ -1933,9 +1944,9 @@ function matchSetupOverlay() {
           width: 540,
           height: 600,
           flexDirection: 'column',
-          padding: { top: 26, bottom: 26, left: 30, right: 30 }
+          padding: { top: 30, bottom: 28, left: 34, right: 34 }
         }}
-        uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.9) }}
+        uiBackground={PANEL_FRAME_BACKGROUND}
       >
         <Label value="TEAMS" fontSize={22} color={UI.text} textAlign="middle-left" uiTransform={{ margin: { bottom: 18 } }} />
         <Label value="GAME MODE" fontSize={14} color={Color4.create(0.75, 0.78, 0.85, 0.9)} textAlign="middle-left" uiTransform={{ margin: { bottom: 8 } }} />
@@ -2018,9 +2029,9 @@ function mapSelectorPanel() {
         height: 640,
         flexDirection: 'column',
         alignItems: 'center',
-        padding: { top: 22, bottom: 18, left: 30, right: 30 }
+        padding: { top: 28, bottom: 22, left: 34, right: 34 }
       }}
-      uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.9) }}
+      uiBackground={PANEL_FRAME_BACKGROUND}
     >
       <Label value="BATTLEGROUND" fontSize={22} color={UI.text} textAlign="middle-center" uiTransform={{ width: '100%', height: 26 }} />
 
@@ -2617,9 +2628,9 @@ function heroStatsPanel() {
         height: 490,
         flexDirection: 'column',
         alignItems: 'center',
-        padding: { top: 20, bottom: 16, left: 40, right: 40 }
+        padding: { top: 26, bottom: 20, left: 42, right: 42 }
       }}
-      uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.9) }}
+      uiBackground={PANEL_FRAME_BACKGROUND}
     >
       <Label value="YOUR HERO" fontSize={22} color={UI.text} textAlign="middle-center" uiTransform={{ width: '100%', height: 26 }} />
 
