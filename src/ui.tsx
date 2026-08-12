@@ -496,9 +496,9 @@ function matchRosterPanel() {
         margin: { left: -280 },
         width: 560,
         flexDirection: 'column',
-        padding: { top: 20, bottom: 20, left: 26, right: 26 }
+        padding: { top: 26, bottom: 24, left: 30, right: 30 }
       }}
-      uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.94) }}
+      uiBackground={PANEL_FRAME_BACKGROUND}
     >
       <UiEntity uiTransform={{ width: '100%', height: 30, flexDirection: 'row', alignItems: 'center', margin: { bottom: 14 } }}>
         <Label value="COMMANDERS" fontSize={22} color={UI.gold} textAlign="middle-left" uiTransform={{ width: 420, height: '100%' }} />
@@ -1461,9 +1461,9 @@ function settingsOverlay() {
           height: 316,
           flexDirection: 'column',
           alignItems: 'center',
-          padding: { top: 24, bottom: 24, left: 28, right: 28 }
+          padding: { top: 28, bottom: 26, left: 32, right: 32 }
         }}
-        uiBackground={{ color: UI.panelStrong }}
+        uiBackground={PANEL_FRAME_BACKGROUND}
       >
         <Label value="MENU" fontSize={24} color={UI.gold} textAlign="middle-center" />
         <Label
@@ -2267,9 +2267,9 @@ function lobbyOnlinePlayersPanel() {
         margin: { left: 450 },
         width: 260,
         flexDirection: 'column',
-        padding: { top: 24, bottom: 24, left: 20, right: 20 }
+        padding: { top: 26, bottom: 26, left: 24, right: 24 }
       }}
-      uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.9) }}
+      uiBackground={PANEL_FRAME_BACKGROUND}
     >
       <Label value={`ONLINE (${players.length})`} fontSize={18} color={UI.text} textAlign="middle-left" uiTransform={{ width: '100%', height: 22, margin: { bottom: 12 } }} />
       {players.slice(0, 14).map((player) => (
@@ -2313,9 +2313,9 @@ function rankedLadderPanel() {
         margin: { left: -740 },
         width: 270,
         flexDirection: 'column',
-        padding: { top: 24, bottom: 24, left: 20, right: 20 }
+        padding: { top: 26, bottom: 26, left: 24, right: 24 }
       }}
-      uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.9) }}
+      uiBackground={PANEL_FRAME_BACKGROUND}
     >
       <Label value="RANKED LADDER" fontSize={18} color={UI.gold} textAlign="middle-left" uiTransform={{ width: '100%', height: 22, margin: { bottom: 12 } }} />
       {top.map((entry, index) => {
@@ -2431,9 +2431,9 @@ function lobbyBrowserOverlay() {
           margin: { left: -430 },
           width: 860,
           flexDirection: 'column',
-          padding: { top: 24, bottom: 24, left: 26, right: 26 }
+          padding: { top: 28, bottom: 26, left: 32, right: 32 }
         }}
-        uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.9) }}
+        uiBackground={PANEL_FRAME_BACKGROUND}
       >
         <Label value="BATTLE ROOMS" fontSize={18} color={UI.text} textAlign="middle-left" uiTransform={{ margin: { bottom: 14 } }} />
         {getLobbies().map((config) => lobbyBrowserRoomRow(config))}
@@ -2501,9 +2501,9 @@ function lobbyRoomOverlay() {
           margin: { left: -430 },
           width: 860,
           flexDirection: 'column',
-          padding: { top: 24, bottom: 24, left: 26, right: 26 }
+          padding: { top: 28, bottom: 26, left: 32, right: 32 }
         }}
-        uiBackground={{ color: Color4.create(0.02, 0.03, 0.05, 0.9) }}
+        uiBackground={PANEL_FRAME_BACKGROUND}
       >
         {lobbyMapRow(iAmHost)}
         <Label value="SEATS" fontSize={18} color={UI.text} textAlign="middle-left" uiTransform={{ margin: { bottom: 14 } }} />
@@ -2729,12 +2729,12 @@ function endGameOverlay() {
           height: 758 + gameState.activeEnemyTeams.length * 72,
           flexDirection: 'column',
           alignItems: 'center',
-          padding: { top: 26, bottom: 26, left: 34, right: 34 }
+          padding: { top: 30, bottom: 28, left: 38, right: 38 }
         }}
-        uiBackground={{ color: UI.panelStrong }}
+        uiBackground={PANEL_FRAME_BACKGROUND}
       >
-        {/* Result-colored accent stripe along the top edge. */}
-        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: 4 }} uiBackground={{ color: didWin ? UI.gold : UI.red }} />
+        {/* Result-colored accent stripe, inset so it sits inside the metal frame. */}
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 14, left: '4%' }, width: '92%', height: 4 }} uiBackground={{ color: didWin ? UI.gold : UI.red }} />
 
         <UiEntity uiTransform={{ width: 96, height: 96, padding: 2 }} uiBackground={{ color: UI.slotFrame }}>
           <UiEntity uiTransform={{ width: '100%', height: '100%' }} uiBackground={{ textureMode: 'stretch', texture: { src: didWin ? ICON.endgame.victory : ICON.endgame.defeat } }} />
