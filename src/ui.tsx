@@ -1789,52 +1789,43 @@ function startScreenOverlay() {
         }}
       >
         {/* Race choice lives on the next screen (and in the MP lobby), so the
-            title stays clean: logo, two buttons, done. */}
-        <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center' }}>
+            title stays clean: logo, two buttons, done. StarCraft-style baked
+            button art (metal frame + energy glow, text in the texture). */}
+        <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}>
           <UiEntity
-            uiTransform={{ width: 300, height: 62, margin: { right: 12 }, justifyContent: 'center', alignItems: 'center', padding: 3 }}
-            uiBackground={{ color: Color4.create(0.35, 0.65, 1, 1) }}
-          onMouseDown={() => {
-            triggerScreenFade()
-            titleStage = 'setup'
-          }}
-        >
-          <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.06, 0.14, 0.28, 1) }}>
-              <Label value="SINGLE PLAYER" fontSize={22} color={Color4.create(0.85, 0.93, 1, 1)} textAlign="middle-center" />
-            </UiEntity>
-          </UiEntity>
-          <UiEntity
-            uiTransform={{ width: 300, height: 62, margin: { left: 12 }, justifyContent: 'center', alignItems: 'center', padding: 3 }}
-            uiBackground={{ color: Color4.create(0.95, 0.75, 0.25, 1) }}
+            uiTransform={{ width: 320, height: 100, margin: { right: 14 } }}
+            uiBackground={{ textureMode: 'stretch', texture: { src: 'images/ui/buttons/btn-single-player.png' } }}
             onMouseDown={() => {
+              playUiClick()
+              triggerScreenFade()
+              titleStage = 'setup'
+            }}
+          />
+          <UiEntity
+            uiTransform={{ width: 320, height: 103 }}
+            uiBackground={{ textureMode: 'stretch', texture: { src: 'images/ui/buttons/btn-multiplayer.png' } }}
+            onMouseDown={() => {
+              playUiClick()
               triggerScreenFade()
               // Land straight in our room if we're already seated somewhere,
               // otherwise open the room browser.
               setViewedLobbyId(getMyLobbyId())
               titleStage = 'lobby'
             }}
-          >
-            <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.2, 0.14, 0.04, 1) }}>
-              <Label value="MULTIPLAYER" fontSize={22} color={Color4.create(1, 0.9, 0.65, 1)} textAlign="middle-center" />
-            </UiEntity>
-          </UiEntity>
+          />
         </UiEntity>
         <Label value="Build. Defend. Conquer." fontSize={12} color={Color4.create(0.6, 0.64, 0.72, 0.85)} textAlign="middle-center" uiTransform={{ width: '100%', height: 16, margin: { top: 14 } }} />
       </UiEntity>
 
       {/* Website link: lore, unit wiki and the ranked ladder live off-world. */}
       <UiEntity
-        uiTransform={{ positionType: 'absolute', position: { bottom: 30, right: 30 }, width: 190, height: 44, padding: 2, justifyContent: 'center', alignItems: 'center' }}
-        uiBackground={{ color: Color4.create(0.35, 0.42, 0.55, 0.9) }}
+        uiTransform={{ positionType: 'absolute', position: { bottom: 26, right: 26 }, width: 200, height: 69 }}
+        uiBackground={{ textureMode: 'stretch', texture: { src: 'images/ui/buttons/btn-wiki.png' } }}
         onMouseDown={() => {
           playUiClick()
           void openExternalUrl({ url: 'https://mfmcmillian.github.io/AntromKingdom/' })
         }}
-      >
-        <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.05, 0.07, 0.11, 0.95) }}>
-          <Label value="WIKI & GUIDE" fontSize={15} color={Color4.create(0.75, 0.8, 0.9, 1)} textAlign="middle-center" />
-        </UiEntity>
-      </UiEntity>
+      />
     </UiEntity>
   )
 }
