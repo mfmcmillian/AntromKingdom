@@ -1942,39 +1942,34 @@ function matchSetupOverlay() {
       <UiEntity
         uiTransform={{
           positionType: 'absolute',
-          position: { bottom: 46, left: 0 },
+          position: { bottom: 40, left: 0 },
           width: '100%',
           flexDirection: 'row',
-          justifyContent: 'center'
+          justifyContent: 'center',
+          alignItems: 'center'
         }}
       >
         <UiEntity
-          uiTransform={{ width: 220, height: 60, margin: { right: 16 }, padding: 3, justifyContent: 'center', alignItems: 'center' }}
-          uiBackground={{ color: Color4.create(0.3, 0.36, 0.48, 1) }}
+          uiTransform={{ width: 230, height: 70, margin: { right: 18 } }}
+          uiBackground={{ textureMode: 'stretch', texture: { src: 'images/ui/buttons/btn-back.png' } }}
           onMouseDown={() => {
+            playUiClick()
             triggerScreenFade()
             hideHeroShowcase()
             titleStage = 'title'
           }}
-        >
-          <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.07, 0.09, 0.14, 1) }}>
-            <Label value="BACK" fontSize={20} color={UI.dim} textAlign="middle-center" />
-          </UiEntity>
-        </UiEntity>
+        />
         <UiEntity
-          uiTransform={{ width: 320, height: 60, margin: { left: 16 }, padding: 3, justifyContent: 'center', alignItems: 'center' }}
-          uiBackground={{ color: Color4.create(0.35, 0.65, 1, 1) }}
+          uiTransform={{ width: 300, height: 113 }}
+          uiBackground={{ textureMode: 'stretch', texture: { src: 'images/ui/buttons/btn-start-match.png' } }}
           onMouseDown={() => {
+            playUiClick()
             triggerScreenFade()
             hideHeroShowcase()
             titleStage = 'title'
             startRtsMatch()
           }}
-        >
-          <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.06, 0.14, 0.28, 1) }}>
-            <Label value="START MATCH" fontSize={22} color={Color4.create(0.85, 0.93, 1, 1)} textAlign="middle-center" />
-          </UiEntity>
-        </UiEntity>
+        />
       </UiEntity>
     </UiEntity>
   )
@@ -2354,15 +2349,13 @@ function lobbyBrowserRoomRow(config: LobbyConfig) {
         <Label value={inMatch ? 'IN MATCH' : 'OPEN'} fontSize={12} color={inMatch ? UI.red : UI.green} textAlign="middle-center" />
       </UiEntity>
       <UiEntity
-        uiTransform={{ width: 110, height: 38, justifyContent: 'center', alignItems: 'center' }}
-        uiBackground={{ color: inMatch ? Color4.create(0.2, 0.24, 0.3, 1) : Color4.create(0.35, 0.65, 1, 1) }}
+        uiTransform={{ width: 120, height: inMatch ? 43 : 44 }}
+        uiBackground={{ textureMode: 'stretch', texture: { src: inMatch ? 'images/ui/buttons/btn-view.png' : 'images/ui/buttons/btn-enter.png' } }}
         onMouseDown={() => {
           playUiClick()
           setViewedLobbyId(config.id)
         }}
-      >
-        <Label value={inMatch ? 'VIEW' : 'ENTER'} fontSize={14} color={inMatch ? UI.dim : Color4.create(0.06, 0.14, 0.28, 1)} textAlign="middle-center" />
-      </UiEntity>
+      />
     </UiEntity>
   )
 }
@@ -2417,17 +2410,14 @@ function lobbyBrowserOverlay() {
         uiTransform={{ positionType: 'absolute', position: { bottom: 46, left: 0 }, width: '100%', flexDirection: 'row', justifyContent: 'center' }}
       >
         <UiEntity
-          uiTransform={{ width: 220, height: 60, padding: 3, justifyContent: 'center', alignItems: 'center' }}
-          uiBackground={{ color: Color4.create(0.3, 0.36, 0.48, 1) }}
+          uiTransform={{ width: 230, height: 70 }}
+          uiBackground={{ textureMode: 'stretch', texture: { src: 'images/ui/buttons/btn-back.png' } }}
           onMouseDown={() => {
+            playUiClick()
             triggerScreenFade()
             titleStage = 'title'
           }}
-        >
-          <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.07, 0.09, 0.14, 1) }}>
-            <Label value="BACK" fontSize={20} color={UI.dim} textAlign="middle-center" />
-          </UiEntity>
-        </UiEntity>
+        />
       </UiEntity>
     </UiEntity>
   )
@@ -2502,58 +2492,65 @@ function lobbyRoomOverlay() {
       </UiEntity>
 
       <UiEntity
-        uiTransform={{ positionType: 'absolute', position: { bottom: 46, left: 0 }, width: '100%', flexDirection: 'row', justifyContent: 'center' }}
+        uiTransform={{ positionType: 'absolute', position: { bottom: 40, left: 0 }, width: '100%', flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}
       >
         <UiEntity
-          uiTransform={{ width: 220, height: 60, margin: { right: 16 }, padding: 3, justifyContent: 'center', alignItems: 'center' }}
-          uiBackground={{ color: Color4.create(0.3, 0.36, 0.48, 1) }}
+          uiTransform={{ width: 210, height: 69, margin: { right: 18 } }}
+          uiBackground={{ textureMode: 'stretch', texture: { src: 'images/ui/buttons/btn-leave-room.png' } }}
           onMouseDown={() => {
+            playUiClick()
             // Give up the seat and drop back to the room browser.
             leaveSeat()
             setViewedLobbyId(-1)
           }}
-        >
-          <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.07, 0.09, 0.14, 1) }}>
-            <Label value="LEAVE ROOM" fontSize={18} color={UI.dim} textAlign="middle-center" />
-          </UiEntity>
-        </UiEntity>
+        />
 
         {mySeat >= 0 ? (
           <UiEntity
-            uiTransform={{ width: 220, height: 60, margin: { right: 16 }, padding: 3, justifyContent: 'center', alignItems: 'center' }}
-            uiBackground={{ color: lobby.seats[mySeat].ready ? UI.green : Color4.create(0.35, 0.65, 1, 1) }}
-            onMouseDown={() => setMyReady(!lobby.seats[mySeat].ready)}
-          >
-            <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.06, 0.14, 0.1, 1) }}>
-              <Label value={lobby.seats[mySeat].ready ? 'UNREADY' : 'READY UP'} fontSize={20} color={UI.text} textAlign="middle-center" />
-            </UiEntity>
-          </UiEntity>
+            uiTransform={{ width: 210, height: lobby.seats[mySeat].ready ? 69 : 68, margin: { right: 18 } }}
+            uiBackground={{
+              textureMode: 'stretch',
+              texture: { src: lobby.seats[mySeat].ready ? 'images/ui/buttons/btn-unready.png' : 'images/ui/buttons/btn-ready-up.png' }
+            }}
+            onMouseDown={() => {
+              playUiClick()
+              setMyReady(!lobby.seats[mySeat].ready)
+            }}
+          />
         ) : null}
 
         {iAmHost ? (
-          <UiEntity
-            uiTransform={{ width: 320, height: 60, padding: 3, justifyContent: 'center', alignItems: 'center' }}
-            uiBackground={{ color: canStart ? Color4.create(0.35, 0.65, 1, 1) : Color4.create(0.2, 0.24, 0.3, 1) }}
-            onMouseDown={() => {
-              if (canStart) hostStartMatch()
-            }}
-          >
-            <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.06, 0.14, 0.28, 1) }}>
-              <Label
-                value={
-                  canStart
-                    ? 'START MATCH'
-                    : // Ranked can't be padded with computers, so tell the host what's actually missing.
-                      lobby.ranked && lobby.seats.filter((seat) => seat.kind === 'human').length < 2
+          canStart ? (
+            <UiEntity
+              uiTransform={{ width: 280, height: 106 }}
+              uiBackground={{ textureMode: 'stretch', texture: { src: 'images/ui/buttons/btn-start-match.png' } }}
+              onMouseDown={() => {
+                playUiClick()
+                hostStartMatch()
+              }}
+            />
+          ) : (
+            // Not startable yet: a flat panel carrying the reason, since the
+            // baked art can't change its label.
+            <UiEntity
+              uiTransform={{ width: 320, height: 60, padding: 3, justifyContent: 'center', alignItems: 'center' }}
+              uiBackground={{ color: Color4.create(0.2, 0.24, 0.3, 1) }}
+            >
+              <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: Color4.create(0.06, 0.14, 0.28, 1) }}>
+                <Label
+                  value={
+                    // Ranked can't be padded with computers, so tell the host what's actually missing.
+                    lobby.ranked && lobby.seats.filter((seat) => seat.kind === 'human').length < 2
                       ? 'NEEDS 2+ HUMANS (NO COMPS)'
                       : 'WAITING FOR PLAYERS'
-                }
-                fontSize={canStart ? 22 : 16}
-                color={canStart ? Color4.create(0.85, 0.93, 1, 1) : UI.dim}
-                textAlign="middle-center"
-              />
+                  }
+                  fontSize={16}
+                  color={UI.dim}
+                  textAlign="middle-center"
+                />
+              </UiEntity>
             </UiEntity>
-          </UiEntity>
+          )
         ) : (
           <Label
             value={

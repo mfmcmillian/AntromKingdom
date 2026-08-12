@@ -12,7 +12,14 @@ const OUT_DIR = 'images/ui/buttons'
 const BUTTONS = [
   { raw: 'btn-single-player-raw.png', out: 'btn-single-player.png', width: 680 },
   { raw: 'btn-multiplayer-raw.png', out: 'btn-multiplayer.png', width: 680 },
-  { raw: 'btn-wiki-raw.png', out: 'btn-wiki.png', width: 480 }
+  { raw: 'btn-wiki-raw.png', out: 'btn-wiki.png', width: 480 },
+  { raw: 'btn-back-raw.png', out: 'btn-back.png', width: 560 },
+  { raw: 'btn-start-match-raw.png', out: 'btn-start-match.png', width: 680 },
+  { raw: 'btn-ready-up-raw.png', out: 'btn-ready-up.png', width: 560 },
+  { raw: 'btn-unready-raw.png', out: 'btn-unready.png', width: 560 },
+  { raw: 'btn-leave-room-raw.png', out: 'btn-leave-room.png', width: 560 },
+  { raw: 'btn-enter-raw.png', out: 'btn-enter.png', width: 330 },
+  { raw: 'btn-view-raw.png', out: 'btn-view.png', width: 330 }
 ]
 
 mkdirSync(OUT_DIR, { recursive: true })
