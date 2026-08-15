@@ -237,7 +237,7 @@ img { max-width: 100%; display: block; }
   transition: transform .15s, box-shadow .15s;
 }
 .map-card:hover { transform: translateY(-4px); box-shadow: 0 14px 34px rgba(0,0,0,.5); }
-.map-card img { width: 100%; }
+.map-card img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; background: #0a0e18; }
 .map-info { padding: 20px 24px 26px; }
 .map-info h3 { color: var(--cyan); letter-spacing: 2px; font-size: 20px; }
 .map-tag { color: var(--gold); font-weight: 600; margin: 4px 0 12px; }
