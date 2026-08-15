@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DecentraCraft — Real-Time Strategy in Decentraland</title>
-  <meta name="description" content="DecentraCraft is a full base-building real-time strategy game living inside Decentraland. Three factions, four battlegrounds, campaign, ranked multiplayer. Learn the lore, browse the unit wiki and jump in." />
+  <meta name="description" content="DecentraCraft is a full base-building real-time strategy game living inside Decentraland. Three factions, four skirmish battlegrounds, campaign theaters, ranked multiplayer. Learn the lore, browse the unit wiki and jump in." />
   <link rel="icon" type="image/png" href="assets/logo-decentracraft.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -23,7 +23,7 @@
       <a href="#factions">Factions</a>
       <a href="#wiki">Wiki</a>
       <a href="#maps">Maps</a>
-      <a href="#ladder">Ladder</a>
+      <a href="#ladder">Leaderboards</a>
       <a href="#team">Team</a>
     </nav>
     <a class="btn btn-play nav-play" href="https://decentraland.org/play/?position=-12%2C127" target="_blank" rel="noopener">▶ PLAY NOW</a>
@@ -42,7 +42,7 @@
       </div>
       <div class="hero-facts">
         <div><strong>3</strong><span>Factions</span></div>
-        <div><strong>4</strong><span>Battlegrounds</span></div>
+        <div><strong>8</strong><span>Maps</span></div>
         <div><strong>12</strong><span>Unit roles</span></div>
         <div><strong>24</strong><span>Campaign missions</span></div>
       </div>
@@ -70,7 +70,8 @@
           broke the kingdom with them. What is left are battlegrounds: a scarred grey plateau where
           the Crown fell, green islands where the lowlands drowned, an ashen causeway that still
           joins two halves of a city, and a pair of reliquaries staring at each other across open
-          ground.
+          ground. Campaign commanders also fight on living Bloom soil, steel colony pads in a storm
+          sea, gold-crystal isles over a violet rift, and blackstone over lava.
         </p>
       </article>
       <article class="lore-block">
@@ -179,6 +180,45 @@
         </div>
       </article>
     </div>
+    <h3 class="maps-sub">Campaign theaters — locked to the story, not the lobby</h3>
+    <div class="maps-grid">
+      <article class="map-card">
+        <img src="assets/maps/bloom-wastes.jpg" alt="Bloom Wastes map layout" loading="lazy" />
+        <div class="map-info">
+          <h3>BLOOM WASTES</h3>
+          <p class="map-tag">Campaign. Myriad home ground. Same rim as the Crown, living soil.</p>
+          <p>The plateau after the swarm claimed it. Six starts, a rich center, amber veins
+          underfoot. Myriad missions open here — everyone else is the infestation.</p>
+        </div>
+      </article>
+      <article class="map-card">
+        <img src="assets/maps/colony-isles.jpg" alt="Colony Isles map layout" loading="lazy" />
+        <div class="map-info">
+          <h3>COLONY ISLES</h3>
+          <p class="map-tag">Vanguard finale. Steel pads in a storm sea. Ferry or fly.</p>
+          <p>The Last Colony. Same island layout as the open ocean, reskinned as Vanguard steel
+          in a storm. Two hard commanders share a pact — break both isles or Antrom is a grave.</p>
+        </div>
+      </article>
+      <article class="map-card">
+        <img src="assets/maps/rift-isles.jpg" alt="Rift Isles map layout" loading="lazy" />
+        <div class="map-info">
+          <h3>RIFT ISLES</h3>
+          <p class="map-tag">Aethyr finale. Gold-crystal pads over a violet rift sea.</p>
+          <p>Twin Suns. The island ring rewritten in Aethyr gold and rift water. Vanguard and
+          Myriad stand together — end both in one night, or the Rift closes for good.</p>
+        </div>
+      </article>
+      <article class="map-card">
+        <img src="assets/maps/blackstone-isles.jpg" alt="Blackstone Isles map layout" loading="lazy" />
+        <div class="map-info">
+          <h3>BLACKSTONE ISLES</h3>
+          <p class="map-tag">Myriad finale. Blackstone pads over a lava sea. Ferry or fly.</p>
+          <p>The Feast. The last isles are stone and fire. Vanguard steel and Aethyr gold have
+          allied against the Bloom — eat both, or starve.</p>
+        </div>
+      </article>
+    </div>
   </section>
 
   <!-- ====================== HOW TO PLAY ====================== -->
@@ -195,18 +235,21 @@
     </div>
   </section>
 
-  <!-- ====================== RANKED LADDER ====================== -->
+  <!-- ====================== LEADERBOARDS ====================== -->
   <section class="section" id="ladder">
-    <h2 class="section-title"><span>06</span> RANKED LADDER</h2>
-    <p class="ladder-intro">
-      The <strong>RANKED LADDER</strong> battle room in-game is a strict free-for-all — humans only,
-      no alliances, no computers. Win and you take Elo from every commander you buried; lose and the
-      ladder remembers. Everyone starts at 1200. Standings below sync from the game server after
-      every rated match.
+    <h2 class="section-title"><span>06</span> LEADERBOARDS</h2>
+    <p class="ladder-intro" id="ladderIntro">
+      Three boards sync from the game server: <strong>campaign</strong> missions completed,
+      <strong>ranked multiplayer</strong> Elo, and <strong>single-player</strong> skirmish wins.
     </p>
+    <div class="ladder-tabs" role="tablist">
+      <button type="button" class="ladder-tab" data-board="campaign">Campaign</button>
+      <button type="button" class="ladder-tab is-active" data-board="multiplayer">Multiplayer</button>
+      <button type="button" class="ladder-tab" data-board="skirmish">Single Player</button>
+    </div>
     <div class="ladder-wrap">
       <table class="ladder-table" id="ladderTable" hidden>
-        <thead>
+        <thead id="ladderHead">
           <tr><th>#</th><th>Commander</th><th>Rating</th><th>W</th><th>L</th><th>Win %</th></tr>
         </thead>
         <tbody id="ladderRows"></tbody>
