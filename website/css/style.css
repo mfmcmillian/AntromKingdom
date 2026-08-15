@@ -249,11 +249,6 @@ img { max-width: 100%; display: block; }
 
 /* ------------------------------ Maps ------------------------------ */
 .maps-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
-.maps-sub {
-  font-family: 'Orbitron', 'Rajdhani', sans-serif;
-  font-size: 15px; letter-spacing: 2px; color: var(--gold);
-  margin: 42px 0 18px; text-transform: uppercase;
-}
 .map-card {
   background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
   transition: transform .15s, box-shadow .15s;
