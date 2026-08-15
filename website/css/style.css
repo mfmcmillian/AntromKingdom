@@ -43,8 +43,25 @@ img { max-width: 100%; display: block; }
 .c-gas { color: var(--gas); }
 
 /* --------------------------- Ranked ladder --------------------------- */
-.ladder-intro { max-width: 820px; color: var(--dim); margin-bottom: 26px; }
+.ladder-intro { max-width: 820px; color: var(--dim); margin-bottom: 18px; }
 .ladder-intro strong { color: var(--gold); }
+.ladder-tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.ladder-tab {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 12px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--dim);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+.ladder-tab.is-active {
+  color: var(--gold);
+  border-color: var(--gold);
+}
 .ladder-wrap {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -232,6 +249,11 @@ img { max-width: 100%; display: block; }
 
 /* ------------------------------ Maps ------------------------------ */
 .maps-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
+.maps-sub {
+  font-family: 'Orbitron', 'Rajdhani', sans-serif;
+  font-size: 15px; letter-spacing: 2px; color: var(--gold);
+  margin: 42px 0 18px; text-transform: uppercase;
+}
 .map-card {
   background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
   transition: transform .15s, box-shadow .15s;
