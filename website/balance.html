@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DecentraCraft — Balance &amp; analysis</title>
+  <meta name="description" content="Full live stats and analysis for DecentraCraft: units, DPS, economy, combat rules, campaign, AI." />
+  <link rel="icon" type="image/png" href="assets/logo-decentracraft.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/balance.css" />
+</head>
+<body class="bal-body">
+
+  <header class="nav bal-nav" id="top">
+    <a class="nav-brand" href="index.html">
+      <img src="assets/logo-decentracraft.png" alt="DecentraCraft" />
+    </a>
+    <nav class="nav-links">
+      <a href="index.html">Site</a>
+      <a href="index.html#wiki">Wiki</a>
+      <a href="balance.html" class="is-on">Balance</a>
+      <a href="index.html#ladder">Leaderboards</a>
+    </nav>
+    <span class="bal-ver" id="balVersion"></span>
+    <button class="nav-burger" id="navBurger" aria-label="Menu">☰</button>
+  </header>
+
+  <div class="bal-hero">
+    <h1>STATS &amp; ANALYSIS</h1>
+    <p>Nothing but the live numbers. Units, DPS, cost-efficiency, economy, combat rules, campaign curve, AI, and what the math actually says. Plasma is counted at 2× crystal in value columns.</p>
+  </div>
+
+  <div class="bal-tabs">
+    <div class="bal-tabs-inner">
+      <button class="bal-tab is-on" data-page="overview">Overview</button>
+      <button class="bal-tab" data-page="units">Unit sheet</button>
+      <button class="bal-tab" data-page="compare">Compare</button>
+      <button class="bal-tab" data-page="economy">Economy</button>
+      <button class="bal-tab" data-page="combat">Combat</button>
+      <button class="bal-tab" data-page="campaign">Campaign &amp; AI</button>
+      <button class="bal-tab" data-page="analysis">Analysis</button>
+    </div>
+  </div>
+
+  <div class="bal-page" id="page-overview"></div>
+  <div class="bal-page" id="page-units" hidden></div>
+  <div class="bal-page" id="page-compare" hidden></div>
+  <div class="bal-page" id="page-economy" hidden></div>
+  <div class="bal-page" id="page-combat" hidden></div>
+  <div class="bal-page" id="page-campaign" hidden></div>
+  <div class="bal-page" id="page-analysis" hidden></div>
+
+  <p class="bal-foot">
+    Derived from game v<span id="footVer"></span> — <code>src/rts/races.ts</code>, <code>config.ts</code>, <code>upgrades.ts</code>, <code>campaign.ts</code>, <code>maps.ts</code>, <code>rtsGame.ts</code>, combat / workers / healers. DPS = damage ÷ attack interval. TTK ignores splash, auras, poison, and micro unless named.
+  </p>
+
+  <script src="js/balance-data.js"></script>
+  <script src="js/balance.js"></script>
+  <script>document.getElementById('footVer').textContent = BALANCE_VERSION</script>
+</body>
+</html>

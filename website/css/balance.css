@@ -1,0 +1,205 @@
+/* Balance dashboard — stats only. Shares tokens with the main site. */
+
+.bal-nav .nav-brand img { height: 44px; margin: -8px 0; }
+.bal-body { padding-top: 56px; }
+.bal-nav .nav-links a.is-on { color: var(--gold); }
+
+.bal-hero {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 28px 24px 8px;
+}
+.bal-hero h1 {
+  font-size: clamp(22px, 3.2vw, 32px);
+  letter-spacing: 2px;
+  font-weight: 900;
+}
+.bal-hero p { color: var(--dim); max-width: 820px; margin-top: 8px; }
+.bal-ver { color: var(--gold); font-family: 'Orbitron', sans-serif; font-size: 12px; letter-spacing: 2px; margin-left: 12px; }
+
+.bal-tabs {
+  position: sticky;
+  top: 56px;
+  z-index: 40;
+  background: rgba(7, 10, 18, 0.94);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+}
+.bal-tabs-inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 10px 24px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.bal-tab {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 11px;
+  letter-spacing: 1.3px;
+  text-transform: uppercase;
+  color: var(--dim);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+.bal-tab.is-on { color: var(--gold); border-color: var(--gold); }
+
+.bal-page { max-width: 1180px; margin: 0 auto; padding: 22px 24px 80px; }
+.bal-page[hidden] { display: none; }
+
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 16px 0 22px; }
+.kpi {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.kpi .k { color: var(--dim); font-size: 11px; letter-spacing: 1.4px; text-transform: uppercase; }
+.kpi .v { font-family: 'Orbitron', sans-serif; font-size: 20px; margin-top: 4px; color: var(--text); }
+
+.race-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 8px 0 24px; }
+.race-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--rc);
+  border-radius: 8px;
+  padding: 16px 18px;
+}
+.race-card h3 { color: var(--rc); letter-spacing: 1.5px; font-size: 16px; }
+.race-card .tag { color: var(--dim); font-weight: 600; margin: 4px 0 10px; }
+.race-card p { color: #c3ccdf; font-size: 14.5px; }
+
+.note {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--gold);
+  border-radius: 6px;
+  padding: 12px 16px;
+  color: #c3ccdf;
+  margin: 12px 0 20px;
+  font-size: 15px;
+}
+.note.warn { border-left-color: var(--bio); }
+.note.info { border-left-color: var(--cyan); }
+
+.chart-box {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px 16px 10px;
+  margin: 0 0 18px;
+}
+.chart-box h3 { font-size: 13px; letter-spacing: 1.4px; color: var(--dim); margin-bottom: 10px; text-transform: uppercase; }
+.chart-cap { color: var(--dim); font-size: 12.5px; margin-top: 6px; }
+.chart-svg { width: 100%; height: auto; display: block; }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--dim); margin-bottom: 8px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
+
+.filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 0 0 14px; }
+.filters input {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 15px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  min-width: 200px;
+}
+.race-pill {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 11px;
+  letter-spacing: 1px;
+  padding: 7px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  background: var(--panel);
+  color: var(--dim);
+  border: 1px solid var(--line);
+}
+.race-pill.is-on[data-race="human"] { color: var(--human); border-color: var(--human); }
+.race-pill.is-on[data-race="alien"] { color: var(--alien); border-color: var(--alien); }
+.race-pill.is-on[data-race="bio"] { color: var(--bio); border-color: var(--bio); }
+.race-pill.is-on[data-race="all"] { color: var(--gold); border-color: var(--gold); }
+
+.grid-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+table.grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14.5px;
+  min-width: 920px;
+}
+table.grid th, table.grid td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(35, 44, 74, 0.55);
+  text-align: left;
+  white-space: nowrap;
+}
+table.grid th {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 10.5px;
+  letter-spacing: 1.1px;
+  color: var(--dim);
+  text-transform: uppercase;
+  cursor: pointer;
+  user-select: none;
+  position: sticky;
+  top: 0;
+  background: #12182c;
+}
+table.grid th.sort-asc::after { content: ' ▲'; color: var(--gold); }
+table.grid th.sort-desc::after { content: ' ▼'; color: var(--gold); }
+table.grid td.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.grid td.dim { color: var(--dim); }
+table.grid tbody tr:hover { background: rgba(255,255,255,0.03); }
+table.grid .r-human { color: var(--human); }
+table.grid .r-alien { color: var(--alien); }
+table.grid .r-bio { color: var(--bio); }
+
+.metric-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.metric-tab {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--dim);
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.metric-tab.is-on { color: var(--cyan); border-color: var(--cyan); }
+
+.analysis-block {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px 20px;
+  margin-bottom: 12px;
+}
+.analysis-block h3 { color: var(--gold); font-size: 15px; letter-spacing: 1px; margin-bottom: 8px; }
+.analysis-block p { color: #c3ccdf; font-size: 15.5px; }
+
+.h2 { font-size: 18px; letter-spacing: 2px; margin: 22px 0 10px; }
+.h2 span { color: var(--cyan); font-size: 12px; margin-right: 8px; }
+
+.bal-foot {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 8px 24px 40px;
+  color: var(--dim);
+  font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .race-cards { grid-template-columns: 1fr; }
+  .bal-tabs { top: 56px; }
+}
