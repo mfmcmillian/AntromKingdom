@@ -3,7 +3,7 @@ import { Color4 } from '@dcl/sdk/math'
 import ReactEcs, { UiEntity } from '@dcl/sdk/react-ecs'
 import { SCENE } from './config'
 import { FOG_GRID_SIZE, getFogCellState, isPositionExplored, isPositionVisibleToPlayer } from './fogOfWar'
-import { getMapById } from './maps'
+import { getMapById, islandHalfX, islandHalfZ } from './maps'
 import { gameState, isHostileToPlayer } from './state'
 import type { EnemyTeam, Team } from './types'
 import { BASIN_PATCHES, CRATERS } from './terrain'
@@ -51,7 +51,19 @@ const MINIMAP_COLORS = {
   avatar: Color4.create(1, 1, 1, 1),
   // Island maps: open ocean between grassy islands.
   sky: Color4.create(0.1, 0.28, 0.5, 1),
-  island: Color4.create(0.24, 0.42, 0.18, 1)
+  island: Color4.create(0.24, 0.42, 0.18, 1),
+  ashenWater: Color4.create(0.16, 0.15, 0.14, 1),
+  ashenLand: Color4.create(0.34, 0.29, 0.24, 1),
+  reliquaryGround: Color4.create(0.22, 0.2, 0.18, 1),
+  reliquaryRock: Color4.create(0.42, 0.34, 0.26, 1),
+  bloomGround: Color4.create(0.42, 0.22, 0.1, 1),
+  bloomRock: Color4.create(0.55, 0.28, 0.12, 1),
+  infernoWater: Color4.create(0.55, 0.12, 0.04, 1),
+  infernoLand: Color4.create(0.16, 0.14, 0.13, 1),
+  stormWater: Color4.create(0.12, 0.18, 0.28, 1),
+  stormLand: Color4.create(0.32, 0.34, 0.38, 1),
+  riftWater: Color4.create(0.22, 0.08, 0.38, 1),
+  riftLand: Color4.create(0.42, 0.28, 0.18, 1)
 }
 
 /** World meters -> minimap pixels. */
@@ -69,8 +81,21 @@ const PING_COLOR = Color4.create(1, 0.15, 0.1, 0.85)
 
 type AttackPing = { x: number; z: number; age: number }
 const attackPings: AttackPing[] = []
+let lastAttackLocation: { x: number; z: number } | undefined
+
+/** Optional world-click hook (loaded transport drop-here). Return true to also keep the camera jump. */
+let minimapWorldClickHandler: ((x: number, z: number) => void) | undefined
+
+export function setMinimapClickHandler(handler: (x: number, z: number) => void): void {
+  minimapWorldClickHandler = handler
+}
+
+export function getLastAttackLocation(): { x: number; z: number } | undefined {
+  return lastAttackLocation
+}
 
 export function addAttackPing(x: number, z: number): void {
+  lastAttackLocation = { x, z }
   for (const ping of attackPings) {
     const dx = ping.x - x
     const dz = ping.z - z
@@ -91,6 +116,7 @@ export function updateAttackPings(dt: number): void {
 
 export function clearAttackPings(): void {
   attackPings.length = 0
+  lastAttackLocation = undefined
 }
 
 function pingMarkers() {
@@ -135,7 +161,7 @@ export function minimapPanel() {
       >
       <UiEntity
         uiTransform={{ width: MAP_SIZE, height: MAP_SIZE }}
-        uiBackground={{ color: MINIMAP_COLORS.ground }}
+        uiBackground={{ color: minimapGroundColor() }}
         onMouseDown={jumpCameraToClickedPoint}
       >
         {terrainLayer()}
@@ -171,43 +197,83 @@ function jumpCameraToClickedPoint(): void {
   const v = clamp((virtualYFromTop - mapTop) / MAP_SIZE, 0, 1)
 
   // Minimap top edge is the map's far side (high z).
-  setCameraFocus(u * SCENE.size, (1 - v) * SCENE.size)
+  const worldX = u * SCENE.size
+  const worldZ = (1 - v) * SCENE.size
+  minimapWorldClickHandler?.(worldX, worldZ)
+  setCameraFocus(worldX, worldZ)
 }
 
 /**
  * Static terrain features under the dots: rocky border ring, the darker center
  * basin, and the landmark craters, so the minimap matches the actual map.
  */
+function minimapGroundColor(): Color4 {
+  const theme = getMapById(gameState.selectedMapId).visuals?.theme
+  if (theme === 'reliquary') return MINIMAP_COLORS.reliquaryGround
+  if (theme === 'ashen') return MINIMAP_COLORS.ashenLand
+  if (theme === 'bloom') return MINIMAP_COLORS.bloomGround
+  return MINIMAP_COLORS.ground
+}
+
 function terrainLayer() {
-  // Island maps swap the whole layer: sky background with one blob per island.
-  const islands = getMapById(gameState.selectedMapId).islands
+  const map = getMapById(gameState.selectedMapId)
+  const islands = map.islands
   if (islands) {
+    const water =
+      map.visuals?.theme === 'ashen'
+        ? MINIMAP_COLORS.ashenWater
+        : map.visuals?.theme === 'inferno'
+          ? MINIMAP_COLORS.infernoWater
+          : map.visuals?.theme === 'storm'
+            ? MINIMAP_COLORS.stormWater
+            : map.visuals?.theme === 'rift'
+              ? MINIMAP_COLORS.riftWater
+              : MINIMAP_COLORS.sky
+    const land =
+      map.visuals?.theme === 'ashen'
+        ? MINIMAP_COLORS.ashenLand
+        : map.visuals?.theme === 'inferno'
+          ? MINIMAP_COLORS.infernoLand
+          : map.visuals?.theme === 'storm'
+            ? MINIMAP_COLORS.stormLand
+            : map.visuals?.theme === 'rift'
+              ? MINIMAP_COLORS.riftLand
+              : MINIMAP_COLORS.island
     const elements = [
-      <UiEntity key="sky" uiTransform={{ positionType: 'absolute', position: { left: 0, top: 0 }, width: MAP_SIZE, height: MAP_SIZE }} uiBackground={{ color: MINIMAP_COLORS.sky }} />
+      <UiEntity key="sky" uiTransform={{ positionType: 'absolute', position: { left: 0, top: 0 }, width: MAP_SIZE, height: MAP_SIZE }} uiBackground={{ color: water }} />
     ]
     for (let i = 0; i < islands.length; i++) {
       const island = islands[i]
-      // Islands are literal squares of land, so one rect each is exact.
-      const side = island.halfSize * 2 * MAP_SCALE
-      elements.push(terrainRectSized(`isle-${i}`, island.x, island.z, side, side, MINIMAP_COLORS.island))
+      const width = islandHalfX(island) * 2 * MAP_SCALE
+      const height = islandHalfZ(island) * 2 * MAP_SCALE
+      elements.push(terrainRectSized(`isle-${i}`, island.x, island.z, width, height, land))
     }
     return elements
   }
 
+  const rock =
+    map.visuals?.theme === 'reliquary'
+      ? MINIMAP_COLORS.reliquaryRock
+      : map.visuals?.theme === 'bloom'
+        ? MINIMAP_COLORS.bloomRock
+        : MINIMAP_COLORS.borderRock
   const RIM = 6
   const elements = [
     // Border highland ring.
-    <UiEntity key="rim-n" uiTransform={{ positionType: 'absolute', position: { left: 0, top: 0 }, width: MAP_SIZE, height: RIM }} uiBackground={{ color: MINIMAP_COLORS.borderRock }} />,
-    <UiEntity key="rim-s" uiTransform={{ positionType: 'absolute', position: { left: 0, top: MAP_SIZE - RIM }, width: MAP_SIZE, height: RIM }} uiBackground={{ color: MINIMAP_COLORS.borderRock }} />,
-    <UiEntity key="rim-w" uiTransform={{ positionType: 'absolute', position: { left: 0, top: RIM }, width: RIM, height: MAP_SIZE - RIM * 2 }} uiBackground={{ color: MINIMAP_COLORS.borderRock }} />,
-    <UiEntity key="rim-e" uiTransform={{ positionType: 'absolute', position: { left: MAP_SIZE - RIM, top: RIM }, width: RIM, height: MAP_SIZE - RIM * 2 }} uiBackground={{ color: MINIMAP_COLORS.borderRock }} />
+    <UiEntity key="rim-n" uiTransform={{ positionType: 'absolute', position: { left: 0, top: 0 }, width: MAP_SIZE, height: RIM }} uiBackground={{ color: rock }} />,
+    <UiEntity key="rim-s" uiTransform={{ positionType: 'absolute', position: { left: 0, top: MAP_SIZE - RIM }, width: MAP_SIZE, height: RIM }} uiBackground={{ color: rock }} />,
+    <UiEntity key="rim-w" uiTransform={{ positionType: 'absolute', position: { left: 0, top: RIM }, width: RIM, height: MAP_SIZE - RIM * 2 }} uiBackground={{ color: rock }} />,
+    <UiEntity key="rim-e" uiTransform={{ positionType: 'absolute', position: { left: MAP_SIZE - RIM, top: RIM }, width: RIM, height: MAP_SIZE - RIM * 2 }} uiBackground={{ color: rock }} />
   ]
 
-  for (let i = 0; i < BASIN_PATCHES.length; i++) {
-    elements.push(terrainRect(`basin-${i}`, BASIN_PATCHES[i].x, BASIN_PATCHES[i].z, BASIN_PATCHES[i].size, MINIMAP_COLORS.groundDark))
-  }
-  for (let i = 0; i < CRATERS.length; i++) {
-    elements.push(terrainRect(`crater-${i}`, CRATERS[i].x, CRATERS[i].z, CRATERS[i].radius * 2, MINIMAP_COLORS.groundDark))
+  // Crown-only landmarks. Other solid maps keep a clean field so the dots read the layout.
+  if (map.id === 'shattered-crown') {
+    for (let i = 0; i < BASIN_PATCHES.length; i++) {
+      elements.push(terrainRect(`basin-${i}`, BASIN_PATCHES[i].x, BASIN_PATCHES[i].z, BASIN_PATCHES[i].size, MINIMAP_COLORS.groundDark))
+    }
+    for (let i = 0; i < CRATERS.length; i++) {
+      elements.push(terrainRect(`crater-${i}`, CRATERS[i].x, CRATERS[i].z, CRATERS[i].radius * 2, MINIMAP_COLORS.groundDark))
+    }
   }
   return elements
 }

@@ -1,4 +1,4 @@
-import { Entity, Material, MaterialTransparencyMode, MeshRenderer, Transform, VisibilityComponent, engine } from '@dcl/sdk/ecs'
+import { Entity, Material, MaterialTransparencyMode, MeshCollider, MeshRenderer, Transform, VisibilityComponent, engine } from '@dcl/sdk/ecs'
 import { Color4, Vector3 } from '@dcl/sdk/math'
 import { SCENE } from './config'
 import { gameState, isHostileToPlayer } from './state'
@@ -6,7 +6,7 @@ import { getRace } from './races'
 import { isProceduralBuilding, setBuildingModelVisible } from './buildingModels'
 import { isProceduralResource, setResourceModelVisible } from './resourceModels'
 import { isProceduralUnit, setUnitVisible } from './unitModels'
-import { isTopDownViewActive } from './topDownCamera'
+import type { Selectable } from './types'
 import { buildings, getTeam, resources, soldiers, workers } from './world'
 
 export const FOG_GRID_SIZE = 10
@@ -19,7 +19,7 @@ const FOG_TILE_THICKNESS = 0.12
 const UNIT_VISION_RADIUS = 18
 const BUILDING_VISION_RADIUS = 24
 /** Vanguard Beacons are signal fires: they light up a huge patch of the map. */
-const BEACON_VISION_RADIUS = 42
+export const BEACON_VISION_RADIUS = 42
 const UPDATE_INTERVAL = 0.25
 // Dark blue-gray "night side" tone: clearly unexplored, but tuned to the light
 // regolith surface so the boundary doesn't look like a hole in the world.
@@ -34,6 +34,7 @@ export type FogCellState = 'hidden' | 'explored' | 'visible'
 const explored: boolean[] = new Array(FOG_GRID_SIZE * FOG_GRID_SIZE).fill(false)
 const cellStates: FogCellState[] = new Array(FOG_GRID_SIZE * FOG_GRID_SIZE).fill('hidden')
 const fogTiles: (Entity | null)[] = new Array(FOG_GRID_SIZE * FOG_GRID_SIZE).fill(null)
+const lastFogVisible = new Map<string, boolean>()
 let visionSources: VisionSource[] = []
 let updateTimer = 0
 
@@ -45,12 +46,18 @@ export function initFogOfWar(): void {
 export function resetFogOfWar(): void {
   explored.fill(false)
   visionSources = []
-  createMissingFogTiles()
-  // Force every tile back to the opaque unexplored look.
-  for (let index = 0; index < cellStates.length; index++) {
+  updateTimer = 0
+  // Recreate tiles instead of mutating materials: DCL often keeps the old
+  // alpha-blend shroud when a tile is told to go opaque, which looks like
+  // leftover vision from the previous match.
+  for (let index = 0; index < fogTiles.length; index++) {
+    const tile = fogTiles[index]
+    if (tile) engine.removeEntity(tile)
+    fogTiles[index] = null
     cellStates[index] = 'hidden'
-    applyCellVisual(index, 'hidden')
   }
+  lastFogVisible.clear()
+  createMissingFogTiles()
 }
 
 /** True when the position is currently inside a player unit/building vision radius. */
@@ -70,6 +77,16 @@ export function isPositionExplored(position: { x: number; z: number }): boolean 
   return isCellExplored(column, row)
 }
 
+/** Whether this object should accept hover/clicks. Hostiles in the fog do not. */
+export function isSelectableRevealedToPlayer(selectable: Selectable): boolean {
+  const position = Transform.getOrNull(selectable.entity)?.position
+  if (!position) return false
+  if (selectable.kind === 'resource') return isPositionExplored(position)
+  if (!isHostileToPlayer(getTeam(selectable))) return true
+  if (selectable.kind === 'worker' || selectable.kind === 'soldier') return isPositionVisibleToPlayer(position)
+  return isPositionExplored(position)
+}
+
 export function isCellExplored(column: number, row: number): boolean {
   if (column < 0 || row < 0 || column >= FOG_GRID_SIZE || row >= FOG_GRID_SIZE) return true
   return explored[row * FOG_GRID_SIZE + column]
@@ -82,7 +99,7 @@ export function getFogCellState(column: number, row: number): FogCellState {
 }
 
 function fogOfWarSystem(dt: number): void {
-  // No match, no scouting: the grid sleeps under the menus and end screens.
+  // No match, no scouting: keep the grid sealed under menus and end screens.
   if (gameState.matchStatus !== 'active') return
 
   updateTimer += dt
@@ -96,15 +113,6 @@ function fogOfWarSystem(dt: number): void {
 
 function collectPlayerVisionSources(): VisionSource[] {
   const sources: VisionSource[] = []
-
-  // In the free-camera overhead view the avatar is hidden and parked, so it grants no vision.
-  // In avatar view, walking around scouts the map like a unit would.
-  if (!isTopDownViewActive()) {
-    const playerTransform = Transform.getOrNull(engine.PlayerEntity)
-    if (playerTransform) {
-      sources.push({ x: playerTransform.position.x, z: playerTransform.position.z, radius: UNIT_VISION_RADIUS })
-    }
-  }
 
   // Allied computers share vision with the player, like team games in classic RTS.
   for (const worker of workers) {
@@ -157,6 +165,7 @@ function applyCellVisual(index: number, state: FogCellState): void {
   }
 
   VisibilityComponent.createOrReplace(tile, { visible: true })
+  Material.deleteFrom(tile)
   Material.setPbrMaterial(tile, {
     albedoColor: state === 'hidden' ? FOG_COLOR : SHROUD_COLOR,
     transparencyMode: state === 'hidden' ? MaterialTransparencyMode.MTM_OPAQUE : MaterialTransparencyMode.MTM_ALPHA_BLEND,
@@ -198,13 +207,28 @@ function setEntityVisible(entity: Entity, visible: boolean): void {
 }
 
 /** Visibility doesn't cascade to children, so hide the floating name label along with the model. */
-function setSelectableVisible(selectable: { entity: Entity; labelEntity?: Entity; beaconEntity?: Entity }, visible: boolean): void {
+function setSelectableVisible(selectable: Selectable, visible: boolean): void {
+  if (lastFogVisible.get(selectable.id) === visible) return
+  lastFogVisible.set(selectable.id, visible)
+
   if (isProceduralUnit(selectable.entity)) setUnitVisible(selectable.entity, visible)
   else if (isProceduralResource(selectable.entity)) setResourceModelVisible(selectable.entity, visible)
   else if (isProceduralBuilding(selectable.entity)) setBuildingModelVisible(selectable.entity, visible)
   else setEntityVisible(selectable.entity, visible)
   if (selectable.labelEntity) setEntityVisible(selectable.labelEntity, visible)
-  if (selectable.beaconEntity) setEntityVisible(selectable.beaconEntity, visible)
+  const beacon = (selectable as { beaconEntity?: Entity }).beaconEntity
+  if (beacon) setEntityVisible(beacon, visible)
+  // Visibility hides the mesh, not the click box. A live collider still shows
+  // hover text and eats clicks through the fog.
+  setSelectablePointerEnabled(selectable, visible)
+}
+
+function setSelectablePointerEnabled(selectable: Selectable, enabled: boolean): void {
+  const targets = selectable.colliderEntity ? [selectable.colliderEntity] : [selectable.entity]
+  for (const entity of targets) {
+    if (enabled) MeshCollider.setBox(entity)
+    else MeshCollider.deleteFrom(entity)
+  }
 }
 
 function createMissingFogTiles(): void {
@@ -219,8 +243,10 @@ function createMissingFogTiles(): void {
         scale: Vector3.create(CELL_SIZE, FOG_TILE_THICKNESS, CELL_SIZE)
       })
       MeshRenderer.setBox(tile)
+      VisibilityComponent.create(tile, { visible: true })
       Material.setPbrMaterial(tile, {
         albedoColor: FOG_COLOR,
+        transparencyMode: MaterialTransparencyMode.MTM_OPAQUE,
         castShadows: false
       })
       fogTiles[index] = tile

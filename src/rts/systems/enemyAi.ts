@@ -1,5 +1,6 @@
 import { Transform } from '@dcl/sdk/ecs'
 import { Vector3 } from '@dcl/sdk/math'
+import { getCampaignMission } from '../campaign'
 import { AI_DIFFICULTY, BUILDING_DEFINITIONS, type DifficultySettings } from '../config'
 import { getIslandZoneAt, getMapById, isIslandMap, isSameIsland } from '../maps'
 import { canQueueUnit, getResourceAmount, getSupplyCap, getSupplyUsed, hasResources, spendResources } from '../economy'
@@ -73,8 +74,29 @@ export type EnemyAi = {
   expand?: ExpandOperation
 }
 
+/** Survive missions: the computer assaults your pad instead of playing a standard game. */
+function assaultSettings(base: DifficultySettings): DifficultySettings {
+  return {
+  ...base,
+    decisionRate: 1,
+    attackInterval: 42,
+    initialAttackTimer: 18,
+    defenderCount: 2,
+    targetWorkers: 10,
+    targetGuards: 22,
+    maxAdvancedUnits: 6,
+    maxHomesteads: 3,
+    maxTemples: 1,
+    maxTurrets: 0,
+    research: false,
+    expands: false,
+    gatherMultiplier: 1.2
+  }
+}
+
 export function createEnemyAi(team: EnemyTeam, difficulty: Difficulty): EnemyAi {
-  const settings = AI_DIFFICULTY[difficulty]
+  const mission = getCampaignMission(gameState.campaignMissionId)
+  const settings = mission?.win === 'survive' ? assaultSettings(AI_DIFFICULTY[difficulty]) : AI_DIFFICULTY[difficulty]
   const seatIndex = gameState.enemySeatIndex[team]
   const seat = getMapById(gameState.selectedMapId).anchors[gameState.anchorPermutation[seatIndex] ?? seatIndex]
   return {
@@ -127,57 +149,58 @@ function runEnemyBuildOrder(ai: EnemyAi, deps: EnemyAiDeps): void {
   const workerCount = getTeamWorkerCount(team)
   const guardCount = getTeamSoldierCount(team)
 
+  // Each priority ends the tick when it built something or is saving up for
+  // it; a 'blocked' placement (no valid ground / spot occupied) falls through
+  // to the next priority so one impossible building can't stall the whole
+  // build order forever (rim anchors used to deadlock exactly that way).
+
   if (shouldBuildEnemyHomestead(ai, homesteads.length)) {
-    tryStartEnemyConstruction(ai, 'supplyHouse', deps)
-    return
+    if (tryStartEnemyConstruction(ai, 'supplyHouse', deps) !== 'blocked') return
   }
 
   if (workerCount >= 6 && barracks.length === 0) {
-    tryStartEnemyConstruction(ai, 'barracks', deps)
-    return
+    if (tryStartEnemyConstruction(ai, 'barracks', deps) !== 'blocked') return
   }
 
   // Tech up once the basic army is rolling: advanced structure first, then the forge.
   // Easy AIs never tech past the barracks (maxAdvancedUnits > 2 implies tech).
   if (ai.settings.maxAdvancedUnits > 2) {
     if (workerCount >= 8 && barracks.length > 0 && getTeamBuildings(team, 'techLab').length === 0) {
-      tryStartEnemyConstruction(ai, 'techLab', deps)
-      return
+      if (tryStartEnemyConstruction(ai, 'techLab', deps) !== 'blocked') return
     }
 
     // Island maps: wings before wheels - the army lives in the air here, so
     // air research comes straight after the tech lab.
     if (ai.settings.research && isIslandMap() && getCompletedTeamBuildings(team, 'techLab').length > 0 && getTeamBuildings(team, 'airForge').length === 0) {
-      tryStartEnemyConstruction(ai, 'airForge', deps)
-      return
+      if (tryStartEnemyConstruction(ai, 'airForge', deps) !== 'blocked') return
     }
 
     if (getCompletedTeamBuildings(team, 'techLab').length > 0 && getTeamBuildings(team, 'forge').length === 0) {
-      tryStartEnemyConstruction(ai, 'forge', deps)
-      return
+      if (tryStartEnemyConstruction(ai, 'forge', deps) !== 'blocked') return
     }
 
     // Air research follows once the ground forge is working: flyers are a
     // steady part of the advanced army mix, so the upgrades pay off.
     if (ai.settings.research && getCompletedTeamBuildings(team, 'forge').length > 0 && getTeamBuildings(team, 'airForge').length === 0) {
-      tryStartEnemyConstruction(ai, 'airForge', deps)
-      return
+      if (tryStartEnemyConstruction(ai, 'airForge', deps) !== 'blocked') return
     }
   }
 
   // Base defense: ring the main with turrets once fighter production is up.
   if (barracks.length > 0 && workerCount >= 7 && getTeamBuildings(team, 'turret').length < ai.settings.maxTurrets) {
-    tryStartEnemyConstruction(ai, 'turret', deps)
-    return
+    if (tryStartEnemyConstruction(ai, 'turret', deps) !== 'blocked') return
   }
 
   // Count in-progress temples too: expansions cost 300 and shouldn't stack up.
   if (workerCount >= 8 && guardCount >= ai.settings.defenderCount && getTeamBuildings(team, 'temple').length < ai.settings.maxTemples) {
-    if (tryStartEnemyConstruction(ai, 'temple', deps)) return
+    const outcome = tryStartEnemyConstruction(ai, 'temple', deps)
+    if (outcome !== 'blocked') return
     // Island maps: no walkable expansion spot left means the next base is
     // across the void - ferry a worker crew to an empty island instead.
-    if (isIslandMap() && ai.settings.expands) tryStartIslandExpansion(ai, deps)
-    return
+    if (isIslandMap() && ai.settings.expands) {
+      tryStartIslandExpansion(ai, deps)
+      return
+    }
   }
 
   if (getSupplyCap(team) - getSupplyUsed(team) <= 2 && homesteads.length < ai.settings.maxHomesteads) {
@@ -311,14 +334,22 @@ function tryStartResearchTrack(team: EnemyTeam, damageKind: UpgradeKind, speedKi
   }
 }
 
-function tryStartEnemyConstruction(ai: EnemyAi, kind: BuildableKind, deps: EnemyAiDeps): boolean {
+/**
+ * 'built' - construction started. 'saving' - can't afford it yet, so the
+ * build order should stop and bank for it. 'blocked' - money is there but no
+ * builder or legal spot exists, so the build order may try its next priority.
+ */
+type ConstructionOutcome = 'built' | 'saving' | 'blocked'
+
+function tryStartEnemyConstruction(ai: EnemyAi, kind: BuildableKind, deps: EnemyAiDeps): ConstructionOutcome {
   const definition = BUILDING_DEFINITIONS[kind]
+  if (!hasResources(ai.team, definition.cost)) return 'saving'
+
   const builder = getEnemyBuilder(ai)
   const position = getEnemyBuildPosition(ai, kind, deps)
-
-  if (!builder || !position || !hasResources(ai.team, definition.cost)) return false
-  if (!deps.canPlaceBuildingAt(definition, position)) return false
-  if (!spendResources(ai.team, definition.cost)) return false
+  if (!builder || !position) return 'blocked'
+  if (!deps.canPlaceBuildingAt(definition, position)) return 'blocked'
+  if (!spendResources(ai.team, definition.cost)) return 'saving'
 
   const site = deps.createConstructionSite(kind, Vector3.create(position.x, definition.placementY, position.z), builder.id, ai.buildRotationY, ai.team)
   builder.state = 'movingToBuild'
@@ -329,7 +360,7 @@ function tryStartEnemyConstruction(ai: EnemyAi, kind: BuildableKind, deps: Enemy
   builder.carrying = 0
   builder.carryingResource = undefined
   deps.setWorkerAnimation(builder, 'walk')
-  return true
+  return 'built'
 }
 
 function sendEnemyAttackWave(ai: EnemyAi, deps: EnemyAiDeps): void {
@@ -338,12 +369,12 @@ function sendEnemyAttackWave(ai: EnemyAi, deps: EnemyAiDeps): void {
   // Elimination requires razing every structure, so once the temples are
   // gone the waves sweep whatever hostile buildings remain.
   let hostileTemples = buildings
-    .filter((building) => building.alive && building.isComplete && building.kind === 'temple' && areHostile(getTeam(building), ai.team))
-    .sort((a, b) => distanceToPoint(Transform.get(a.entity).position, ai.home) - distanceToPoint(Transform.get(b.entity).position, ai.home))
+  .filter((building) => building.alive && building.isComplete && building.kind === 'temple' && areHostile(getTeam(building), ai.team))
+  .sort((a, b) => distanceToPoint(Transform.get(a.entity).position, ai.home) - distanceToPoint(Transform.get(b.entity).position, ai.home))
   if (hostileTemples.length === 0) {
     hostileTemples = buildings
-      .filter((building) => building.alive && areHostile(getTeam(building), ai.team))
-      .sort((a, b) => distanceToPoint(Transform.get(a.entity).position, ai.home) - distanceToPoint(Transform.get(b.entity).position, ai.home))
+    .filter((building) => building.alive && areHostile(getTeam(building), ai.team))
+    .sort((a, b) => distanceToPoint(Transform.get(a.entity).position, ai.home) - distanceToPoint(Transform.get(b.entity).position, ai.home))
   }
   if (hostileTemples.length === 0) return
 
@@ -362,8 +393,8 @@ function sendEnemyAttackWave(ai: EnemyAi, deps: EnemyAiDeps): void {
   // Defense towers shred a wave that ignores them, so part of the wave is
   // always assigned to knock the target's turrets down first.
   const turrets = buildings
-    .filter((building) => building.alive && building.isComplete && building.kind === 'turret' && getTeam(building) === targetTeam)
-    .sort((a, b) => distanceToPoint(Transform.get(a.entity).position, ai.home) - distanceToPoint(Transform.get(b.entity).position, ai.home))
+  .filter((building) => building.alive && building.isComplete && building.kind === 'turret' && getTeam(building) === targetTeam)
+  .sort((a, b) => distanceToPoint(Transform.get(a.entity).position, ai.home) - distanceToPoint(Transform.get(b.entity).position, ai.home))
 
   const targets = [...turrets, ...temples]
 
@@ -398,7 +429,7 @@ function sendEnemyAttackWave(ai: EnemyAi, deps: EnemyAiDeps): void {
 }
 
 // ---------------------------------------------------------------------------
-// Island warfare: the AI ferries its ground army StarCraft-drop style.
+// Island warfare: the AI ferries its ground army drop style.
 // Boarding -> flying -> unload at the target island's rim -> attack.
 // ---------------------------------------------------------------------------
 
@@ -467,8 +498,8 @@ function updateFerryOperation(ai: EnemyAi, dt: number, deps: EnemyAiDeps): void 
   ferry.timer += dt
 
   const transports = ferry.transportIds
-    .map((id) => soldiers.find((soldier) => soldier.id === id))
-    .filter((soldier): soldier is Soldier => soldier?.alive === true)
+  .map((id) => soldiers.find((soldier) => soldier.id === id))
+  .filter((soldier): soldier is Soldier => soldier?.alive === true)
   if (transports.length === 0) {
     ai.ferry = undefined
     return
@@ -513,8 +544,8 @@ function updateFerryOperation(ai: EnemyAi, dt: number, deps: EnemyAiDeps): void 
 /** Post-drop: the landed wave storms the nearest hostile structures. */
 function orderDroppedWave(ai: EnemyAi, ferry: FerryOperation, deps: EnemyAiDeps): void {
   const hostileBuildings = buildings
-    .filter((building) => building.alive && getTeam(building) === ferry.targetTeam)
-    .sort((a, b) => distanceToPoint(Transform.get(a.entity).position, ferry.dropPoint) - distanceToPoint(Transform.get(b.entity).position, ferry.dropPoint))
+  .filter((building) => building.alive && getTeam(building) === ferry.targetTeam)
+  .sort((a, b) => distanceToPoint(Transform.get(a.entity).position, ferry.dropPoint) - distanceToPoint(Transform.get(b.entity).position, ferry.dropPoint))
   if (hostileBuildings.length === 0) return
 
   // Turrets die first, same doctrine as the classic wave.
@@ -605,8 +636,8 @@ function tryStartIslandExpansion(ai: EnemyAi, deps: EnemyAiDeps): void {
 function getRemoteExpansionCluster(ai: EnemyAi): ResourceNode | undefined {
   const claimRadius = 22
   return resources
-    .filter((node) => node.alive && node.amount > 0 && node.resource === 'minerals')
-    .filter((node) => {
+  .filter((node) => node.alive && node.amount > 0 && node.resource === 'minerals')
+  .filter((node) => {
       const position = Transform.get(node.entity).position
       if (isSameIsland(ai.home, position)) return false
       // Never colonize an island someone is defending, and skip clusters a
@@ -616,7 +647,7 @@ function getRemoteExpansionCluster(ai: EnemyAi): ResourceNode | undefined {
         (building) => building.alive && building.kind === 'temple' && distanceToPoint(position, Transform.get(building.entity).position) < claimRadius
       )
     })
-    .sort((a, b) => distanceToPoint(Transform.get(a.entity).position, ai.home) - distanceToPoint(Transform.get(b.entity).position, ai.home))[0]
+  .sort((a, b) => distanceToPoint(Transform.get(a.entity).position, ai.home) - distanceToPoint(Transform.get(b.entity).position, ai.home))[0]
 }
 
 /** Drives a colonization run: board -> fly -> drop -> plant the temple. */
@@ -679,8 +710,8 @@ function updateExpandOperation(ai: EnemyAi, dt: number, deps: EnemyAiDeps): void
   // Building: the first landed worker plants the temple by the crystals. The
   // rest go idle and the worker system puts them on the new mineral line.
   const crew = op.workerIds
-    .map((id) => workers.find((worker) => worker.id === id))
-    .filter((worker): worker is Worker => worker?.alive === true && !worker.inTransportId)
+  .map((id) => workers.find((worker) => worker.id === id))
+  .filter((worker): worker is Worker => worker?.alive === true && !worker.inTransportId)
   if (crew.length === 0) {
     ai.expand = undefined
     return
@@ -794,6 +825,19 @@ function getEnemyBuildPosition(ai: EnemyAi, kind: BuildableKind, deps: EnemyAiDe
     if (deps.canPlaceBuildingAt(definition, position)) return position
   }
 
+  // The hand-tuned offsets assume open ground on every side of the temple,
+  // which rim and corner anchors don't have (spots land off-map or on the
+  // crystal line). Widening ring search around the base finds legal ground at
+  // any seat, so no anchor can starve the AI of a building it needs.
+  for (let radius = 9; radius <= 30; radius += 3.5) {
+    for (let step = 0; step < 12; step++) {
+      // The radius term staggers ring start angles so candidates don't line up.
+      const angle = (step / 12) * Math.PI * 2 + radius
+      const position = deps.getSnappedPlacementPosition(Vector3.create(center.x + Math.cos(angle) * radius, 0, center.z + Math.sin(angle) * radius))
+      if (deps.canPlaceBuildingAt(definition, position)) return position
+    }
+  }
+
   return undefined
 }
 
@@ -820,17 +864,17 @@ function getEnemyExpansionPosition(ai: EnemyAi, deps: EnemyAiDeps): Vector3 | un
   const claimRadius = 22
 
   const openClusters = resources
-    .filter((node) => node.alive && node.amount > 0 && node.resource === 'minerals')
+  .filter((node) => node.alive && node.amount > 0 && node.resource === 'minerals')
     // Island maps: the AI only expands where its builders can walk (no worker
     // ferries yet), which in practice means its own island.
-    .filter((node) => !isIslandMap() || isSameIsland(ai.home, Transform.get(node.entity).position))
-    .filter((node) => {
+  .filter((node) => !isIslandMap() || isSameIsland(ai.home, Transform.get(node.entity).position))
+  .filter((node) => {
       const position = Transform.get(node.entity).position
       return !buildings.some(
         (building) => building.alive && building.kind === 'temple' && distanceToPoint(position, Transform.get(building.entity).position) < claimRadius
       )
     })
-    .sort((a, b) => distanceToPoint(Transform.get(a.entity).position, ai.home) - distanceToPoint(Transform.get(b.entity).position, ai.home))
+  .sort((a, b) => distanceToPoint(Transform.get(a.entity).position, ai.home) - distanceToPoint(Transform.get(b.entity).position, ai.home))
 
   for (const node of openClusters) {
     const nodePosition = Transform.get(node.entity).position

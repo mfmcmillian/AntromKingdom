@@ -136,3 +136,13 @@ export function getUpgradeProgress(team: Team, kind: UpgradeKind): number | unde
   const research = upgradeResearchQueue.find((entry) => entry.team === team && entry.kind === kind)
   return research ? research.timer / research.researchTime : undefined
 }
+
+/** Cancel the most recently queued research at this forge and return it for a refund. */
+export function cancelLastUpgradeAt(forgeId: string): UpgradeResearch | undefined {
+  for (let i = upgradeResearchQueue.length - 1; i >= 0; i--) {
+    if (upgradeResearchQueue[i].forgeId === forgeId) {
+      return upgradeResearchQueue.splice(i, 1)[0]
+    }
+  }
+  return undefined
+}

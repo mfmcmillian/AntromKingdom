@@ -11,7 +11,14 @@ import type { Difficulty, GameMode, RaceId } from '../types'
 // locally, everyone else fills enemy1..3) and applies the command to its sim.
 
 /** Bump when the protocol changes shape; mismatched clients refuse to join. */
-export const PROTOCOL_VERSION = 4
+export const PROTOCOL_VERSION = 6
+
+/** Custom game title; host sets this when creating the game. */
+export const GAME_NAME_MAX = 24
+
+export function sanitizeGameName(raw: string): string {
+  return raw.replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, GAME_NAME_MAX)
+}
 
 /** Maximum seats per match: one per engine team. */
 export const MAX_SEATS = 6
@@ -52,6 +59,8 @@ export type LobbyConfig = {
   mapId: string
   /** Ranked ladder room: humans only, FFA locked, results feed the Elo ladder. */
   ranked: boolean
+  /** Host-chosen title for a custom game. Empty until someone creates one. */
+  gameName: string
   seats: LobbySeat[]
   /** Shared RNG seed rolled by the server at match start. */
   seed: number
@@ -70,6 +79,8 @@ export type UnitOrderCommand = {
   /** Patrol second waypoint. */
   x2?: number
   z2?: number
+  /** Shift-queue: append a waypoint instead of replacing the current order. */
+  queued?: boolean
 }
 
 export type AttackTargetCommand = {
@@ -98,12 +109,21 @@ export type GatherCommand = {
   type: 'gather'
   workerIds: string[]
   nodeId: string
+  /** Shift-queue: gather after the current job instead of interrupting it. */
+  queued?: boolean
 }
 
 export type RepairCommand = {
   type: 'repair'
   workerIds: string[]
   /** Repair target id: a building, or a mech fighter for human crews. */
+  buildingId: string
+}
+
+/** Extra workers join an existing construction site (help-build). */
+export type HelpBuildCommand = {
+  type: 'helpBuild'
+  workerIds: string[]
   buildingId: string
 }
 
@@ -117,7 +137,7 @@ export type ResearchCommand = {
 export type StanceCommand = {
   type: 'stance'
   unitIds: string[]
-  stance: 'defensive' | 'hold'
+  stance: 'defensive' | 'aggressive' | 'hold'
 }
 
 export type SiegeModeCommand = {
@@ -136,6 +156,27 @@ export type LoadTransportCommand = {
 export type UnloadTransportCommand = {
   type: 'unloadTransport'
   transportId: string
+  /** Minimap drop-here: fly to this point, then unload. */
+  x?: number
+  z?: number
+}
+
+export type CancelTrainCommand = {
+  type: 'cancelTrain'
+  buildingId: string
+}
+
+export type CancelResearchCommand = {
+  type: 'cancelResearch'
+  buildingId: string
+}
+
+export type CasterAbilityCommand = {
+  type: 'casterAbility'
+  unitId: string
+  targetId?: string
+  x?: number
+  z?: number
 }
 
 export type RallyCommand = {
@@ -156,6 +197,11 @@ export type SurrenderCommand = {
   type: 'surrender'
 }
 
+/** The sender's alliance won. Allies honor it as a win; hostiles as a loss. */
+export type VictoryCommand = {
+  type: 'victory'
+}
+
 export type MatchCommand =
   | UnitOrderCommand
   | AttackTargetCommand
@@ -163,20 +209,26 @@ export type MatchCommand =
   | BuildCommand
   | GatherCommand
   | RepairCommand
+  | HelpBuildCommand
   | ResearchCommand
   | StanceCommand
   | SiegeModeCommand
   | LoadTransportCommand
   | UnloadTransportCommand
+  | CancelTrainCommand
+  | CancelResearchCommand
+  | CasterAbilityCommand
   | RallyCommand
   | HeroAbilityCommand
   | SurrenderCommand
+  | VictoryCommand
 
 // Lobby requests: clients send these to the authoritative server, which
 // validates them (sender identity comes from the transport, seat ownership
 // and leader rights are checked server-side) and publishes the new lobby.
 export type LobbyRequest =
-  | { type: 'claimSeat'; seat: number; name: string }
+  | { type: 'claimSeat'; seat: number; name: string; gameName?: string }
+  | { type: 'setGameName'; name: string }
   | { type: 'leaveSeat' }
   | { type: 'setRace'; race: RaceId | 'random' }
   | { type: 'setAlliance'; allianceId: number }
@@ -220,6 +272,79 @@ export type RankedLadder = {
   updated: number
 }
 
+// --- Campaign / skirmish boards ----------------------------------------------
+
+/** One row on the campaign or skirmish leaderboard. */
+export type BoardEntry = {
+  /** Lowercase wallet address. */
+  address: string
+  /** Latest display name seen when this row was written. */
+  name: string
+  /**
+   * Sort key. Campaign = missions completed (of CAMPAIGN_MISSION_COUNT).
+   * Skirmish = wins.
+   */
+  score: number
+  wins: number
+  losses: number
+}
+
+/** Campaign + skirmish standings published by the server. Ranked Elo stays on RankedLadder. */
+export type GameBoards = {
+  campaign: BoardEntry[]
+  skirmish: BoardEntry[]
+  /** Unix ms of the last update. */
+  updated: number
+}
+
+// --- Public commander profiles (cosmetics + career race W/L) -----------------
+
+export type PortraitId = 'kael' | 'auren' | 'szel' | 'antrom' | 'patron'
+export type FrameId = 'iron' | 'bronze' | 'silver' | 'gold' | 'champion' | 'sovereign'
+
+export type RaceRecord = {
+  wins: number
+  losses: number
+}
+
+export type RankedRaceWins = {
+  human: number
+  alien: number
+  bio: number
+}
+
+/** What every client can see about a commander: equipped cosmetics and race record. */
+export type PublicProfile = {
+  address: string
+  name: string
+  portrait: PortraitId | ''
+  frame: FrameId
+  races: { human: RaceRecord; alien: RaceRecord; bio: RaceRecord }
+  /** Ranked wins only, used for the Sovereign frame (one win as each race). */
+  rankedRaceWins: RankedRaceWins
+  /** True after a successful 100 MANA tip. Unlocks The Patron portrait. */
+  manaTip: boolean
+  /** Kept the Sovereign frame from the old 24/24 unlock. */
+  sovereignLegacy?: boolean
+}
+
+export type ProfileBook = {
+  profiles: PublicProfile[]
+  updated: number
+}
+
+export function emptyRaceRecords(): PublicProfile['races'] {
+  return {
+    human: { wins: 0, losses: 0 },
+    alien: { wins: 0, losses: 0 },
+    bio: { wins: 0, losses: 0 }
+  }
+}
+
+export function emptyRankedRaceWins(): RankedRaceWins {
+  return { human: 0, alien: 0, bio: 0 }
+}
+
 export function createDefaultSeat(index: number): LobbySeat {
   return {
     kind: 'closed',
@@ -241,6 +366,7 @@ export function createDefaultLobby(id: number): LobbyConfig {
     gameMode: ranked ? 'ffa' : 'team',
     mapId: DEFAULT_MAP_ID,
     ranked,
+    gameName: ranked ? 'Ranked Ladder' : '',
     seats: [createDefaultSeat(0), createDefaultSeat(1), createDefaultSeat(2), createDefaultSeat(3), createDefaultSeat(4), createDefaultSeat(5)],
     seed: 0,
     revision: 0

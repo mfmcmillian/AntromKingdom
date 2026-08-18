@@ -8,7 +8,7 @@ import { buildings, soldiers, workers } from '../world'
 // Unit separation: overlapping units gently shove each other apart so armies
 // spread into formations instead of stacking into a single point. Flyers only
 // collide with other flyers (they are on a different layer than ground units),
-// and workers actively mining/building are exempt - like StarCraft harvesters,
+// and workers actively mining/building are exempt — saturated harvesters
 // they may clip through the crowd so the economy never jams.
 // Buildings are solid too: ground units that step into a footprint get pushed
 // out the nearest face, so they slide around structures instead of through.

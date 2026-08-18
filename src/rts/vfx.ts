@@ -43,6 +43,15 @@ export function removeBuildingDamageVfx(fire: Entity | undefined): void {
   damageVfxByFire.delete(fire)
 }
 
+/** Match teardown: any fire/smoke that outlived its building (campaign leftovers). */
+export function clearAllBuildingDamageVfx(): void {
+  for (const vfx of [...damageVfxByFire.values()]) {
+    removeParticleEmitter(vfx.fire)
+    removeParticleEmitter(vfx.smoke)
+  }
+  damageVfxByFire.clear()
+}
+
 function createFireOptions(level: number) {
   const power = Math.max(0.7, level)
   return {
@@ -105,7 +114,6 @@ function updateParticleEmitter(entity: Entity, options: ReturnType<typeof create
 }
 
 function removeParticleEmitter(entity: Entity): void {
-  if (Transform.getOrNull(entity)) {
-    engine.removeEntity(entity)
-  }
+  ParticleSystem.deleteFrom(entity)
+  if (Transform.getOrNull(entity)) engine.removeEntity(entity)
 }

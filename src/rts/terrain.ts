@@ -24,7 +24,9 @@ export function setClassicTerrainVisible(visible: boolean): void {
 // The playable field stays flat: pathing, placement and fog of war all assume
 // y = 0, so height only lives at the map borders and in decoration.
 
-const GROUND_TEXTURE = 'assets/textures/moon_ground.png'
+const DEFAULT_GROUND_TEXTURE = 'assets/textures/moon_ground.png'
+let classicGroundTexture = DEFAULT_GROUND_TEXTURE
+const groundVisuals: { entity: Entity; tint: Color4 }[] = []
 /** World meters covered by one texture repeat. */
 const TILE_METERS = 16
 
@@ -112,14 +114,26 @@ function repeatedPlaneUvs(repeats: number): number[] {
 const BASE_GROUND_TINT = Color4.create(0.9, 0.9, 0.96, 1)
 
 function groundMaterial(entity: Entity, tint: Color4): void {
+  groundVisuals.push({ entity, tint })
+  applyGroundMaterial(entity, tint)
+}
+
+function applyGroundMaterial(entity: Entity, tint: Color4): void {
   Material.setPbrMaterial(entity, {
-    texture: Material.Texture.Common({ src: GROUND_TEXTURE, wrapMode: TextureWrapMode.TWM_REPEAT }),
+    texture: Material.Texture.Common({ src: classicGroundTexture, wrapMode: TextureWrapMode.TWM_REPEAT }),
     albedoColor: Color4.create(tint.r * BASE_GROUND_TINT.r, tint.g * BASE_GROUND_TINT.g, tint.b * BASE_GROUND_TINT.b, 1),
     metallic: 0,
     roughness: 1,
     specularIntensity: 0,
     castShadows: false
   })
+}
+
+/** Swap the classic solid-ground sheet (Crown / Reliquaries) without rebuilding props. */
+export function setClassicGroundTexture(src: string): void {
+  if (classicGroundTexture === src) return
+  classicGroundTexture = src
+  for (const visual of groundVisuals) applyGroundMaterial(visual.entity, visual.tint)
 }
 
 function createGroundSheet(): void {

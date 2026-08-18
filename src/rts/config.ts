@@ -30,7 +30,7 @@ export const CONFIG = {
   // map diagonal (~226m) so the far enemy base stays clickable from the free camera.
   commandRange: 300,
   // Idle workers automatically start gathering resources within this range.
-  workerAutoGatherRange: 12,
+  workerAutoGatherRange: 6,
   placementRange: 100,
   buildRange: 1
 }
@@ -47,7 +47,7 @@ export const ASSETS = {
   tree: 'models/LeafyTree.glb',
   pig: 'models/Pig.glb',
   rockSound: 'sounds/gathering/mining.mp3',
-  treeSound: 'sounds/gathering/tree.mp3'
+  plasmaSound: 'sounds/gathering/plasma.mp3'
 }
 
 export const MODEL_TRANSFORMS = {
@@ -79,6 +79,7 @@ export const RESOURCE_DEFINITIONS: Record<ResourceKind, ResourceDefinition> = {
     amount: 1500,
     placementY: 0,
     colliderScale: Vector3.create(2.4, 1.8, 2.4),
+    audioClipUrl: ASSETS.plasmaSound,
     hoverText: 'Siphon plasma'
   }
 }
@@ -224,7 +225,7 @@ export const COMPUTER_SEATS: { temple: Vector3; rotationY: number }[] = [
  */
 export const MAP_ANCHORS: { temple: Vector3; rotationY: number }[] = [
   { temple: Vector3.create(8.54, 5, 3.48), rotationY: 0 },
-  ...COMPUTER_SEATS
+...COMPUTER_SEATS
 ]
 
 export const POSITIONS = {
@@ -250,7 +251,7 @@ export type ResourceField = {
   rich?: boolean
 }
 
-// StarCraft-style layout scaled for six starts: every base anchor gets a main
+// Resource layout scaled for six starts: every base anchor gets a main
 // (7-crystal line + two plasma vents) and its own natural expansion a short
 // march toward the middle (6 crystals + one vent). Two contested mid-edge
 // expansions (west/east) and the center cluster round it out, so every player

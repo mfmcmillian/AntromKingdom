@@ -2,7 +2,7 @@ import { Entity, Material, MeshRenderer, ParticleSystem, Transform, VisibilityCo
 import { Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { ResourceKind } from './types'
 
-// Procedural StarCraft-style resource nodes: faceted blue mineral crystal fields
+// Procedural resource nodes: faceted blue mineral crystal fields
 // and rocky gas geysers with a glowing green pool and a rising smoke plume.
 // Idle nodes are static for performance; only gather pulses and depletion animate.
 

@@ -6,7 +6,7 @@ import { PrimaryPointerInfo, UiCanvasInformation, engine } from '@dcl/sdk/ecs'
 
 export const VIRTUAL_WIDTH = 1920
 export const VIRTUAL_HEIGHT = 1080
-/** Height of the StarCraft-style bottom console bar. Keep in sync with ui.tsx. */
+/** Height of the bottom console bar. Keep in sync with ui.tsx. */
 export const CONSOLE_HEIGHT = 250
 
 export function isPointerOverHud(): boolean {

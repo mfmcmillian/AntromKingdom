@@ -9,7 +9,7 @@
   },
   "owner": "",
   "contact": {
-    "name": "SDK",
+    "name": "Matt",
     "email": ""
   },
   "main": "bin/index.js",
@@ -139,7 +139,8 @@
     "ALLOW_TO_TRIGGER_AVATAR_EMOTE",
     "ALLOW_TO_MOVE_PLAYER_INSIDE_SCENE",
     "USE_FETCH",
-    "OPEN_EXTERNAL_LINK"
+    "OPEN_EXTERNAL_LINK",
+    "USE_WEB3_API"
   ],
   "featureToggles": {
     "voiceChat": "enabled",

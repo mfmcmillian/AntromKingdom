@@ -8,7 +8,7 @@ import { getTeam, soldiers, workers } from '../world'
 
 // ---------------------------------------------------------------------------
 // Transports: unarmed flying carriers that ferry ground units across the void
-// on island maps (StarCraft dropship style). Boarding walks the unit to the
+// on island maps (dropship style). Boarding walks the unit to the
 // carrier; riders are parked far off-map (invisible, untargetable, out of every
 // distance scan) until the transport unloads them over solid ground.
 // ---------------------------------------------------------------------------

@@ -9,7 +9,7 @@ import { SCENE } from './config'
 const WALL_HEIGHT = 90
 const WALL_INSET = 0.2
 
-export type EnvironmentTheme = 'moon' | 'ocean'
+export type EnvironmentTheme = 'moon' | 'ocean' | 'ashen' | 'reliquary' | 'bloom' | 'inferno' | 'storm' | 'rift'
 
 // Per-theme wall/ceiling art. Moon: lunar horizon whose regolith band matches
 // the classic ground texture. Ocean: open sea meeting a clouded sky for the
@@ -27,6 +27,42 @@ const THEMES: Record<EnvironmentTheme, { wall: string; ceiling: string; wallTint
     ceiling: 'assets/textures/sky_ceiling.png',
     wallTint: Color3.create(1, 1, 1),
     wallIntensity: 1.15
+  },
+  ashen: {
+    wall: 'assets/textures/ashen_horizon.png',
+    ceiling: 'assets/textures/sky_ceiling.png',
+    wallTint: Color3.create(1, 0.92, 0.82),
+    wallIntensity: 1.05
+  },
+  reliquary: {
+    wall: 'assets/textures/reliquary_horizon.png',
+    ceiling: 'assets/textures/space_ceiling.png',
+    wallTint: Color3.create(1, 0.94, 0.88),
+    wallIntensity: 1.2
+  },
+  bloom: {
+    wall: 'assets/textures/forest_horizon.png',
+    ceiling: 'assets/textures/sky_ceiling.png',
+    wallTint: Color3.create(1, 0.9, 0.75),
+    wallIntensity: 1.1
+  },
+  inferno: {
+    wall: 'assets/textures/inferno_horizon.png',
+    ceiling: 'assets/textures/space_ceiling.png',
+    wallTint: Color3.create(1, 0.72, 0.45),
+    wallIntensity: 1.25
+  },
+  storm: {
+    wall: 'assets/textures/ocean_horizon.png',
+    ceiling: 'assets/textures/sky_ceiling.png',
+    wallTint: Color3.create(0.72, 0.78, 0.88),
+    wallIntensity: 1.05
+  },
+  rift: {
+    wall: 'assets/textures/reliquary_horizon.png',
+    ceiling: 'assets/textures/space_ceiling.png',
+    wallTint: Color3.create(0.85, 0.7, 1),
+    wallIntensity: 1.2
   }
 }
 

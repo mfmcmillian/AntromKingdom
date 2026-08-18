@@ -79,13 +79,15 @@ export const gameState = {
   selectedKind: '' as SelectableKind | '',
   selectedUnitIds: [] as string[],
   status: 'Select a worker, then click a crystal vein or plasma vent.',
-  // StarCraft-style transient prompt: the status line fades out after a few seconds.
+  // Transient prompt: the status line fades out after a few seconds.
   statusTimer: 0,
   attackAlert: '',
   attackAlertTimer: 0,
   matchTime: 0,
   matchStatus: 'notStarted' as 'notStarted' | 'active' | 'ended',
   matchResult: 'none' as 'none' | 'win' | 'loss',
+  /** Set while a campaign mission is loading or in play; undefined for skirmish/MP. */
+  campaignMissionId: undefined as string | undefined,
   matchStats: {
     player: createStats(),
     enemy1: createStats(),

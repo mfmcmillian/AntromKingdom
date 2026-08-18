@@ -2,7 +2,7 @@ import { Entity, Material, MaterialTransparencyMode, MeshRenderer, Transform, en
 import { Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { COLORS } from './config'
 
-// StarCraft-style selection circle: one flat plane per selected unit carrying
+// Selection circle: one flat plane per selected unit carrying
 // a crisp ring texture (thin circle + dash accents + soft glow), tinted by
 // relationship and slowly rotating so the dashes give it life.
 
@@ -13,10 +13,9 @@ export type SelectionMarkerTarget = {
   color?: Color4
 }
 
-// Above every terrain decal layer (tone patches 0.04-0.08, tracks ~0.1, crater
-// floors 0.13) so the ring never sinks into the ground art, but still under the
-// fog-of-war tiles (~0.18).
-const MARKER_Y = 0.16
+// Above terrain decals and fog tiles (fog top ~0.18) so the ring stays visible
+// on explored ground. Same height as the move marker.
+const MARKER_Y = 0.2
 const SPIN_DEGREES_PER_SECOND = 30
 const HIDDEN_POSITION = Vector3.create(0, -20, 0)
 // The ring artwork spans ~87% of the texture; overscale so the painted circle

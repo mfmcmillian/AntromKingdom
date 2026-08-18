@@ -1,9 +1,10 @@
 import { Transform } from '@dcl/sdk/ecs'
 import { Quaternion } from '@dcl/sdk/math'
+import { BUILDING_DEFINITIONS } from '../config'
 import { distanceToPoint, distanceToPosition, moveTowardPosition } from '../math'
 import { isAirVariant } from '../races'
 import { getSpeedMultiplier } from '../upgrades'
-import type { Building, Soldier, Worker } from '../types'
+import type { BuildableKind, Building, Soldier, Worker } from '../types'
 import { areHostile } from '../state'
 import { buildings, canAttackTarget, getTeam, soldiers, workers } from '../world'
 
@@ -22,11 +23,11 @@ let autoAcquireTimer = 0
 
 export type CombatSystemDeps = {
   getCombatTargetById(id: string): CombatTarget | undefined
-  getSoldierAttackPosition(target: Building, slot: number, attacker: Soldier): { x: number; y: number; z: number }
   setSoldierAnimation(soldier: Soldier, clipName: string, restart?: boolean): void
   damageCombatTarget(target: CombatTarget, amount: number, attacker: Soldier): void
   assignSoldierToAttack(soldier: Soldier, target: CombatTarget, slot?: number, announce?: boolean): void
   setStatus(message: string): void
+  onReachedDestination?(soldier: Soldier): void
 }
 
 export function updateSoldiers(dt: number, deps: CombatSystemDeps): void {
@@ -39,6 +40,11 @@ export function updateSoldiers(dt: number, deps: CombatSystemDeps): void {
 
     // Riding inside a transport: parked off-map, takes no part in combat.
     if (soldier.inTransportId) continue
+
+    // Weapon cooldown recharges continuously while walking,
+    // chasing, or standing idle all count. Without this, every re-chase reset
+    // the timer and units visibly shuffled several times before the first hit.
+    if (soldier.attackTimer < soldier.attackRate) soldier.attackTimer += dt
 
     // Mid siege-transform: the unit is locked down until the cannon finishes
     // growing or retracting (the timer itself ticks in the siege system).
@@ -60,8 +66,8 @@ export function updateSoldiers(dt: number, deps: CombatSystemDeps): void {
     }
 
     if (scanForTargets && soldier.state === 'idle') {
-      // Hold-stance and dug-in units only fire at what is already in weapon range; others scan wider and chase.
-      const acquireRange = holdsGround(soldier) ? soldier.attackRange : AUTO_ACQUIRE_RANGE
+      // Hold: weapon range only. Aggressive: hunt farther. Defensive: standard scan.
+      const acquireRange = holdsGround(soldier) ? soldier.attackRange : soldier.stance === 'aggressive' ? AUTO_ACQUIRE_RANGE + 6 : AUTO_ACQUIRE_RANGE
       const target = findNearestEnemyInRange(soldier, acquireRange)
       if (target) autoEngage(soldier, target, deps)
     }
@@ -111,6 +117,13 @@ function finishEngagement(soldier: Soldier, deps: CombatSystemDeps): void {
     soldier.state = 'patrolling'
     deps.setSoldierAnimation(soldier, 'walk')
     return
+  }
+  if (soldier.stance === 'aggressive') {
+    const next = findNearestEnemyInRange(soldier, AUTO_ACQUIRE_RANGE + 10)
+    if (next) {
+      autoEngage(soldier, next, deps)
+      return
+    }
   }
   soldier.state = 'idle'
   soldier.guardPoint = clonePosition(Transform.get(soldier.entity).position)
@@ -172,16 +185,33 @@ function clonePosition(position: { x: number; y: number; z: number }): { x: numb
 }
 
 /**
- * Unit targets are chased directly and fired on the moment they are in range -
- * no precomputed standoff point, which previously made ranged units orbit their
- * target as the point slid around them. Buildings keep a fixed approach-side spot.
+ * Distance at which the target counts as "in range": weapon range, plus the
+ * target building's footprint radius since building distance is measured to
+ * its center but shots land on its walls.
+ */
+function getEngageRange(soldier: Soldier, target: CombatTarget): number {
+  if (isUnitTarget(target)) return soldier.attackRange
+  const definition = BUILDING_DEFINITIONS[target.kind as BuildableKind]
+  const footprint = definition ? Math.max(definition.scale.x, definition.scale.z) / 2 : 2.5
+  return soldier.attackRange + footprint
+}
+
+/**
+ * All targets are approached head-on and fired on the moment they are in
+ * range - no precomputed standoff point. Unit standoffs used to make ranged
+ * units orbit as the point slid around, and building ring slots marched
+ * attackers around (or past) the structure instead of shooting from where
+ * they stood. Rule: stop where you are the moment you can hit.
  */
 function updateMovingToAttack(soldier: Soldier, target: CombatTarget, dt: number, deps: CombatSystemDeps): void {
+  const targetPosition = Transform.get(target.entity).position
+  const engageRange = getEngageRange(soldier, target)
+
   // Hold-stance and dug-in siege units never leave their spot: fire if in range, otherwise drop the target.
   if (holdsGround(soldier)) {
-    if (distanceToPosition(soldier.entity, Transform.get(target.entity).position) <= soldier.attackRange) {
+    if (distanceToPosition(soldier.entity, targetPosition) <= engageRange) {
       startAttacking(soldier, deps)
-      faceTarget(soldier, Transform.get(target.entity).position)
+      faceTarget(soldier, targetPosition)
     } else {
       soldier.targetId = undefined
       soldier.attackPosition = undefined
@@ -191,61 +221,47 @@ function updateMovingToAttack(soldier: Soldier, target: CombatTarget, dt: number
     return
   }
 
-  if (isUnitTarget(target)) {
-    const targetPosition = Transform.get(target.entity).position
-
-    // Defensive units break off auto-acquired chases that stray too far from their post.
-    if (soldier.autoEngaged && soldier.stance === 'defensive' && soldier.guardPoint && !soldier.attackMovePoint) {
-      if (distanceToPosition(soldier.entity, soldier.guardPoint) > DEFENSIVE_LEASH_RANGE) {
-        soldier.targetId = undefined
-        soldier.attackPosition = undefined
-        soldier.state = 'movingToRally'
-        soldier.rallyPoint = clonePosition(soldier.guardPoint)
-        deps.setSoldierAnimation(soldier, 'walk')
-        return
-      }
-    }
-
-    if (distanceToPosition(soldier.entity, targetPosition) <= soldier.attackRange) {
-      startAttacking(soldier, deps)
-      faceTarget(soldier, targetPosition)
-    } else {
-      moveTowardPosition(soldier.entity, targetPosition, getUpgradedMoveSpeed(soldier), dt, isAirVariant(soldier.variant))
+  // Defensive units break off auto-acquired chases that stray too far from their post.
+  if (isUnitTarget(target) && soldier.autoEngaged && soldier.stance === 'defensive' && soldier.guardPoint && !soldier.attackMovePoint) {
+    if (distanceToPosition(soldier.entity, soldier.guardPoint) > DEFENSIVE_LEASH_RANGE) {
+      soldier.targetId = undefined
+      soldier.attackPosition = undefined
+      soldier.state = 'movingToRally'
+      soldier.rallyPoint = clonePosition(soldier.guardPoint)
       deps.setSoldierAnimation(soldier, 'walk')
+      return
     }
-    return
   }
 
-  const attackPosition = soldier.attackPosition ?? deps.getSoldierAttackPosition(target, 0, soldier)
-  soldier.attackPosition = attackPosition
-  moveTowardPosition(soldier.entity, attackPosition, getUpgradedMoveSpeed(soldier), dt, isAirVariant(soldier.variant))
-  deps.setSoldierAnimation(soldier, 'walk')
-  if (distanceToPosition(soldier.entity, attackPosition) <= 0.25) {
+  if (distanceToPosition(soldier.entity, targetPosition) <= engageRange) {
     startAttacking(soldier, deps)
-    faceTarget(soldier, Transform.get(target.entity).position)
+    faceTarget(soldier, targetPosition)
+  } else {
+    moveTowardPosition(soldier.entity, targetPosition, getUpgradedMoveSpeed(soldier), dt, isAirVariant(soldier.variant))
+    deps.setSoldierAnimation(soldier, 'walk')
   }
 }
 
 function updateAttacking(soldier: Soldier, target: CombatTarget, dt: number, deps: CombatSystemDeps): void {
-  if (isUnitTarget(target)) {
-    const targetPosition = Transform.get(target.entity).position
-    // Re-chase with a small hysteresis buffer so units don't stutter on the range edge.
-    if (distanceToPosition(soldier.entity, targetPosition) > soldier.attackRange + 0.6) {
-      if (holdsGround(soldier)) {
-        soldier.targetId = undefined
-        soldier.attackPosition = undefined
-        soldier.state = 'idle'
-        deps.setSoldierAnimation(soldier, 'idle')
-        return
-      }
-      soldier.state = 'movingToAttack'
-      deps.setSoldierAnimation(soldier, 'walk')
+  const targetPosition = Transform.get(target.entity).position
+  // Re-chase with a small hysteresis buffer so units don't stutter on the
+  // range edge (buildings don't move, but separation shoves attackers around).
+  if (distanceToPosition(soldier.entity, targetPosition) > getEngageRange(soldier, target) + 0.6) {
+    if (holdsGround(soldier)) {
+      soldier.targetId = undefined
+      soldier.attackPosition = undefined
+      soldier.state = 'idle'
+      deps.setSoldierAnimation(soldier, 'idle')
       return
     }
-    faceTarget(soldier, targetPosition)
+    soldier.state = 'movingToAttack'
+    deps.setSoldierAnimation(soldier, 'walk')
+    return
   }
+  if (isUnitTarget(target)) faceTarget(soldier, targetPosition)
 
-  soldier.attackTimer += dt
+  // Cooldown ticks globally (see updateSoldiers); a unit arriving with a
+  // charged weapon fires the moment it's in range.
   if (soldier.attackTimer >= soldier.attackRate) {
     soldier.attackTimer = 0
     deps.setSoldierAnimation(soldier, 'attack', true)
@@ -268,8 +284,9 @@ function getUpgradedMoveSpeed(soldier: Soldier): number {
 }
 
 function startAttacking(soldier: Soldier, deps: CombatSystemDeps): void {
+  // Deliberately keeps attackTimer: the cooldown carried over from the approach
+  // decides how soon the first hit lands (usually instantly).
   soldier.state = 'attacking'
-  soldier.attackTimer = 0
   deps.setSoldierAnimation(soldier, 'attack', true)
 }
 
@@ -302,6 +319,7 @@ function updateSoldierRallyMovement(soldier: Soldier, dt: number, deps: CombatSy
     soldier.attackPosition = undefined
     deps.setSoldierAnimation(soldier, 'idle')
     deps.setStatus(`${soldier.name} reached destination.`)
+    deps.onReachedDestination?.(soldier)
   }
 }
 

@@ -1,4 +1,6 @@
 import { gameState, resetTeamEconomies } from './state'
+import { getSoldierDefinition, getWorkerDefinition } from './races'
+import { soldierProductionOrders, workerProductionOrders } from './world'
 import type { ResourceCost, ResourceKind, Team } from './types'
 import { clamp } from './math'
 
@@ -62,9 +64,20 @@ export function decrementSoldierQueue(team: Team): void {
   economy.soldierQueue = Math.max(0, economy.soldierQueue - 1)
 }
 
+/** Supply already spoken for by units in production, using each order's real cost. */
+export function getQueuedSupply(team: Team): number {
+  let reserved = 0
+  for (const order of workerProductionOrders) {
+    if (order.team === team) reserved += getWorkerDefinition(order.team).supply
+  }
+  for (const order of soldierProductionOrders) {
+    if (order.team === team) reserved += getSoldierDefinition(order.team, order.variant).supply
+  }
+  return reserved
+}
+
 export function canQueueUnit(team: Team, supply: number): boolean {
-  const economy = gameState.economies[team]
-  return economy.supplyUsed + economy.workerQueue + economy.soldierQueue + supply <= economy.supplyCap
+  return getSupplyUsed(team) + getQueuedSupply(team) + supply <= getSupplyCap(team)
 }
 
 export function resetEconomy(): void {

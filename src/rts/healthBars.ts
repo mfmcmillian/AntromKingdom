@@ -8,7 +8,7 @@ import { buildings, getTeam, soldiers, workers } from './world'
 
 // ---------------------------------------------------------------------------
 // World-space health bars: a billboarded bar floats over any damaged unit or
-// building and disappears again at full HP - StarCraft-style info on demand.
+// building and disappears again at full HP - info on demand.
 // ---------------------------------------------------------------------------
 
 const BAR_HEIGHT = 0.16

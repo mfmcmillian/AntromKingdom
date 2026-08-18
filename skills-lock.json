@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "unity-explorer-mcp": {
+      "source": "decentraland/sdk-skills",
+      "sourceType": "github",
+      "skillPath": "unity-explorer-mcp/SKILL.md",
+      "computedHash": "68528ac60731e00f6a7a6fd866c42129fba44701e3ba771fd05b6faf88bd93db"
+    }
+  }
+}

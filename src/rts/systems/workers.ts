@@ -9,7 +9,7 @@ import type { Building, ResourceKind, ResourceNode, Soldier, Team, Worker } from
 import { getTeam, resources, workers } from '../world'
 
 /** How far a worker will walk to a replacement deposit when its node runs dry. */
-const RESOURCE_REASSIGN_RANGE = 45
+const RESOURCE_REASSIGN_RANGE = 16
 
 /** Obelisk haste aura boosts worker legs the same way it boosts fighters. */
 function workerSpeed(worker: Worker, base: number): number {
@@ -33,6 +33,8 @@ export type WorkerSystemDeps = {
   depleteResourceNode(resource: ResourceNode): void
   updateLabel(selectable: ResourceNode, text: string): void
   setStatus(message: string): void
+  /** True when a queued order was consumed so the worker should not auto-resume gather. */
+  onReachedDestination?(worker: Worker): boolean
 }
 
 export function updateWorkers(dt: number, deps: WorkerSystemDeps): void {
@@ -156,7 +158,9 @@ function updateWorkerGathering(worker: Worker, dt: number, deps: WorkerSystemDep
       gameState.matchStats[getTeam(worker)].resourcesGathered += deliveredAmount
       worker.carrying = 0
       worker.carryingResource = undefined
-      if (resource?.alive) {
+      if (deps.onReachedDestination?.(worker)) {
+        // Shift-queued move or gather takes over after the drop-off.
+      } else if (resource?.alive) {
         worker.state = 'movingToResource'
         deps.setWorkerAnimation(worker, 'walk')
       } else if (!resumeGathering(worker, deps)) {
@@ -170,7 +174,7 @@ function updateWorkerGathering(worker: Worker, dt: number, deps: WorkerSystemDep
     worker.targetResourceId = undefined
     worker.carrying = 0
     worker.carryingResource = undefined
-    if (!resumeGathering(worker, deps)) {
+    if (!deps.onReachedDestination?.(worker) && !resumeGathering(worker, deps)) {
       worker.state = 'idle'
       deps.setWorkerAnimation(worker, 'idle')
     }
@@ -181,9 +185,31 @@ function updateWorkerGathering(worker: Worker, dt: number, deps: WorkerSystemDep
  * Send the worker back to its remembered deposit, or the nearest live deposit
  * of the same kind if that one is gone. Returns false when nothing is in range.
  */
+function takeQueuedGather(worker: Worker, deps: WorkerSystemDeps): boolean {
+  const next = worker.queuedOrders?.[0]
+  if (!next || next.type !== 'gather') return false
+  worker.queuedOrders?.shift()
+  const node = resources.find((patch) => patch.id === next.nodeId && patch.alive && patch.amount > 0)
+  if (!node) return false
+  worker.state = 'movingToResource'
+  worker.targetResourceId = node.id
+  worker.lastResourceId = node.id
+  worker.lastResourceKind = node.resource
+  worker.holdIdle = false
+  worker.timer = 0
+  deps.setWorkerAnimation(worker, 'walk')
+  return true
+}
+
 export function resumeGathering(worker: Worker, deps: WorkerSystemDeps): boolean {
+  if (takeQueuedGather(worker, deps)) return true
+  if (worker.holdIdle) return false
   const remembered = worker.lastResourceId ? resources.find((node) => node.id === worker.lastResourceId && node.alive && node.amount > 0) : undefined
-  const target = remembered ?? findNearestResourceOfKind(worker, worker.lastResourceKind)
+  const rememberedHere =
+    remembered && distanceToPosition(worker.entity, Transform.get(remembered.entity).position) <= RESOURCE_REASSIGN_RANGE
+      ? remembered
+      : undefined
+  const target = rememberedHere ?? findNearestResourceOfKind(worker, worker.lastResourceKind)
   if (!target) return false
 
   worker.state = 'movingToResource'
@@ -311,5 +337,6 @@ function updateWorkerRallyMovement(worker: Worker, dt: number, deps: WorkerSyste
     worker.rallyPoint = undefined
     deps.setWorkerAnimation(worker, 'idle')
     if (getTeam(worker) === 'player') deps.setStatus(`${worker.name} reached the spawn point.`)
+    deps.onReachedDestination?.(worker)
   }
 }

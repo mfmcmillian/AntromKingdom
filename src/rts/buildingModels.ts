@@ -1,6 +1,5 @@
-import { Entity, GltfContainer, Material, MeshRenderer, Transform, VisibilityComponent, engine } from '@dcl/sdk/ecs'
+import { ColliderLayer, Entity, GltfContainer, Material, MeshRenderer, Transform, VisibilityComponent, engine } from '@dcl/sdk/ecs'
 import { Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
-import { BUILDING_DEFINITIONS } from './config'
 import type { BuildableKind, RaceId } from './types'
 
 // Procedural race-styled buildings, replacing the shared GLB models so each
@@ -20,7 +19,7 @@ import type { BuildableKind, RaceId } from './types'
  * build; anything missing falls back to the primitive-part version below.
  * yaw turns the model so its front door faces the building's +Z.
  */
-const GLB_BUILDINGS: Record<RaceId, Partial<Record<BuildableKind, { src: string; yaw?: number }>>> = {
+const GLB_BUILDINGS: Record<RaceId, Partial<Record<BuildableKind, { src: string; yaw?: number; scale?: Vector3 }>>> = {
   human: {
     temple: { src: 'models/buildings/human/temple.glb' },
     supplyHouse: { src: 'models/buildings/human/supplyHouse.glb' },
@@ -32,7 +31,7 @@ const GLB_BUILDINGS: Record<RaceId, Partial<Record<BuildableKind, { src: string;
     turret: { src: 'models/buildings/human/turret.glb' }
   },
   alien: {
-    temple: { src: 'models/buildings/alien/temple.glb' },
+    temple: { src: 'models/buildings/alien/temple.glb', scale: Vector3.create(1.45, 1, 1.45) },
     supplyHouse: { src: 'models/buildings/alien/supplyHouse.glb' },
     barracks: { src: 'models/buildings/alien/barracks.glb' },
     techLab: { src: 'models/buildings/alien/techLab.glb' },
@@ -63,6 +62,28 @@ export const BUILDING_MODEL_HEIGHTS: Record<BuildableKind, number> = {
   airForge: 7,
   fireplace: 3,
   turret: 5
+}
+
+/** Visual XZ size of each GLB (from the optimizer footprint budget). Placement scale can be smaller. */
+export const BUILDING_MODEL_FOOTPRINTS: Record<BuildableKind, number> = {
+  temple: 10,
+  supplyHouse: 6,
+  barracks: 5.85,
+  techLab: 5.5,
+  forge: 4.5,
+  airForge: 5,
+  fireplace: 2.5,
+  turret: 2.6
+}
+
+export function getBuildingModelScale(race: RaceId, kind: BuildableKind): Vector3 {
+  return GLB_BUILDINGS[race]?.[kind]?.scale ?? Vector3.One()
+}
+
+/** Visual XZ size after any per-race model scale (Aethyr HQ is wider than the shared budget). */
+export function getBuildingVisualFootprint(race: RaceId, kind: BuildableKind): number {
+  const scale = getBuildingModelScale(race, kind)
+  return BUILDING_MODEL_FOOTPRINTS[kind] * Math.max(scale.x, scale.z)
 }
 
 const HUMAN_HULL = Color4.create(0.62, 0.66, 0.72, 1)
@@ -184,11 +205,16 @@ export function buildBuildingModel(root: Entity, race: RaceId, kind: BuildableKi
   const glb = GLB_BUILDINGS[race]?.[kind]
   if (glb) {
     const rotation = Quaternion.fromEulerDegrees(0, glb.yaw ?? 0, 0)
+    const scale = glb.scale ?? Vector3.One()
     const model = engine.addEntity()
-    Transform.create(model, { parent: root, rotation })
-    GltfContainer.create(model, { src: glb.src })
+    Transform.create(model, { parent: root, rotation, scale })
+    GltfContainer.create(model, {
+      src: glb.src,
+      visibleMeshesCollisionMask: ColliderLayer.CL_NONE,
+      invisibleMeshesCollisionMask: ColliderLayer.CL_NONE
+    })
     glbEntities.push(model)
-    addGlbAmbientFx(race, kind, addPart, animated, model, rotation)
+    addGlbAmbientFx(race, kind, addPart, animated, model, rotation, scale)
   } else if (race === 'human') buildHumanBuilding(kind, addPart)
   else if (race === 'alien') buildAlienBuilding(kind, addPart)
   else buildBioBuilding(kind, addPart)
@@ -212,11 +238,11 @@ function addGlbAmbientFx(
   addPart: PartAdder,
   animated: AnimatedPart[],
   model: Entity,
-  modelRotation: Quaternion
+  modelRotation: Quaternion,
+  modelScale: Vector3
 ): void {
-  const definition = BUILDING_DEFINITIONS[kind]
-  const width = Math.max(definition.scale.x, definition.scale.z)
-  const height = BUILDING_MODEL_HEIGHTS[kind]
+  const width = getBuildingVisualFootprint(race, kind)
+  const height = BUILDING_MODEL_HEIGHTS[kind] * modelScale.y
 
   if (race === 'bio') {
     // Breathing: pulse the GLB container itself. Slow, shallow, phase-offset so
@@ -379,6 +405,15 @@ export function disposeBuildingModel(entity: Entity, removeParts: boolean): void
     for (const glbEntity of rig.glbEntities) engine.removeEntity(glbEntity)
   }
   buildingRigs.delete(entity)
+}
+
+/** Match teardown sweep: any rig whose building was spliced out mid-fight. */
+export function disposeAllBuildingModels(): void {
+  for (const [root, rig] of [...buildingRigs.entries()]) {
+    for (const part of rig.parts) engine.removeEntity(part.entity)
+    for (const glbEntity of rig.glbEntities) engine.removeEntity(glbEntity)
+    buildingRigs.delete(root)
+  }
 }
 
 // ---------------------------------------------------------------------------

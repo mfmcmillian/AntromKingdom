@@ -11,6 +11,12 @@ export const LOBBY_SYNC_ID = 5001
 /** Sync id for the ranked ladder entity the server publishes. */
 export const RANKED_SYNC_ID = 5002
 
+/** Sync id for the campaign / skirmish boards entity the server publishes. */
+export const BOARDS_SYNC_ID = 5003
+
+/** Sync id for public commander profiles (portrait, frame, race W/L). */
+export const PROFILES_SYNC_ID = 5004
+
 /**
  * Every lobby room as one JSON payload (a LobbyConfig[] in room-id order)
  * plus a revision counter. Written only by the authoritative server (enforced
@@ -32,9 +38,27 @@ export const MpRankedState = engine.defineComponent('dc-mp-ranked-state', {
   revision: Schemas.Int
 })
 
-// Anti-cheat: only the authoritative server may write the lobby and the ladder.
+/**
+ * Campaign and skirmish leaderboards as one JSON payload (a GameBoards).
+ * Persisted in world Storage and republished after campaign saves / skirmish
+ * reports, so late joiners see standings without a round-trip.
+ */
+export const MpBoardsState = engine.defineComponent('dc-mp-boards-state', {
+  json: Schemas.String,
+  revision: Schemas.Int
+})
+
+/** Public commander profiles as one JSON payload (a ProfileBook). */
+export const MpProfilesState = engine.defineComponent('dc-mp-profiles-state', {
+  json: Schemas.String,
+  revision: Schemas.Int
+})
+
+// Anti-cheat: only the authoritative server may write the lobby, ladder, boards, and profiles.
 MpLobbyState.validateBeforeChange((value) => value.senderAddress === AUTH_SERVER_PEER_ID)
 MpRankedState.validateBeforeChange((value) => value.senderAddress === AUTH_SERVER_PEER_ID)
+MpBoardsState.validateBeforeChange((value) => value.senderAddress === AUTH_SERVER_PEER_ID)
+MpProfilesState.validateBeforeChange((value) => value.senderAddress === AUTH_SERVER_PEER_ID)
 
 // Every message carries the room id it belongs to, so concurrent matches
 // never hear each other's traffic.
@@ -46,7 +70,17 @@ export const MpMessages = {
   // Server -> clients: frozen lobby snapshot that launches that room's match.
   matchStart: Schemas.Map({ lobbyId: Schemas.Int, json: Schemas.String }),
   // Server -> clients: a validated command rebroadcast in canonical order.
-  commandRelayed: Schemas.Map({ lobbyId: Schemas.Int, seat: Schemas.Int, sender: Schemas.String, json: Schemas.String })
+  commandRelayed: Schemas.Map({ lobbyId: Schemas.Int, seat: Schemas.Int, sender: Schemas.String, json: Schemas.String }),
+  // Client -> server: this wallet's campaign save (full completed-id list).
+  campaignSave: Schemas.Map({ json: Schemas.String }),
+  // Server -> clients: that wallet's campaign save. Clients ignore other addresses.
+  campaignProgress: Schemas.Map({ address: Schemas.String, json: Schemas.String }),
+  // Client -> server: a finished skirmish (win or loss) for the single-player board.
+  scoreReport: Schemas.Map({ json: Schemas.String }),
+  // Client -> server: equipped portrait / frame. Server validates unlocks.
+  profileUpdate: Schemas.Map({ json: Schemas.String }),
+  // Client -> server: player finished a 100 MANA tip. Server marks The Patron unlocked.
+  manaTip: Schemas.Map({ json: Schemas.String })
 }
 
 export const room = registerMessages(MpMessages)

@@ -24,8 +24,12 @@ export type WorkerState =
   | 'attacking'
   | 'dead'
 export type SoldierState = 'idle' | 'movingToAttack' | 'attacking' | 'movingToRally' | 'attackMoving' | 'patrolling' | 'dead'
-/** defensive: chase a short leash then return to post; hold: never move, only fire in range. */
-export type SoldierStance = 'defensive' | 'hold'
+/** defensive: short leash then return; aggressive: chase and keep hunting; hold: never move. */
+export type SoldierStance = 'defensive' | 'aggressive' | 'hold'
+
+export type QueuedOrder =
+  | { type: 'move'; x: number; z: number }
+  | { type: 'gather'; nodeId: string }
 export type SoldierVariant = 'melee' | 'ranged' | 'caster' | 'flyer' | 'titan' | 'hero' | 'healer' | 'siege' | 'transport' | 'antiAir' | 'heavyAir'
 export type BuildableKind = 'temple' | 'supplyHouse' | 'barracks' | 'techLab' | 'forge' | 'airForge' | 'fireplace' | 'turret'
 /** damage/speed are ground-only (forge); airDamage/airSpeed apply to flyers (air forge). */
@@ -91,6 +95,10 @@ export type Worker = Selectable & {
   kills?: number
   /** Set while this worker rides inside a transport (it is parked off-map). */
   inTransportId?: string
+  /** When true, idle auto-gather will not send this worker back to a deposit. */
+  holdIdle?: boolean
+  /** Shift-queued move / gather orders, run when the current job finishes. */
+  queuedOrders?: QueuedOrder[]
   /** Obelisk haste aura (seconds remaining at +25% move speed). */
   hasteRemaining?: number
   /** Spore Plague damage-over-time (seconds remaining, damage rate, credit). */
@@ -113,6 +121,13 @@ export type Soldier = Selectable & {
   splashRadius: number
   state: SoldierState
   stance: SoldierStance
+  /** Shift-queued move orders, run when the current job finishes. */
+  queuedOrders?: QueuedOrder[]
+  /** Fly-here-then-unload destination for transports. */
+  unloadPoint?: { x: number; z: number }
+  /** Caster mana; regenerates over time. */
+  energy?: number
+  maxEnergy?: number
   targetId?: string
   attackPosition?: Vector3
   rallyPoint?: Vector3
@@ -143,6 +158,8 @@ export type Soldier = Selectable & {
   siegeTransition?: number
   siegeTargetMode?: boolean
   siegeIdleTimer?: number
+  /** After packing up, resume this move / attack-move / patrol so dug-in guns can be ordered away. */
+  siegeResume?: { x: number; z: number; kind: 'move' | 'attackMove' | 'patrol' }
   /** Transport variants: ids of the ground units riding inside. */
   cargo?: string[]
   /** Set while this unit rides inside a transport (it is parked off-map). */
@@ -279,4 +296,7 @@ export type SelectedSummary = {
   variant?: SoldierVariant
   /** Which resource a selected resource node yields, for portrait icons. */
   resourceKind?: ResourceKind
+  /** Caster mana, shown as a second bar under HP. */
+  energy?: number
+  maxEnergy?: number
 }

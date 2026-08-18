@@ -2,7 +2,7 @@ import { Entity, Material, MeshRenderer, Transform, VisibilityComponent, engine 
 import { Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { spawnBlastRing } from './impactVfx'
 import { getRace } from './races'
-import type { Team } from './types'
+import type { SoldierVariant, Team } from './types'
 
 // Race-flavored combat projectiles, all pooled so battles never allocate
 // entities mid-fight:
@@ -15,16 +15,82 @@ import type { Team } from './types'
 
 export type ProjectileStyle = 'fireball' | 'lightning' | 'acid'
 
+export type ShotPalette = {
+  core: Color4
+  glow: Color4
+  smoke: Color4
+}
+
 const MUZZLE_HEIGHT = 0.85
 const IMPACT_HEIGHT = 0.7
 
-const FIRE_CORE = Color4.create(1, 0.72, 0.22, 1)
-const FIRE_GLOW = Color4.create(1, 0.42, 0.08, 1)
-const FIRE_SMOKE = Color4.create(0.85, 0.25, 0.08, 1)
-const LIGHTNING_CORE = Color4.create(0.85, 0.95, 1, 1)
-const LIGHTNING_GLOW = Color4.create(0.45, 0.75, 1, 1)
-const ACID_CORE = Color4.create(0.62, 0.95, 0.2, 1)
-const ACID_GLOW = Color4.create(0.45, 0.85, 0.12, 1)
+function c(r: number, g: number, b: number): Color4 {
+  return Color4.create(r, g, b, 1)
+}
+
+/** Per-role tints inside a race so a Longshot and a Thunderhead do not share one orange blob. */
+export function shotPalette(raceId: string, variant?: SoldierVariant): ShotPalette {
+  if (raceId === 'alien') {
+    switch (variant) {
+      case 'flyer':
+        return { core: c(0.95, 0.7, 1), glow: c(0.72, 0.4, 1), smoke: c(0.45, 0.22, 0.7) }
+      case 'antiAir':
+        return { core: c(0.55, 1, 0.95), glow: c(0.2, 0.85, 0.9), smoke: c(0.1, 0.45, 0.55) }
+      case 'siege':
+        return { core: c(1, 0.95, 0.7), glow: c(1, 0.78, 0.25), smoke: c(0.75, 0.45, 0.1) }
+      case 'heavyAir':
+        return { core: c(1, 0.75, 0.95), glow: c(0.95, 0.35, 0.85), smoke: c(0.55, 0.12, 0.5) }
+      case 'caster':
+        return { core: c(0.55, 1, 0.85), glow: c(0.2, 0.85, 0.7), smoke: c(0.08, 0.45, 0.4) }
+      case 'hero':
+        return { core: c(1, 0.98, 0.85), glow: c(1, 0.85, 0.45), smoke: c(0.7, 0.5, 0.2) }
+      case 'titan':
+        return { core: c(0.7, 0.55, 1), glow: c(0.4, 0.25, 0.95), smoke: c(0.22, 0.1, 0.55) }
+      default:
+        return { core: c(0.85, 0.95, 1), glow: c(0.45, 0.75, 1), smoke: c(0.25, 0.4, 0.75) }
+    }
+  }
+  if (raceId === 'bio') {
+    switch (variant) {
+      case 'flyer':
+        return { core: c(0.85, 1, 0.35), glow: c(0.65, 0.9, 0.12), smoke: c(0.35, 0.5, 0.05) }
+      case 'antiAir':
+        return { core: c(1, 0.95, 0.35), glow: c(0.9, 0.75, 0.1), smoke: c(0.5, 0.4, 0.05) }
+      case 'siege':
+        return { core: c(0.75, 0.35, 1), glow: c(0.5, 0.12, 0.75), smoke: c(0.28, 0.05, 0.4) }
+      case 'heavyAir':
+        return { core: c(1, 0.45, 0.28), glow: c(0.85, 0.2, 0.12), smoke: c(0.45, 0.08, 0.05) }
+      case 'caster':
+        return { core: c(0.45, 1, 0.7), glow: c(0.2, 0.8, 0.5), smoke: c(0.08, 0.4, 0.25) }
+      case 'hero':
+        return { core: c(0.95, 1, 0.45), glow: c(0.75, 0.95, 0.15), smoke: c(0.4, 0.5, 0.05) }
+      case 'titan':
+        return { core: c(1, 0.55, 0.2), glow: c(0.85, 0.3, 0.08), smoke: c(0.45, 0.12, 0.04) }
+      default:
+        return { core: c(0.62, 0.95, 0.2), glow: c(0.45, 0.85, 0.12), smoke: c(0.22, 0.45, 0.06) }
+    }
+  }
+  switch (variant) {
+    case 'flyer':
+      return { core: c(1, 0.95, 0.55), glow: c(1, 0.75, 0.2), smoke: c(0.85, 0.4, 0.08) }
+    case 'antiAir':
+      return { core: c(0.65, 0.95, 1), glow: c(0.25, 0.7, 1), smoke: c(0.1, 0.35, 0.7) }
+    case 'siege':
+      return { core: c(1, 0.4, 0.18), glow: c(0.95, 0.15, 0.05), smoke: c(0.45, 0.06, 0.04) }
+    case 'heavyAir':
+      return { core: c(1, 0.92, 0.75), glow: c(1, 0.7, 0.35), smoke: c(0.7, 0.3, 0.08) }
+    case 'caster':
+      return { core: c(0.75, 0.55, 1), glow: c(0.5, 0.28, 1), smoke: c(0.28, 0.1, 0.55) }
+    case 'hero':
+      return { core: c(1, 0.9, 0.45), glow: c(1, 0.7, 0.15), smoke: c(0.75, 0.4, 0.08) }
+    case 'titan':
+      return { core: c(1, 0.85, 0.55), glow: c(1, 0.5, 0.15), smoke: c(0.7, 0.22, 0.06) }
+    case 'melee':
+      return { core: c(1, 0.65, 0.3), glow: c(1, 0.35, 0.08), smoke: c(0.7, 0.18, 0.05) }
+    default:
+      return { core: c(1, 0.72, 0.22), glow: c(1, 0.42, 0.08), smoke: c(0.85, 0.25, 0.08) }
+  }
+}
 
 const STYLE_BY_RACE: Record<string, ProjectileStyle> = {
   human: 'fireball',
@@ -32,18 +98,93 @@ const STYLE_BY_RACE: Record<string, ProjectileStyle> = {
   bio: 'acid'
 }
 
+type ShotProfile = {
+  count: number
+  spread: number
+  scale: number
+  speed: number
+  arc: number
+}
+
+function shotProfile(variant?: SoldierVariant): ShotProfile {
+  switch (variant) {
+    case 'flyer':
+      return { count: 2, spread: 0.32, scale: 0.55, speed: 1.45, arc: 0 }
+    case 'titan':
+      return { count: 2, spread: 0.4, scale: 0.65, speed: 1.35, arc: 0 }
+    case 'heavyAir':
+      return { count: 2, spread: 0.7, scale: 1.9, speed: 0.48, arc: 0.2 }
+    case 'siege':
+      return { count: 1, spread: 0, scale: 1.6, speed: 0.4, arc: 1.15 }
+    case 'antiAir':
+      return { count: 1, spread: 0, scale: 0.7, speed: 1.35, arc: 0 }
+    case 'caster':
+      return { count: 1, spread: 0, scale: 1.3, speed: 0.85, arc: 0.25 }
+    case 'hero':
+      return { count: 2, spread: 0.28, scale: 0.95, speed: 1.1, arc: 0 }
+    default:
+      return { count: 1, spread: 0, scale: 1, speed: 1, arc: 0 }
+  }
+}
+
+export function shotImpactScale(variant?: SoldierVariant): number {
+  switch (variant) {
+    case 'heavyAir':
+      return 2.3
+    case 'siege':
+      return 2.5
+    case 'titan':
+      return 1.4
+    case 'caster':
+      return 1.6
+    case 'hero':
+      return 1.35
+    case 'antiAir':
+      return 1.25
+    case 'flyer':
+      return 0.7
+    default:
+      return 1
+  }
+}
+
 /**
- * Fires a shot from muzzle to target. The visual style follows the shooter's
- * race; pass `style` to override (e.g. the human caster's Chain Lightning).
+ * Fires a shot from muzzle to target. Style follows the shooter's race;
+ * pass `style` to override (e.g. the human caster's Chain Lightning).
+ * `variant` changes count, size, and speed: dual MGs, heavy cannons, arcing shells.
  */
-export function fireProjectile(from: Vector3, to: Vector3, team: Team, style?: ProjectileStyle): void {
-  const resolved = style ?? STYLE_BY_RACE[getRace(team).id] ?? 'fireball'
+export function fireProjectile(from: Vector3, to: Vector3, team: Team, style?: ProjectileStyle, variant?: SoldierVariant): void {
+  const raceId = getRace(team).id
+  const resolved = style ?? STYLE_BY_RACE[raceId] ?? 'fireball'
+  const palette = shotPalette(raceId, variant)
+  const profile = shotProfile(variant)
   const start = Vector3.create(from.x, from.y + MUZZLE_HEIGHT, from.z)
   const end = Vector3.create(to.x, to.y + IMPACT_HEIGHT, to.z)
+  const lanes = offsetLanes(start, end, profile.count, profile.spread)
 
-  if (resolved === 'lightning') strikeLightning(start, end)
-  else if (resolved === 'acid') lobAcid(start, end)
-  else launchFireball(start, end)
+  for (const lane of lanes) {
+    if (resolved === 'lightning') strikeLightning(lane.from, lane.to, profile.scale, palette)
+    else if (resolved === 'acid') lobAcid(lane.from, lane.to, profile.scale, profile.speed, profile.arc, palette)
+    else launchFireball(lane.from, lane.to, profile.scale, profile.speed, profile.arc, palette)
+  }
+}
+
+function offsetLanes(from: Vector3, to: Vector3, count: number, spread: number): { from: Vector3; to: Vector3 }[] {
+  if (count <= 1 || spread <= 0) return [{ from, to }]
+  const dx = to.x - from.x
+  const dz = to.z - from.z
+  const length = Math.hypot(dx, dz) || 1
+  const px = (-dz / length) * spread
+  const pz = (dx / length) * spread
+  const lanes: { from: Vector3; to: Vector3 }[] = []
+  for (let i = 0; i < count; i++) {
+    const t = count === 1 ? 0 : (i / (count - 1)) * 2 - 1
+    lanes.push({
+      from: Vector3.create(from.x + px * t, from.y, from.z + pz * t),
+      to: Vector3.create(to.x + px * t, to.y, to.z + pz * t)
+    })
+  }
+  return lanes
 }
 
 // ---------------------------------------------------------------------------
@@ -160,26 +301,52 @@ type Fireball = {
   to: Vector3
   progress: number
   duration: number
+  scale: number
+  arcHeight: number
+  palette: ShotPalette
   active: boolean
 }
 
 const fireballs: Fireball[] = []
-const MAX_FIREBALLS = 24
+const MAX_FIREBALLS = 32
 
-function launchFireball(from: Vector3, to: Vector3): void {
+function launchFireball(from: Vector3, to: Vector3, scale = 1, speedMul = 1, arc = 0, palette: ShotPalette): void {
   const ball = obtainFromPool(fireballs, MAX_FIREBALLS, createFireball)
   if (!ball) return
+  const distance = Vector3.distance(from, to)
   ball.from = from
   ball.to = to
   ball.progress = 0
-  ball.duration = Math.max(0.08, Vector3.distance(from, to) / FIREBALL_SPEED)
+  ball.duration = Math.max(0.08, distance / (FIREBALL_SPEED * speedMul))
+  ball.scale = scale
+  ball.arcHeight = arc * (0.7 + distance * 0.12)
+  ball.palette = palette
   ball.active = true
+  paintFireball(ball)
 
+  const headSize = 0.3 * scale
   Transform.getMutable(ball.head).position = from
+  Transform.getMutable(ball.head).scale = Vector3.create(headSize, headSize, headSize)
   show(ball.head)
-  for (const piece of ball.trail) {
-    Transform.getMutable(piece).position = from
-    show(piece)
+  for (let i = 0; i < ball.trail.length; i++) {
+    const size = (0.2 - i * 0.035) * scale
+    Transform.getMutable(ball.trail[i]).position = from
+    Transform.getMutable(ball.trail[i]).scale = Vector3.create(size, size, size)
+    show(ball.trail[i])
+  }
+}
+
+function paintFireball(ball: Fireball): void {
+  glowMaterial(ball.head, ball.palette.core, ball.palette.glow, 4)
+  for (let i = 0; i < ball.trail.length; i++) {
+    const t = (i + 1) / (TRAIL_COUNT + 1)
+    const color = Color4.create(
+      ball.palette.glow.r + (ball.palette.smoke.r - ball.palette.glow.r) * t,
+      ball.palette.glow.g + (ball.palette.smoke.g - ball.palette.glow.g) * t,
+      ball.palette.glow.b + (ball.palette.smoke.b - ball.palette.glow.b) * t,
+      1
+    )
+    glowMaterial(ball.trail[i], color, color, 3 * (1 - t), 0.85 - t * 0.45)
   }
 }
 
@@ -187,7 +354,6 @@ function createFireball(): Fireball {
   const head = engine.addEntity()
   Transform.create(head, { position: Vector3.create(0, -10, 0), scale: Vector3.create(0.3, 0.3, 0.3) })
   MeshRenderer.setSphere(head)
-  glowMaterial(head, FIRE_CORE, FIRE_GLOW, 4)
   VisibilityComponent.create(head, { visible: false })
 
   const trail: Entity[] = []
@@ -196,20 +362,28 @@ function createFireball(): Fireball {
     const size = 0.2 - i * 0.035
     Transform.create(piece, { position: Vector3.create(0, -10, 0), scale: Vector3.create(size, size, size) })
     MeshRenderer.setSphere(piece)
-    // Static gradient hot-to-smoke down the tail; only positions move at runtime.
-    const t = (i + 1) / (TRAIL_COUNT + 1)
-    const color = Color4.create(
-      FIRE_GLOW.r + (FIRE_SMOKE.r - FIRE_GLOW.r) * t,
-      FIRE_GLOW.g + (FIRE_SMOKE.g - FIRE_GLOW.g) * t,
-      FIRE_GLOW.b + (FIRE_SMOKE.b - FIRE_GLOW.b) * t,
-      1
-    )
-    glowMaterial(piece, color, color, 3 * (1 - t), 0.85 - t * 0.45)
     VisibilityComponent.create(piece, { visible: false })
     trail.push(piece)
   }
 
-  return { head, trail, from: Vector3.Zero(), to: Vector3.Zero(), progress: 0, duration: 0.1, active: false }
+  return {
+    head,
+    trail,
+    from: Vector3.Zero(),
+    to: Vector3.Zero(),
+    progress: 0,
+    duration: 0.1,
+    scale: 1,
+    arcHeight: 0,
+    palette: shotPalette('human'),
+    active: false
+  }
+}
+
+function fireballPoint(ball: Fireball, t: number): Vector3 {
+  const point = Vector3.lerp(ball.from, ball.to, t)
+  if (ball.arcHeight > 0) point.y += ball.arcHeight * 4 * t * (1 - t)
+  return point
 }
 
 function updateFireballs(dt: number): void {
@@ -222,14 +396,15 @@ function updateFireballs(dt: number): void {
       hide(ball.head)
       for (const piece of ball.trail) hide(piece)
       // Arrival: embers spray off the impact.
-      burstSparks(ball.to, 5, FIRE_CORE, FIRE_GLOW, 2.2, 2.6)
+      burstSparks(ball.to, Math.round(5 * Math.max(1, ball.scale)), ball.palette.core, ball.palette.glow, 2.2 * ball.scale, 2.6)
+      if (ball.scale >= 1.3) spawnBlastRing(ball.to, ball.palette.glow, 0.7 * ball.scale)
       continue
     }
 
-    Transform.getMutable(ball.head).position = Vector3.lerp(ball.from, ball.to, ball.progress)
+    Transform.getMutable(ball.head).position = fireballPoint(ball, ball.progress)
     for (let i = 0; i < ball.trail.length; i++) {
       const lag = Math.max(0, ball.progress - (i + 1) * TRAIL_LAG)
-      Transform.getMutable(ball.trail[i]).position = Vector3.lerp(ball.from, ball.to, lag)
+      Transform.getMutable(ball.trail[i]).position = fireballPoint(ball, lag)
     }
   }
 }
@@ -250,23 +425,28 @@ type Lightning = {
   to: Vector3
   age: number
   rejoltTimer: number
+  scale: number
+  palette: ShotPalette
   active: boolean
 }
 
 const strikes: Lightning[] = []
-const MAX_STRIKES = 12
+const MAX_STRIKES = 16
 
-function strikeLightning(from: Vector3, to: Vector3): void {
+function strikeLightning(from: Vector3, to: Vector3, scale = 1, palette: ShotPalette): void {
   const strike = obtainFromPool(strikes, MAX_STRIKES, createLightning)
   if (!strike) return
   strike.from = from
   strike.to = to
   strike.age = 0
   strike.rejoltTimer = 0
+  strike.scale = scale
+  strike.palette = palette
   strike.active = true
   for (const segment of strike.segments) show(segment)
   for (const branch of strike.branches) show(branch)
   jolt(strike, 1)
+  burstSparks(to, Math.round(4 * Math.max(1, scale)), palette.core, palette.glow, 1.8 * scale, 1.6)
 }
 
 function createLightning(): Lightning {
@@ -274,7 +454,7 @@ function createLightning(): Lightning {
     const entity = engine.addEntity()
     Transform.create(entity, { position: Vector3.create(0, -10, 0), scale: Vector3.create(0.06, 0.06, 1) })
     MeshRenderer.setBox(entity)
-    glowMaterial(entity, LIGHTNING_CORE, LIGHTNING_GLOW, 5)
+    glowMaterial(entity, Color4.create(0.85, 0.95, 1, 1), Color4.create(0.45, 0.75, 1, 1), 5)
     VisibilityComponent.create(entity, { visible: false })
     return entity
   }
@@ -282,7 +462,7 @@ function createLightning(): Lightning {
   for (let i = 0; i < SEGMENT_COUNT; i++) segments.push(make())
   const branches: Entity[] = []
   for (let i = 0; i < BRANCH_COUNT; i++) branches.push(make())
-  return { segments, branches, from: Vector3.Zero(), to: Vector3.Zero(), age: 0, rejoltTimer: 0, active: false }
+  return { segments, branches, from: Vector3.Zero(), to: Vector3.Zero(), age: 0, rejoltTimer: 0, scale: 1, palette: shotPalette('alien'), active: false }
 }
 
 /** Re-randomizes the arc path: joints pinned at both ends, jitter peaking mid-arc. */
@@ -308,16 +488,16 @@ function jolt(strike: Lightning, fade: number): void {
   joints.push(strike.to)
 
   for (let i = 0; i < SEGMENT_COUNT; i++) {
-    placeSegment(strike.segments[i], joints[i], joints[i + 1], 0.06 * fade)
-    glowMaterial(strike.segments[i], LIGHTNING_CORE, LIGHTNING_GLOW, 5 * fade, fade)
+    placeSegment(strike.segments[i], joints[i], joints[i + 1], 0.06 * fade * strike.scale)
+    glowMaterial(strike.segments[i], strike.palette.core, strike.palette.glow, 5 * fade, fade)
   }
 
   // Stray forks off random mid joints, flying outward and slightly down.
   for (const branch of strike.branches) {
     const joint = joints[1 + Math.floor(Math.random() * (SEGMENT_COUNT - 1))]
     const tip = Vector3.create(joint.x + (Math.random() * 2 - 1) * 1.1, joint.y - 0.3 - Math.random() * 0.5, joint.z + (Math.random() * 2 - 1) * 1.1)
-    placeSegment(branch, joint, tip, 0.04 * fade)
-    glowMaterial(branch, LIGHTNING_CORE, LIGHTNING_GLOW, 4 * fade, fade * 0.8)
+    placeSegment(branch, joint, tip, 0.04 * fade * strike.scale)
+    glowMaterial(branch, strike.palette.core, strike.palette.glow, 4 * fade, fade * 0.8)
   }
 }
 
@@ -366,28 +546,40 @@ type AcidGlob = {
   progress: number
   duration: number
   arcHeight: number
+  scale: number
+  palette: ShotPalette
   active: boolean
 }
 
 const globs: AcidGlob[] = []
-const MAX_GLOBS = 24
+const MAX_GLOBS = 32
 
-function lobAcid(from: Vector3, to: Vector3): void {
+function lobAcid(from: Vector3, to: Vector3, scale = 1, speedMul = 1, arc = 1, palette: ShotPalette): void {
   const glob = obtainFromPool(globs, MAX_GLOBS, createGlob)
   if (!glob) return
   const distance = Vector3.distance(from, to)
   glob.from = from
   glob.to = to
   glob.progress = 0
-  glob.duration = Math.max(0.12, distance / ACID_SPEED)
-  glob.arcHeight = 0.9 + distance * 0.16
+  glob.duration = Math.max(0.12, distance / (ACID_SPEED * speedMul))
+  glob.arcHeight = (0.9 + distance * 0.16) * Math.max(0.35, arc)
+  glob.scale = scale
+  glob.palette = palette
   glob.active = true
+  glowMaterial(glob.head, palette.core, palette.glow, 2.6)
+  for (let i = 0; i < glob.drips.length; i++) {
+    glowMaterial(glob.drips[i], palette.core, palette.glow, 2, 0.8 - i * 0.18)
+  }
 
+  const headSize = 0.3 * scale
   Transform.getMutable(glob.head).position = from
+  Transform.getMutable(glob.head).scale = Vector3.create(headSize, headSize * 1.13, headSize)
   show(glob.head)
-  for (const drip of glob.drips) {
-    Transform.getMutable(drip).position = from
-    show(drip)
+  for (let i = 0; i < glob.drips.length; i++) {
+    const size = (0.13 - i * 0.03) * scale
+    Transform.getMutable(glob.drips[i]).position = from
+    Transform.getMutable(glob.drips[i]).scale = Vector3.create(size, size * 1.4, size)
+    show(glob.drips[i])
   }
 }
 
@@ -395,7 +587,6 @@ function createGlob(): AcidGlob {
   const head = engine.addEntity()
   Transform.create(head, { position: Vector3.create(0, -10, 0), scale: Vector3.create(0.3, 0.34, 0.3) })
   MeshRenderer.setSphere(head)
-  glowMaterial(head, ACID_CORE, ACID_GLOW, 2.6)
   VisibilityComponent.create(head, { visible: false })
 
   const drips: Entity[] = []
@@ -404,12 +595,11 @@ function createGlob(): AcidGlob {
     const size = 0.13 - i * 0.03
     Transform.create(drip, { position: Vector3.create(0, -10, 0), scale: Vector3.create(size, size * 1.4, size) })
     MeshRenderer.setSphere(drip)
-    glowMaterial(drip, ACID_CORE, ACID_GLOW, 2, 0.8 - i * 0.18)
     VisibilityComponent.create(drip, { visible: false })
     drips.push(drip)
   }
 
-  return { head, drips, from: Vector3.Zero(), to: Vector3.Zero(), progress: 0, duration: 0.2, arcHeight: 1, active: false }
+  return { head, drips, from: Vector3.Zero(), to: Vector3.Zero(), progress: 0, duration: 0.2, arcHeight: 1, scale: 1, palette: shotPalette('bio'), active: false }
 }
 
 /** Point on the lob arc: straight lerp plus a parabolic vertical bulge. */
@@ -429,8 +619,8 @@ function updateAcid(dt: number): void {
       hide(glob.head)
       for (const drip of glob.drips) hide(drip)
       // Splat: droplets fly, a caustic ring spreads on the ground.
-      burstSparks(glob.to, 6, ACID_CORE, ACID_GLOW, 2.6, 2.2)
-      spawnBlastRing(glob.to, ACID_GLOW, 0.9)
+      burstSparks(glob.to, Math.round(6 * Math.max(1, glob.scale)), glob.palette.core, glob.palette.glow, 2.6 * glob.scale, 2.2)
+      spawnBlastRing(glob.to, glob.palette.glow, 0.9 * glob.scale)
       continue
     }
 
@@ -461,6 +651,34 @@ function projectileSystem(dt: number): void {
   updateLightning(dt)
   updateAcid(dt)
   updateSparks(dt)
+}
+
+function park(entity: Entity): void {
+  hide(entity)
+  Transform.getMutable(entity).position = Vector3.create(0, -10, 0)
+}
+
+/** Match teardown: hide every in-flight shot so the next mission starts clean. */
+export function clearAllProjectiles(): void {
+  for (const ball of fireballs) {
+    ball.active = false
+    park(ball.head)
+    for (const piece of ball.trail) park(piece)
+  }
+  for (const strike of strikes) {
+    strike.active = false
+    for (const segment of strike.segments) park(segment)
+    for (const branch of strike.branches) park(branch)
+  }
+  for (const glob of globs) {
+    glob.active = false
+    park(glob.head)
+    for (const drip of glob.drips) park(drip)
+  }
+  for (const spark of sparks) {
+    spark.active = false
+    park(spark.entity)
+  }
 }
 
 engine.addSystem(projectileSystem)

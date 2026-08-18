@@ -1,4 +1,4 @@
-import { Entity, GltfContainer, Material, MaterialTransparencyMode, MeshRenderer, Transform, VisibilityComponent, engine } from '@dcl/sdk/ecs'
+import { ColliderLayer, Entity, GltfContainer, Material, MaterialTransparencyMode, MeshRenderer, Transform, VisibilityComponent, engine } from '@dcl/sdk/ecs'
 import { Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { isPlayerAlly } from './state'
 import { RaceId, ResourceKind, Team } from './types'
@@ -63,7 +63,7 @@ interface UnitRig {
   /** Ground rings/discs under hero feet - hidden on the map, shown as a showcase pedestal. */
   groundFx: Entity[]
   groundFxVisible: boolean
-  /** Owner-colored ring underfoot, StarCraft style: hidden until hovered. */
+  /** Owner-colored ring underfoot, hidden until hovered. */
   teamRing?: Entity
   teamRingVisible: boolean
   /** Siege units: the deployed-mode cannon group, grown from scale 0 while digging in. */
@@ -249,9 +249,10 @@ const GLB_UNITS: Partial<Record<RaceId, Partial<Record<UnitRole, GlbUnit>>>> = {
     healer: { src: 'models/units/bio/healer.glb', yaw: 0, topY: 1.1 },
     caster: { src: 'models/units/bio/caster.glb', yaw: 0, topY: 1.5 },
     antiAir: { src: 'models/units/bio/antiAir.glb', yaw: 0, topY: 1.3 },
-    // The shrieker flies head-first along -X like the Vanguard vehicles; the
-    // broodwing jellyfish is radially symmetric so yaw is moot.
-    flyer: { src: 'models/units/bio/flyer.glb', yaw: -90, topY: 1.4 },
+    // The shrieker flies head-first along glTF +Z (verified in the previewer),
+    // which DCL's import flip turns into -Z; 180 puts the skull on the game's
+    // +Z forward. The broodwing jellyfish is radially symmetric so yaw is moot.
+    flyer: { src: 'models/units/bio/flyer.glb', yaw: 180, topY: 1.4 },
     transport: { src: 'models/units/bio/transport.glb', yaw: 0, topY: 2.6 },
     heavyAir: { src: 'models/units/bio/heavyAir.glb', yaw: 0, topY: 2.4 },
     siege: { src: 'models/units/bio/siege.glb', yaw: 0, topY: 1.7 },
@@ -298,7 +299,11 @@ function buildGlbUnit(rig: UnitRig, config: GlbUnit, race: RaceId, role: UnitRol
     rotation: Quaternion.fromEulerDegrees(0, config.yaw, 0),
     scale: Vector3.create(boost, boost, boost)
   })
-  GltfContainer.create(model, { src: config.src })
+  GltfContainer.create(model, {
+    src: config.src,
+    visibleMeshesCollisionMask: ColliderLayer.CL_NONE,
+    invisibleMeshesCollisionMask: ColliderLayer.CL_NONE
+  })
   rig.parts.push(model)
   rig.topYOverride = config.topY * boost
   rig.profiles = glbProfiles(role)
@@ -418,7 +423,7 @@ export function buildUnitModel(root: Entity, race: RaceId, role: UnitRole, team:
 
   if (role === 'worker') addWorkerCargo(rig, addPart, glbConfig ? GLB_ROLE_SCALE.worker : 1)
 
-  // Ownership ring underfoot, StarCraft style: hidden on the open field, shown
+  // Ownership ring underfoot, hidden on the open field, shown
   // in the owner's color while the pointer hovers the unit. (Selection uses
   // the spinning marker, colored by relationship, instead.)
   const ringSize = TEAM_RING_SIZE[role] * (GLB_ROLE_SCALE[role] ?? 1)
@@ -1221,7 +1226,7 @@ function buildAlienStarlance(rig: UnitRig, addPart: PartAdder, glow: Color4): vo
   for (const angle of [0, 120, 240]) {
     const rad = (angle * Math.PI) / 180
     addPart(Vector3.create(Math.cos(rad) * 0.32, 0.28, Math.sin(rad) * 0.32), Vector3.create(0.1, 0.56, 0.1), ALIEN_GOLD, {
-      ...gild,
+    ...gild,
       rotation: Quaternion.fromEulerDegrees(Math.sin(rad) * -22, 0, Math.cos(rad) * 22)
     })
   }
@@ -1231,7 +1236,7 @@ function buildAlienStarlance(rig: UnitRig, addPart: PartAdder, glow: Color4): vo
   // --- Rotating targeting ring around the emitter throat. --------------------
   rig.spinner = addPart(Vector3.create(0, 0.86, 0), Vector3.create(0.6, 0.05, 0.6), ALIEN_GOLD, {
     cylinder: true,
-    ...gild,
+  ...gild,
     emissive: ALIEN_CRYSTAL,
     emissiveIntensity: 0.8
   })
@@ -1282,11 +1287,11 @@ function buildAlienSolarArk(rig: UnitRig, addPart: PartAdder, glow: Color4): voi
   // --- Crescent hull: two swept gilded slabs meeting at the stern core. ------
   for (const side of [-1, 1]) {
     addPart(Vector3.create(side * 0.55, 0.6, 0.25), Vector3.create(0.4, 0.16, 1.5), ALIEN_GOLD, {
-      ...gild,
+    ...gild,
       rotation: Quaternion.fromEulerDegrees(0, side * -24, 0)
     })
     addPart(Vector3.create(side * 0.85, 0.6, 0.62), Vector3.create(0.22, 0.1, 0.7), ALIEN_DARK, {
-      ...gild,
+    ...gild,
       rotation: Quaternion.fromEulerDegrees(0, side * -28, 0)
     })
     // Prow lances at the crescent tips.
@@ -1364,7 +1369,7 @@ function buildBioBroodwing(rig: UnitRig, addPart: PartAdder, glow: Color4): void
       Transform.create(pivot, { parent: rig.bodyRoot, position: Vector3.create(side * 0.2, 0.86, zOff) })
       rig.parts.push(pivot)
       addChildPart(rig, pivot, Vector3.create(side * 0.5, 0.04, 0), Vector3.create(0.95, 0.03, 0.42), BIO_FLESH, {
-        ...flesh,
+      ...flesh,
         emissive: glow,
         emissiveIntensity: 0.35
       })
@@ -1420,7 +1425,7 @@ function buildBioSporeLasher(rig: UnitRig, addPart: PartAdder, glow: Color4): vo
     sphere: true,
     emissive: ACID,
     emissiveIntensity: 1.6,
-    ...flesh
+  ...flesh
   })
   rig.fx.push({ entity: sac, mode: 'pulse', anchor: Vector3.create(0, 0.36, -0.42), radius: 0, height: 0, speed: 3, phase: 1, size: 0.26 })
 
@@ -1490,13 +1495,13 @@ function buildBioSkyLeviathan(rig: UnitRig, addPart: PartAdder, glow: Color4): v
     Transform.create(pivot, { parent: rig.bodyRoot, position: Vector3.create(side * 0.5, 0.85, 0) })
     rig.parts.push(pivot)
     addChildPart(rig, pivot, Vector3.create(side * 0.65, 0.02, 0), Vector3.create(1.2, 0.05, 1), BIO_FLESH, {
-      ...flesh,
+    ...flesh,
       emissive: Color4.create(0.4, 0.1, 0.1, 1),
       emissiveIntensity: 0.5,
       rotation: Quaternion.fromEulerDegrees(0, side * -8, 0)
     })
     addChildPart(rig, pivot, Vector3.create(side * 1.25, 0.05, -0.15), Vector3.create(0.6, 0.04, 0.65), SACK, {
-      ...flesh,
+    ...flesh,
       rotation: Quaternion.fromEulerDegrees(0, side * -20, 0)
     })
     // Bone spars through the fin membrane.
@@ -1662,7 +1667,7 @@ function buildAlienTempest(rig: UnitRig, addPart: PartAdder, glow: Color4): void
   // --- Halo drive ring standing behind the hull. ---------------------------
   addPart(Vector3.create(0, 0.78, -0.36), Vector3.create(0.55, 0.03, 0.55), ALIEN_GOLD, {
     cylinder: true,
-    ...gild,
+  ...gild,
     rotation: Quaternion.fromEulerDegrees(90, 0, 0)
   })
   addPart(Vector3.create(0, 0.78, -0.36), Vector3.create(0.4, 0.015, 0.4), ALIEN_CRYSTAL, {
@@ -1675,7 +1680,7 @@ function buildAlienTempest(rig: UnitRig, addPart: PartAdder, glow: Color4): void
   // --- Two-segment swept wings with crystal veins and tip prisms. ----------
   for (const side of [-1, 1]) {
     addPart(Vector3.create(side * 0.58, 0.52, -0.08), Vector3.create(0.72, 0.06, 0.56), ALIEN_GOLD, {
-      ...gild,
+    ...gild,
       rotation: Quaternion.fromEulerDegrees(0, side * -14, side * 6)
     })
     addPart(Vector3.create(side * 1.08, 0.58, -0.26), Vector3.create(0.52, 0.045, 0.4), ALIEN_DARK, {
@@ -1870,7 +1875,7 @@ function buildBioShrieker(rig: UnitRig, addPart: PartAdder, glow: Color4): void 
     sphere: true,
     emissive: ACID,
     emissiveIntensity: 1.8,
-    ...flesh
+  ...flesh
   })
   rig.fx.push({ entity: sac, mode: 'pulse', anchor: Vector3.create(0, 0.33, 0.08), radius: 0, height: 0, speed: 3.2, phase: 0, size: 0.24 })
   // Toxin drip falling from the sac.
@@ -1899,13 +1904,13 @@ function buildBioShrieker(rig: UnitRig, addPart: PartAdder, glow: Color4): void 
     rig.parts.push(pivot)
     // Inner and outer membrane panels.
     addChildPart(rig, pivot, Vector3.create(side * 0.42, 0.05, -0.04), Vector3.create(0.8, 0.035, 0.62), BIO_FLESH, {
-      ...flesh,
+    ...flesh,
       emissive: Color4.create(0.4, 0.1, 0.1, 1),
       emissiveIntensity: 0.5,
       rotation: Quaternion.fromEulerDegrees(0, side * -10, 0)
     })
     addChildPart(rig, pivot, Vector3.create(side * 0.95, 0.1, -0.16), Vector3.create(0.6, 0.03, 0.46), BIO_FLESH, {
-      ...flesh,
+    ...flesh,
       emissive: Color4.create(0.45, 0.12, 0.1, 1),
       emissiveIntensity: 0.6,
       rotation: Quaternion.fromEulerDegrees(0, side * -24, side * 4)
@@ -2817,7 +2822,7 @@ function buildAlienSunlance(rig: UnitRig, addPart: PartAdder, glow: Color4): voi
   // The lance: a long crystal beam cannon angled slightly upward.
   addPart(Vector3.create(0, 0.98, 0.5), Vector3.create(0.12, 0.12, 1.5), ALIEN_GOLD, {
     cylinder: true,
-    ...gild,
+  ...gild,
     rotation: Quaternion.fromEulerDegrees(82, 0, 0)
   })
   addPart(Vector3.create(0, 1.08, 1.15), Vector3.create(0.08, 0.4, 0.08), ALIEN_CRYSTAL, {
@@ -2903,7 +2908,7 @@ function buildBioBroodtender(rig: UnitRig, addPart: PartAdder, glow: Color4): vo
       sphere: true,
       emissive: HEAL_GREEN,
       emissiveIntensity: 1.8,
-      ...flesh
+    ...flesh
     })
     rig.fx.push({ entity: sac, mode: 'pulse', anchor: Vector3.create(sx, 0.66, sz), radius: 0, height: 0, speed: 2.8, phase: sx * 9, size })
   }
@@ -2994,7 +2999,7 @@ function buildBioAcidmaw(rig: UnitRig, addPart: PartAdder, glow: Color4): void {
       sphere: true,
       emissive: ACID,
       emissiveIntensity: 1.6,
-      ...flesh
+    ...flesh
     })
     rig.fx.push({ entity: sac, mode: 'pulse', anchor: Vector3.create(side * 0.34, 0.9, -0.44), radius: 0, height: 0, speed: 3, phase: side, size: 0.2 })
   }

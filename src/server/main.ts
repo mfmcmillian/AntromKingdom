@@ -1,4 +1,4 @@
-import { PlayerIdentityData, engine } from '@dcl/sdk/ecs'
+import { AvatarBase, PlayerIdentityData, engine } from '@dcl/sdk/ecs'
 import { syncEntity } from '@dcl/sdk/network'
 import { EnvVar, Storage } from '@dcl/sdk/server'
 import {
@@ -7,16 +7,29 @@ import {
   RANKED_START_RATING,
   createDefaultLobbies,
   createDefaultSeat,
+  sanitizeGameName,
+  emptyRaceRecords,
+  emptyRankedRaceWins,
+  type BoardEntry,
+  type FrameId,
+  type GameBoards,
   type LobbyConfig,
   type LobbyRequest,
   type LobbySeat,
   type MatchCommand,
+  type PortraitId,
+  type ProfileBook,
+  type PublicProfile,
   type RankedEntry,
   type RankedLadder,
   type RankedMatchSummary
 } from '../rts/multiplayer/protocol'
-import { MAPS } from '../rts/maps'
-import { LOBBY_SYNC_ID, MpLobbyState, MpRankedState, RANKED_SYNC_ID, room } from '../rts/multiplayer/transport'
+import { DEFAULT_MAP_ID, MAPS, getMapById } from '../rts/maps'
+import { mulberry32 } from '../rts/multiplayer/seatMap'
+import { FRAMES, PORTRAITS } from '../rts/profile'
+import { campaignIdsForPortrait, fillSequentialCampaignIds } from '../rts/campaign'
+import { BOARDS_SYNC_ID, LOBBY_SYNC_ID, MpBoardsState, MpLobbyState, MpProfilesState, MpRankedState, PROFILES_SYNC_ID, RANKED_SYNC_ID, room } from '../rts/multiplayer/transport'
+import type { RaceId } from '../rts/types'
 
 // DecentraCraft authoritative server. Runs headlessly alongside the world and
 // owns everything the clients must agree on:
@@ -26,6 +39,7 @@ import { LOBBY_SYNC_ID, MpLobbyState, MpRankedState, RANKED_SYNC_ID, room } from
 //     canonical order, scoped to the room so concurrent matches don't mix)
 //   - the ranked ladder (Elo ratings persisted in world Storage, published to
 //     clients and optionally pushed to the website leaderboard endpoint)
+//   - campaign / skirmish boards (same persistence + website push)
 
 const lobbies: LobbyConfig[] = createDefaultLobbies()
 
@@ -44,6 +58,15 @@ const ELO_K = 32
  * exists for Worlds - this Genesis City LAND deploy relies on the default.
  */
 const DEFAULT_LEADERBOARD_PUSH_URL = 'https://decentracraft-nine.vercel.app/api/ladder'
+const DEFAULT_BOARDS_PUSH_URL = 'https://decentracraft-nine.vercel.app/api/boards'
+const DEFAULT_CAMPAIGN_PUSH_URL = 'https://decentracraft-nine.vercel.app/api/campaign'
+const DEFAULT_DISCORD_JOIN_WEBHOOK =
+  'https://discord.com/api/webhooks/1538574204855656458/py8wHhVdyELkNeTgLSn3ExV5Kuqm2dhWegyeHrzlVFMpc4xhdCjdDLNYvAfBNf_XNwB_'
+const JOIN_NOTIFY_COOLDOWN_MS = 120000
+const JOIN_NOTIFY_NAME_WAIT_S = 4
+const BOARDS_STORAGE_KEY = 'leaderboards-v1'
+const BOARD_CAP = 100
+const SKIRMISH_REPORT_COOLDOWN_MS = 20000
 
 async function getLeaderboardPushUrl(): Promise<string> {
   try {
@@ -51,6 +74,40 @@ async function getLeaderboardPushUrl(): Promise<string> {
   } catch {
     return DEFAULT_LEADERBOARD_PUSH_URL
   }
+}
+
+async function getBoardsPushUrl(): Promise<string> {
+  try {
+    return (await EnvVar.get('BOARDS_PUSH_URL')) || DEFAULT_BOARDS_PUSH_URL
+  } catch {
+    return DEFAULT_BOARDS_PUSH_URL
+  }
+}
+
+async function getCampaignPushUrl(): Promise<string> {
+  try {
+    return (await EnvVar.get('CAMPAIGN_PUSH_URL')) || DEFAULT_CAMPAIGN_PUSH_URL
+  } catch {
+    return DEFAULT_CAMPAIGN_PUSH_URL
+  }
+}
+
+async function getDiscordJoinWebhook(): Promise<string> {
+  try {
+    return (await EnvVar.get('DISCORD_JOIN_WEBHOOK')) || DEFAULT_DISCORD_JOIN_WEBHOOK
+  } catch {
+    return DEFAULT_DISCORD_JOIN_WEBHOOK
+  }
+}
+
+function shortAddress(address: string): string {
+  return address.length > 10 ? `${address.slice(0, 6)}..${address.slice(-4)}` : address
+}
+
+function sanitizeDisplayName(name: unknown, fallback: string): string {
+  if (typeof name !== 'string') return fallback
+  const trimmed = name.trim().slice(0, 24)
+  return trimmed || fallback
 }
 
 /** All rated players, keyed by lowercase wallet address. */
@@ -63,7 +120,7 @@ let rankedLastMatch: RankedMatchSummary | undefined
  * against this snapshot instead of the live seats. Deleting a roster marks
  * the match as scored (one result per match).
  */
-const rankedRosters = new Map<number, { address: string; name: string }[]>()
+const rankedRosters = new Map<number, { address: string; name: string; race: RaceId }[]>()
 
 function eloExpected(rating: number, opponent: number): number {
   return 1 / (1 + Math.pow(10, (opponent - rating) / 400))
@@ -147,6 +204,356 @@ export function startServer(): void {
   }
   void loadRankedLadder()
 
+  // --- Campaign / skirmish boards --------------------------------------------
+  const displayNames = new Map<string, string>()
+  const campaignBoard = new Map<string, BoardEntry>()
+  const skirmishBoard = new Map<string, BoardEntry>()
+  const lastSkirmishReport = new Map<string, number>()
+
+  const boardsEntity = engine.addEntity()
+  let boardsRevision = 0
+  MpBoardsState.create(boardsEntity, { json: JSON.stringify(buildGameBoards()), revision: boardsRevision })
+  syncEntity(boardsEntity, [MpBoardsState.componentId], BOARDS_SYNC_ID)
+
+  function rememberDisplayName(address: string, name: string): void {
+    const cleaned = sanitizeDisplayName(name, '')
+    if (!cleaned) return
+    if (cleaned.toLowerCase() === address.toLowerCase()) return
+    if (/^0x[0-9a-f]/i.test(cleaned)) return
+    displayNames.set(address, cleaned)
+  }
+
+  function nameFor(address: string): string {
+    const rankedName = rankedRatings.get(address)?.name
+    return (
+      displayNames.get(address) ||
+      campaignBoard.get(address)?.name ||
+      skirmishBoard.get(address)?.name ||
+      (rankedName && rankedName !== shortAddress(address) ? rankedName : '') ||
+      shortAddress(address)
+    )
+  }
+
+  function hasResolvedName(address: string): boolean {
+    const name = nameFor(address)
+    return !!name && name !== shortAddress(address) && name.toLowerCase() !== address.toLowerCase()
+  }
+
+  const joinNotifyAt = new Map<string, number>()
+  const pendingJoinDiscord = new Map<string, number>()
+
+  function queueDiscordJoin(address: string): void {
+    const now = Date.now()
+    if (now - (joinNotifyAt.get(address) ?? 0) < JOIN_NOTIFY_COOLDOWN_MS) return
+    joinNotifyAt.set(address, now)
+    if (hasResolvedName(address)) {
+      postDiscordJoin(address)
+      return
+    }
+    pendingJoinDiscord.set(address, 0)
+  }
+
+  function flushPendingDiscordJoins(dt: number): void {
+    for (const [address, waited] of [...pendingJoinDiscord]) {
+      const next = waited + dt
+      if (hasResolvedName(address) || next >= JOIN_NOTIFY_NAME_WAIT_S) {
+        pendingJoinDiscord.delete(address)
+        postDiscordJoin(address)
+      } else {
+        pendingJoinDiscord.set(address, next)
+      }
+    }
+  }
+
+  function postDiscordJoin(address: string): void {
+    const name = nameFor(address)
+    const online = present.size
+    void (async () => {
+      try {
+        const url = await getDiscordJoinWebhook()
+        if (!url) return
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: 'DecentraCraft',
+            embeds: [
+              {
+                title: 'Player entered the scene',
+                description: `**${name}**\n\`${address}\``,
+                color: 0x3d7eff,
+                footer: { text: `${online} in scene` },
+                timestamp: new Date().toISOString()
+              }
+            ]
+          })
+        })
+        if (!response.ok) console.log(`[Server] discord join notify failed: ${response.status}`)
+      } catch (error) {
+        console.log(`[Server] discord join notify failed: ${error}`)
+      }
+    })()
+  }
+
+  function sortBoard(entries: BoardEntry[]): BoardEntry[] {
+    return entries
+      .sort((a, b) => b.score - a.score || b.wins - a.wins || a.name.localeCompare(b.name))
+      .slice(0, BOARD_CAP)
+  }
+
+  function buildGameBoards(): GameBoards {
+    return {
+      campaign: sortBoard([...campaignBoard.values()]),
+      skirmish: sortBoard([...skirmishBoard.values()]),
+      updated: Date.now()
+    }
+  }
+
+  function publishBoards(): void {
+    boardsRevision += 1
+    const state = MpBoardsState.getMutable(boardsEntity)
+    state.json = JSON.stringify(buildGameBoards())
+    state.revision = boardsRevision
+  }
+
+  function sanitizeBoardEntries(raw: unknown): BoardEntry[] {
+    if (!Array.isArray(raw)) return []
+    const out: BoardEntry[] = []
+    for (const item of raw) {
+      if (!item || typeof item !== 'object') continue
+      const row = item as Partial<BoardEntry>
+      if (typeof row.address !== 'string' || !row.address) continue
+      const address = row.address.toLowerCase()
+      out.push({
+        address,
+        name: sanitizeDisplayName(row.name, shortAddress(address)),
+        score: Math.max(0, Math.floor(Number(row.score) || 0)),
+        wins: Math.max(0, Math.floor(Number(row.wins) || 0)),
+        losses: Math.max(0, Math.floor(Number(row.losses) || 0))
+      })
+    }
+    return out
+  }
+
+  function applyLoadedBoards(boards: GameBoards, source: string): void {
+    for (const entry of sanitizeBoardEntries(boards.campaign)) {
+      const existing = campaignBoard.get(entry.address)
+      campaignBoard.set(entry.address, {
+        address: entry.address,
+        name: entry.name || existing?.name || shortAddress(entry.address),
+        score: Math.max(existing?.score ?? 0, entry.score),
+        wins: Math.max(existing?.wins ?? 0, entry.wins),
+        losses: Math.max(existing?.losses ?? 0, entry.losses)
+      })
+      rememberDisplayName(entry.address, entry.name)
+    }
+    for (const entry of sanitizeBoardEntries(boards.skirmish)) {
+      const existing = skirmishBoard.get(entry.address)
+      skirmishBoard.set(entry.address, {
+        address: entry.address,
+        name: entry.name || existing?.name || shortAddress(entry.address),
+        score: Math.max(existing?.score ?? 0, entry.score),
+        wins: Math.max(existing?.wins ?? 0, entry.wins),
+        losses: Math.max(existing?.losses ?? 0, entry.losses)
+      })
+      rememberDisplayName(entry.address, entry.name)
+    }
+    publishBoards()
+    console.log(`[Server] boards loaded from ${source}: ${campaignBoard.size} campaign, ${skirmishBoard.size} skirmish`)
+  }
+
+  async function loadBoards(): Promise<void> {
+    try {
+      const stored = await Storage.get<GameBoards>(BOARDS_STORAGE_KEY)
+      if (stored) applyLoadedBoards(stored, 'storage')
+    } catch (error) {
+      console.log(`[Server] boards storage load failed: ${error}`)
+    }
+
+    try {
+      const url = await getBoardsPushUrl()
+      const response = await fetch(url)
+      if (response.ok) applyLoadedBoards((await response.json()) as GameBoards, 'website endpoint')
+    } catch (error) {
+      console.log(`[Server] boards endpoint load failed: ${error}`)
+    }
+  }
+  void loadBoards()
+
+  function saveBoards(): void {
+    const boards = buildGameBoards()
+    const json = JSON.stringify(boards)
+    try {
+      Storage.set(BOARDS_STORAGE_KEY, boards).catch((error: unknown) => {
+        console.log(`[Server] boards storage save failed: ${error}`)
+      })
+    } catch (error) {
+      console.log(`[Server] boards storage save failed: ${error}`)
+    }
+    void (async () => {
+      try {
+        const url = await getBoardsPushUrl()
+        await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: json })
+        console.log('[Server] boards pushed to website endpoint')
+      } catch (error) {
+        console.log(`[Server] boards website push failed: ${error}`)
+      }
+    })()
+  }
+
+  function upsertCampaignBoard(address: string, missions: number): void {
+    const existing = campaignBoard.get(address)
+    const score = Math.max(existing?.score ?? 0, missions)
+    if (score <= 0) return
+    const name = nameFor(address)
+    campaignBoard.set(address, {
+      address,
+      name: name || existing?.name || shortAddress(address),
+      score,
+      wins: Math.max(existing?.wins ?? 0, missions),
+      losses: existing?.losses ?? 0
+    })
+    publishBoards()
+    saveBoards()
+  }
+
+  const PROFILES_STORAGE_KEY = 'profiles-v1'
+  const publicProfiles = new Map<string, PublicProfile>()
+  const profilesEntity = engine.addEntity()
+  let profilesRevision = 0
+  MpProfilesState.create(profilesEntity, { json: JSON.stringify(buildProfileBook()), revision: profilesRevision })
+  syncEntity(profilesEntity, [MpProfilesState.componentId], PROFILES_SYNC_ID)
+
+  function buildProfileBook(): ProfileBook {
+    return { profiles: [...publicProfiles.values()], updated: Date.now() }
+  }
+
+  function publishProfiles(): void {
+    profilesRevision += 1
+    const state = MpProfilesState.getMutable(profilesEntity)
+    state.json = JSON.stringify(buildProfileBook())
+    state.revision = profilesRevision
+  }
+
+  function saveProfiles(): void {
+    const book = buildProfileBook()
+    try {
+      Storage.set(PROFILES_STORAGE_KEY, book).catch((error: unknown) => {
+        console.log(`[Server] profiles storage save failed: ${error}`)
+      })
+    } catch (error) {
+      console.log(`[Server] profiles storage save failed: ${error}`)
+    }
+  }
+
+  function getOrCreateProfile(address: string, name: string): PublicProfile {
+    let profile = publicProfiles.get(address)
+    if (!profile) {
+      profile = {
+        address,
+        name: name || shortAddress(address),
+        portrait: '',
+        frame: 'iron',
+        races: emptyRaceRecords(),
+        rankedRaceWins: emptyRankedRaceWins(),
+        manaTip: false
+      }
+      publicProfiles.set(address, profile)
+    }
+    if (!profile.rankedRaceWins) profile.rankedRaceWins = emptyRankedRaceWins()
+    if (typeof profile.manaTip !== 'boolean') profile.manaTip = false
+    if (name) profile.name = name.slice(0, 24)
+    return profile
+  }
+
+  function isPortraitAllowed(address: string, portrait: PortraitId, profile: PublicProfile): boolean {
+    const def = PORTRAITS.find((item) => item.id === portrait)
+    if (!def) return false
+    if (def.campaignAll) {
+      return isRaceCampaignCleared(address, 'human') && isRaceCampaignCleared(address, 'alien') && isRaceCampaignCleared(address, 'bio')
+    }
+    if (def.manaTip) return profile.manaTip === true
+    if (def.race) return isRaceCampaignCleared(address, def.race)
+    return false
+  }
+
+  function isFrameAllowed(address: string, frame: FrameId, profile: PublicProfile): boolean {
+    const def = FRAMES.find((item) => item.id === frame)
+    if (!def) return false
+    if (def.rankedAllRaces) {
+      const wins = profile.rankedRaceWins ?? emptyRankedRaceWins()
+      return (wins.human >= 1 && wins.alien >= 1 && wins.bio >= 1) || profile.sovereignLegacy === true
+    }
+    const rankedWins = rankedRatings.get(address)?.wins ?? 0
+    return rankedWins >= def.wins
+  }
+
+  function applyCareerRace(address: string, race: RaceId, won: boolean, name: string): void {
+    rememberDisplayName(address, name)
+    const profile = getOrCreateProfile(address, nameFor(address))
+    if (won) profile.races[race].wins += 1
+    else profile.races[race].losses += 1
+    publishProfiles()
+    saveProfiles()
+  }
+
+  async function loadProfiles(): Promise<void> {
+    try {
+      const stored = await Storage.get<ProfileBook>(PROFILES_STORAGE_KEY)
+      if (!stored || !Array.isArray(stored.profiles)) return
+      for (const row of stored.profiles) {
+        if (!row?.address) continue
+        const address = row.address.toLowerCase()
+        const name = sanitizeDisplayName(row.name, shortAddress(row.address))
+        rememberDisplayName(address, name)
+        publicProfiles.set(address, {
+          address,
+          name,
+          portrait: PORTRAITS.some((portrait) => portrait.id === row.portrait) ? (row.portrait as PortraitId) : '',
+          frame: FRAMES.some((frame) => frame.id === row.frame) ? (row.frame as FrameId) : 'iron',
+          races: {
+            human: { wins: Math.max(0, row.races?.human?.wins ?? 0), losses: Math.max(0, row.races?.human?.losses ?? 0) },
+            alien: { wins: Math.max(0, row.races?.alien?.wins ?? 0), losses: Math.max(0, row.races?.alien?.losses ?? 0) },
+            bio: { wins: Math.max(0, row.races?.bio?.wins ?? 0), losses: Math.max(0, row.races?.bio?.losses ?? 0) }
+          },
+          rankedRaceWins: {
+            human: Math.max(0, row.rankedRaceWins?.human ?? 0),
+            alien: Math.max(0, row.rankedRaceWins?.alien ?? 0),
+            bio: Math.max(0, row.rankedRaceWins?.bio ?? 0)
+          },
+          manaTip: row.manaTip === true,
+          sovereignLegacy: row.sovereignLegacy === true || row.frame === 'sovereign'
+        })
+      }
+      publishProfiles()
+      console.log(`[Server] profiles loaded: ${publicProfiles.size}`)
+    } catch (error) {
+      console.log(`[Server] profiles storage load failed: ${error}`)
+    }
+  }
+
+  function applySkirmishResult(address: string, won: boolean, name: string): void {
+    rememberDisplayName(address, name)
+    const existing = skirmishBoard.get(address) ?? {
+      address,
+      name: nameFor(address),
+      score: 0,
+      wins: 0,
+      losses: 0
+    }
+    if (won) {
+      existing.wins += 1
+      existing.score = existing.wins
+    } else {
+      existing.losses += 1
+    }
+    existing.name = nameFor(address)
+    skirmishBoard.set(address, existing)
+    publishBoards()
+    saveBoards()
+    console.log(`[Server] skirmish ${won ? 'win' : 'loss'}: ${existing.name} now ${existing.wins}-${existing.losses}`)
+  }
+
   /** Persist the ladder (best effort) and mirror it to the website endpoint. */
   function saveRankedLadder(): void {
     const ladder = buildRankedLadder()
@@ -174,7 +581,14 @@ export function startServer(): void {
    * against every opponent in the frozen roster; opponents don't exchange
    * points among themselves (their finishing order is unknown).
    */
-  function applyRankedResult(lobby: LobbyConfig, roster: { address: string; name: string }[], winnerAddress: string): void {
+  function resolveSeatRace(lobby: LobbyConfig, seatIndex: number, race: LobbySeat['race']): RaceId {
+    if (race !== 'random') return race
+    const rng = mulberry32(lobby.seed + seatIndex * 7919)
+    const races: RaceId[] = ['human', 'alien', 'bio']
+    return races[Math.floor(rng() * races.length)]
+  }
+
+  function applyRankedResult(lobby: LobbyConfig, roster: { address: string; name: string; race: RaceId }[], winnerAddress: string): void {
     const winnerSeat = roster.find((member) => member.address === winnerAddress)
     if (!winnerSeat) return
     const winner = getOrCreateRankedEntry(winnerSeat.address, winnerSeat.name)
@@ -193,13 +607,24 @@ export function startServer(): void {
     }
     winner.wins += 1
 
+    for (const member of roster) {
+      if (member.address === winnerAddress) {
+        const profile = getOrCreateProfile(member.address, member.name)
+        profile.rankedRaceWins[member.race] += 1
+      }
+      applyCareerRace(member.address, member.race, member.address === winnerAddress, member.name)
+    }
+
     rankedLastMatch = {
       winner: winner.address,
       deltas: [...deltas.entries()].map(([address, delta]) => ({ address, delta }))
     }
     rankedRosters.delete(lobby.id)
+    lobby.phase = 'lobby'
+    for (const seat of lobby.seats) seat.ready = false
     publishRankedLadder()
     saveRankedLadder()
+    publishLobbies()
     console.log(`[Server] ranked result: ${winner.name} wins (${roster.length} players), new rating ${winner.rating}`)
   }
 
@@ -210,6 +635,21 @@ export function startServer(): void {
   function resetSeat(lobby: LobbyConfig, seat: LobbySeat): void {
     const index = lobby.seats.indexOf(seat)
     Object.assign(seat, createDefaultSeat(index))
+  }
+
+  /** When the last human leaves a custom game, wipe leftover computers so the slot is free again. */
+  function dissolveEmptyCustomGame(lobby: LobbyConfig): void {
+    if (lobby.ranked) return
+    if (lobby.seats.some((seat) => seat.kind === 'human')) return
+    for (let i = 0; i < lobby.seats.length; i++) {
+      Object.assign(lobby.seats[i], createDefaultSeat(i))
+    }
+    lobby.phase = 'lobby'
+    lobby.hostAddress = ''
+    lobby.gameMode = 'team'
+    lobby.mapId = DEFAULT_MAP_ID
+    lobby.gameName = ''
+    lobby.seed = 0
   }
 
   /** Leader = earliest-seated human still present; re-pick when they leave. */
@@ -224,6 +664,7 @@ export function startServer(): void {
     const active = lobby.seats.filter((seat) => seat.kind !== 'closed')
     const humans = active.filter((seat) => seat.kind === 'human')
     if (active.length < 2 || humans.length === 0) return false
+    if (active.length > getMapById(lobby.mapId).maxPlayers) return false
     // Rated matches need at least two humans; AI wins mean nothing on a ladder.
     if (lobby.ranked && humans.length < 2) return false
     return humans.every((seat) => seat.ready && seat.address)
@@ -238,16 +679,21 @@ export function startServer(): void {
       if (!seat) continue
       resetSeat(lobby, seat)
       ensureLeader(lobby)
+      dissolveEmptyCustomGame(lobby)
       dirty = true
     }
     return dirty
   }
 
   // --- Presence: free seats when their owner leaves the scene ---------------
-  engine.addSystem(() => {
+  engine.addSystem((dt) => {
     const inScene = new Set<string>()
-    for (const [, identity] of engine.getEntitiesWith(PlayerIdentityData)) {
-      inScene.add(identity.address.toLowerCase())
+    for (const [entity, identity] of engine.getEntitiesWith(PlayerIdentityData)) {
+      const address = identity.address.toLowerCase()
+      inScene.add(address)
+      if (AvatarBase.has(entity)) {
+        rememberDisplayName(address, AvatarBase.get(entity).name)
+      }
     }
 
     let dirty = false
@@ -258,11 +704,20 @@ export function startServer(): void {
         if (!seat) continue
         console.log(`[Server] room ${lobby.id}: freeing seat of departed player ${address}`)
         resetSeat(lobby, seat)
+        dissolveEmptyCustomGame(lobby)
         dirty = true
       }
     }
+    const previous = new Set(present)
     present.clear()
-    for (const address of inScene) present.add(address)
+    for (const address of inScene) {
+      present.add(address)
+      if (!previous.has(address)) {
+        pushCampaignOnArrive(address)
+        queueDiscordJoin(address)
+      }
+    }
+    flushPendingDiscordJoins(dt)
 
     for (const lobby of lobbies) {
       // Every human participant left mid-match: reopen the room so the next
@@ -273,9 +728,11 @@ export function startServer(): void {
         for (const seat of lobby.seats) seat.ready = false
         // Nobody is left to report an abandoned ranked match: void it.
         rankedRosters.delete(lobby.id)
+        dissolveEmptyCustomGame(lobby)
         dirty = true
       }
       if (ensureLeader(lobby)) dirty = true
+      dissolveEmptyCustomGame(lobby)
     }
 
     if (dirty) publishLobbies()
@@ -302,13 +759,26 @@ export function startServer(): void {
       case 'claimSeat': {
         const target = lobby.seats[request.seat]
         if (!target || target.kind !== 'closed') return
+        if (request.seat >= getMapById(lobby.mapId).maxPlayers) return
         if (lobby.phase === 'inMatch') return
+        const becomingHost = !lobby.ranked && !lobby.seats.some((seat) => seat.kind === 'human')
         if (mySeat) resetSeat(lobby, mySeat) // one seat per player in this room
         evictFromOtherRooms(sender, lobby) // ...and none anywhere else
         target.kind = 'human'
         target.address = sender
         target.name = request.name.slice(0, 24)
+        rememberDisplayName(sender, target.name)
         target.ready = false
+        if (becomingHost) {
+          const named = sanitizeGameName(request.gameName ?? '')
+          lobby.gameName = named || `${target.name}'s Game`
+        }
+        break
+      }
+      case 'setGameName': {
+        if (!isLeader || lobby.ranked || lobby.phase === 'inMatch') return
+        const named = sanitizeGameName(request.name)
+        if (named) lobby.gameName = named
         break
       }
       case 'leaveSeat': {
@@ -336,6 +806,7 @@ export function startServer(): void {
         // Leader manages computer/closed seats; humans manage themselves.
         if (!isLeader) return
         if (lobby.ranked) return // no computer seats on the ladder
+        if (request.seat >= getMapById(lobby.mapId).maxPlayers) return
         const target = lobby.seats[request.seat]
         if (!target || target.kind === 'human') return
         const patch = request.patch
@@ -354,6 +825,11 @@ export function startServer(): void {
         if (!isLeader || lobby.phase !== 'lobby') return
         if (!MAPS.some((map) => map.id === request.mapId)) return
         lobby.mapId = request.mapId
+        const cap = getMapById(request.mapId).maxPlayers
+        for (let i = cap; i < lobby.seats.length; i++) {
+          if (lobby.seats[i].kind === 'human') resetSeat(lobby, lobby.seats[i])
+          else Object.assign(lobby.seats[i], createDefaultSeat(i))
+        }
         break
       }
       case 'startMatch': {
@@ -366,8 +842,13 @@ export function startServer(): void {
           rankedRosters.set(
             lobby.id,
             lobby.seats
-              .filter((seat): seat is LobbySeat & { address: string } => seat.kind === 'human' && !!seat.address)
-              .map((seat) => ({ address: seat.address.toLowerCase(), name: seat.name ?? seat.address.slice(0, 8) }))
+              .map((seat, seatIndex) => ({ seat, seatIndex }))
+              .filter((row): row is { seat: LobbySeat & { address: string }; seatIndex: number } => row.seat.kind === 'human' && !!row.seat.address)
+              .map(({ seat, seatIndex }) => ({
+                address: seat.address.toLowerCase(),
+                name: seat.name ?? seat.address.slice(0, 8),
+                race: resolveSeatRace(lobby, seatIndex, seat.race)
+              }))
           )
         }
         publishLobbies()
@@ -399,6 +880,7 @@ export function startServer(): void {
     }
 
     ensureLeader(lobby)
+    dissolveEmptyCustomGame(lobby)
     publishLobbies()
   })
 
@@ -426,6 +908,277 @@ export function startServer(): void {
 
     room.send('commandRelayed', { lobbyId: lobby.id, seat: data.seat, sender, json: data.json })
   })
+
+  // --- Campaign progress: per-wallet save, echoed back to that player --------
+  const CAMPAIGN_PLAYER_KEY = 'campaign-v1'
+  const campaignByPlayer = new Map<string, string[]>()
+  /** Addresses whose last Storage.player.get threw. Never cache that as []. */
+  const campaignLoadFailed = new Set<string>()
+  const campaignChain = new Map<string, Promise<void>>()
+
+  function sanitizeCampaignIds(ids: unknown): string[] {
+    if (!Array.isArray(ids)) return []
+    const unique: string[] = []
+    for (const id of ids) {
+      if (typeof id !== 'string' || unique.includes(id)) continue
+      if (!/^(vanguard|aethyr|myriad)-\d+$/.test(id)) continue
+      unique.push(id)
+    }
+    return unique.slice(0, 32)
+  }
+
+  function unionCampaignIds(...lists: Array<string[] | undefined>): string[] {
+    const merged: string[] = []
+    for (const list of lists) {
+      if (!list) continue
+      for (const id of list) {
+        if (!merged.includes(id)) merged.push(id)
+      }
+    }
+    return sanitizeCampaignIds(merged)
+  }
+
+  function enqueueCampaign(address: string, work: () => Promise<void>): void {
+    const previous = campaignChain.get(address) ?? Promise.resolve()
+    const next = previous.then(work, work)
+    campaignChain.set(
+      address,
+      next.catch((error: unknown) => {
+        console.log(`[Server] campaign task failed for ${address}: ${error}`)
+      })
+    )
+  }
+
+  function inferredCampaign(address: string): string[] {
+    const profile = publicProfiles.get(address)
+    const ids: string[] = []
+    if (profile?.sovereignLegacy) ids.push(...fillSequentialCampaignIds(24))
+    ids.push(...campaignIdsForPortrait(profile?.portrait ?? ''))
+    const boardScore = campaignBoard.get(address)?.score ?? 0
+    if (boardScore > 0) ids.push(...fillSequentialCampaignIds(boardScore))
+    return unionCampaignIds(ids)
+  }
+
+  function restoreWipedCampaigns(): void {
+    const addresses = new Set<string>([...publicProfiles.keys(), ...campaignBoard.keys()])
+    for (const address of addresses) {
+      const inferred = inferredCampaign(address)
+      if (inferred.length === 0) continue
+      enqueueCampaign(address, async () => {
+        const read = await readStoredCampaign(address)
+        const merged = unionCampaignIds(campaignByPlayer.get(address), read.completed, inferred)
+        campaignByPlayer.set(address, merged)
+        if (!read.ok) return
+        if (merged.length <= read.completed.length) return
+        saveCampaignProgress(address, merged)
+        upsertCampaignBoard(address, merged.length)
+        console.log(`[Server] restored campaign for ${address}: ${read.completed.length} -> ${merged.length}`)
+      })
+    }
+  }
+
+  function publishCampaignProgress(address: string, completed: string[], ready: boolean): void {
+    room.send('campaignProgress', { address, json: JSON.stringify({ completed, ready }) })
+  }
+
+  function pushCampaignOnArrive(address: string): void {
+    enqueueCampaign(address, async () => {
+      const read = await readStoredCampaign(address)
+      const merged = unionCampaignIds(campaignByPlayer.get(address), read.completed, inferredCampaign(address))
+      campaignByPlayer.set(address, merged)
+      publishCampaignProgress(address, merged, read.ok)
+    })
+  }
+
+  async function readWebsiteCampaign(address: string): Promise<string[]> {
+    try {
+      const url = await getCampaignPushUrl()
+      const response = await fetch(`${url}?address=${encodeURIComponent(address)}`)
+      if (!response.ok) return []
+      const body = (await response.json()) as { completed?: unknown }
+      return sanitizeCampaignIds(body.completed)
+    } catch {
+      return []
+    }
+  }
+
+  async function readStoredCampaign(address: string): Promise<{ completed: string[]; ok: boolean }> {
+    const fromSite = await readWebsiteCampaign(address)
+    try {
+      const stored = await Storage.player.get<{ completed?: unknown }>(address, CAMPAIGN_PLAYER_KEY)
+      campaignLoadFailed.delete(address)
+      return { completed: unionCampaignIds(sanitizeCampaignIds(stored?.completed), fromSite), ok: true }
+    } catch (error) {
+      console.log(`[Server] campaign storage load failed for ${address}: ${error}`)
+      campaignLoadFailed.add(address)
+      return { completed: fromSite, ok: fromSite.length > 0 }
+    }
+  }
+
+  /** Prefer a fresh storage read. Used by portraits so unlocks see the unioned list. */
+  async function loadCampaignProgress(address: string): Promise<string[]> {
+    const read = await readStoredCampaign(address)
+    const merged = unionCampaignIds(campaignByPlayer.get(address), read.completed, inferredCampaign(address))
+    campaignByPlayer.set(address, merged)
+    return merged
+  }
+
+  function saveCampaignProgress(address: string, completed: string[]): void {
+    campaignByPlayer.set(address, completed)
+    try {
+      Storage.player.set(address, CAMPAIGN_PLAYER_KEY, { completed }).catch((error: unknown) => {
+        console.log(`[Server] campaign storage save failed for ${address}: ${error}`)
+      })
+    } catch (error) {
+      console.log(`[Server] campaign storage save failed for ${address}: ${error}`)
+    }
+    void (async () => {
+      try {
+        const url = await getCampaignPushUrl()
+        await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ address, completed })
+        })
+      } catch (error) {
+        console.log(`[Server] campaign website push failed for ${address}: ${error}`)
+      }
+    })()
+  }
+
+  room.onMessage('campaignSave', (data, context) => {
+    if (!context) return
+    const sender = context.from.toLowerCase()
+    if (!sender) return
+
+    let incoming: string[] = []
+    let incomingName = ''
+    try {
+      const parsed = JSON.parse(data.json) as { completed?: unknown; name?: unknown }
+      incoming = sanitizeCampaignIds(parsed.completed)
+      incomingName = sanitizeDisplayName(parsed.name, '')
+    } catch {
+      return
+    }
+
+    if (incomingName) rememberDisplayName(sender, incomingName)
+
+    enqueueCampaign(sender, async () => {
+      const read = await readStoredCampaign(sender)
+      const merged = unionCampaignIds(campaignByPlayer.get(sender), read.completed, incoming, inferredCampaign(sender))
+      campaignByPlayer.set(sender, merged)
+      publishCampaignProgress(sender, merged, read.ok)
+      if (merged.length > 0) upsertCampaignBoard(sender, merged.length)
+      if (!read.ok) {
+        console.log(`[Server] campaign persist skipped for ${sender}: storage load still failing`)
+        return
+      }
+      const unchanged = merged.length === read.completed.length && merged.every((id) => read.completed.includes(id))
+      if (unchanged) return
+      saveCampaignProgress(sender, merged)
+    })
+  })
+
+  const RACE_PREFIX: Record<RaceId, string> = { human: 'vanguard', alien: 'aethyr', bio: 'myriad' }
+
+  function isRaceCampaignCleared(address: string, race: RaceId): boolean {
+    const completed = campaignByPlayer.get(address) ?? []
+    const prefix = RACE_PREFIX[race]
+    for (let i = 1; i <= 8; i++) {
+      if (!completed.includes(`${prefix}-${i}`)) return false
+    }
+    return true
+  }
+
+  // --- Skirmish + career race reports ----------------------------------------
+  room.onMessage('scoreReport', (data, context) => {
+    if (!context) return
+    const sender = context.from.toLowerCase()
+    if (!sender) return
+
+    let type = ''
+    let won = false
+    let name = ''
+    let race: RaceId | undefined
+    try {
+      const parsed = JSON.parse(data.json) as { type?: unknown; won?: unknown; name?: unknown; race?: unknown }
+      if (parsed.type !== 'skirmish' && parsed.type !== 'career') return
+      if (typeof parsed.won !== 'boolean') return
+      type = parsed.type
+      won = parsed.won
+      name = sanitizeDisplayName(parsed.name, '')
+      if (parsed.race === 'human' || parsed.race === 'alien' || parsed.race === 'bio') race = parsed.race
+    } catch {
+      return
+    }
+
+    const now = Date.now()
+    const last = lastSkirmishReport.get(sender) ?? 0
+    if (now - last < SKIRMISH_REPORT_COOLDOWN_MS) return
+    lastSkirmishReport.set(sender, now)
+
+    if (type === 'skirmish') {
+      applySkirmishResult(sender, won, name)
+      if (race) applyCareerRace(sender, race, won, name)
+    } else if (type === 'career' && race) {
+      applyCareerRace(sender, race, won, name)
+    }
+  })
+
+  room.onMessage('profileUpdate', (data, context) => {
+    if (!context) return
+    const sender = context.from.toLowerCase()
+    if (!sender) return
+
+    let portrait: PortraitId | '' = ''
+    let frame: FrameId = 'iron'
+    let name = ''
+    try {
+      const parsed = JSON.parse(data.json) as { portrait?: unknown; frame?: unknown; name?: unknown }
+      if (typeof parsed.portrait === 'string' && PORTRAITS.some((item) => item.id === parsed.portrait)) {
+        portrait = parsed.portrait as PortraitId
+      }
+      if (typeof parsed.frame === 'string' && FRAMES.some((item) => item.id === parsed.frame)) {
+        frame = parsed.frame as FrameId
+      }
+      name = sanitizeDisplayName(parsed.name, '')
+    } catch {
+      return
+    }
+
+    enqueueCampaign(sender, async () => {
+      await loadCampaignProgress(sender)
+      if (name) rememberDisplayName(sender, name)
+      const profile = getOrCreateProfile(sender, nameFor(sender))
+      const keepPortrait = portrait || profile.portrait
+      if (keepPortrait && !isPortraitAllowed(sender, keepPortrait, profile)) {
+        const restored = unionCampaignIds(campaignByPlayer.get(sender), inferredCampaign(sender), campaignIdsForPortrait(keepPortrait))
+        campaignByPlayer.set(sender, restored)
+        if (restored.length > 0) {
+          saveCampaignProgress(sender, restored)
+          upsertCampaignBoard(sender, restored.length)
+        }
+      }
+      if (portrait && isPortraitAllowed(sender, portrait, profile)) profile.portrait = portrait
+      if (isFrameAllowed(sender, frame, profile)) profile.frame = frame
+      publishProfiles()
+      saveProfiles()
+    })
+  })
+
+  room.onMessage('manaTip', (_data, context) => {
+    if (!context) return
+    const sender = context.from.toLowerCase()
+    if (!sender) return
+    const profile = getOrCreateProfile(sender, nameFor(sender))
+    if (profile.manaTip) return
+    profile.manaTip = true
+    publishProfiles()
+    saveProfiles()
+    console.log(`[Server] mana tip: ${profile.name} unlocked The Patron`)
+  })
+
+  void loadProfiles().then(() => restoreWipedCampaigns())
 
   console.log(`[Server] ready (protocol v${PROTOCOL_VERSION}, ${lobbies.length} rooms)`)
 }

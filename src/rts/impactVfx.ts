@@ -24,12 +24,12 @@ const effects: Effect[] = []
 /** Hard pool cap: monster fights recycle the oldest flash instead of growing forever. */
 const MAX_EFFECTS = 48
 
-export function spawnImpactFlash(position: Vector3, color: Color4): void {
+export function spawnImpactFlash(position: Vector3, color: Color4, size = 1): void {
   const effect = obtainEffect('flash')
   effect.age = 0
   effect.duration = 0.28
-  effect.startScale = 0.28
-  effect.endScale = 1.1
+  effect.startScale = 0.28 * size
+  effect.endScale = 1.1 * size
   effect.color = color
   effect.active = true
 
@@ -135,6 +135,15 @@ function impactVfxSystem(dt: number): void {
     const transform = Transform.getMutable(effect.entity)
     transform.scale = effect.shape === 'ring' ? Vector3.create(scale, 0.08, scale) : Vector3.create(scale, scale, scale)
     applyEffectMaterial(effect, 1 - progress)
+  }
+}
+
+/** Match teardown: park every pooled flash/ring so the next mission starts clean. */
+export function clearAllImpactVfx(): void {
+  for (const effect of effects) {
+    effect.active = false
+    VisibilityComponent.createOrReplace(effect.entity, { visible: false })
+    Transform.getMutable(effect.entity).position = Vector3.create(0, -10, 0)
   }
 }
 

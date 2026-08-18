@@ -2,7 +2,7 @@ import type { Building, Soldier, SoldierVariant, Team, Worker } from '../types'
 import type { Vector3 } from '@dcl/sdk/math'
 import { addResources, addSupplyUsed, decrementSoldierQueue, decrementWorkerQueue } from '../economy'
 import { getBuildingDisplayName, getSoldierDefinition, getWorkerDefinition } from '../races'
-import { playComplete } from '../sound'
+import { playComplete, playUnitReady } from '../sound'
 import { gameState } from '../state'
 import { getTeamSoldierCount, getTeamWorkerCount, soldierProductionOrders, soldiers, workerProductionOrders, workers } from '../world'
 
@@ -16,6 +16,8 @@ export type ProductionDeps = {
   getBarracksRallyPoint(barracksId: string): Vector3 | undefined
   sendWorkerToRally(worker: Worker, rallyPoint: Vector3): void
   sendSoldierToRally(soldier: Soldier, rallyPoint: Vector3): void
+  /** No rally set: send the new worker to the nearest crystal line. */
+  assignIdleWorkerToMinerals(worker: Worker): boolean
   setStatus(message: string): void
 }
 
@@ -48,6 +50,7 @@ export function updateWorkerProduction(dt: number, deps: ProductionDeps): void {
 
     workers.push(worker)
     gameState.matchStats[order.team].unitsProduced += 1
+    const gathering = !rallyPoint && deps.assignIdleWorkerToMinerals(worker)
     if (rallyPoint) {
       deps.sendWorkerToRally(worker, rallyPoint)
     }
@@ -58,7 +61,14 @@ export function updateWorkerProduction(dt: number, deps: ProductionDeps): void {
       const workerName = getWorkerDefinition('player').name
       const templeName = getBuildingDisplayName('temple', 'player')
       playComplete()
-      deps.setStatus(rallyPoint ? `${workerName} ready and moving to the ${templeName} spawn point.` : `${workerName} ready outside the ${templeName}.`)
+      playUnitReady('worker')
+      deps.setStatus(
+        rallyPoint
+          ? `${workerName} ready and moving to the ${templeName} spawn point.`
+          : gathering
+            ? `${workerName} ready and gathering crystal.`
+            : `${workerName} ready outside the ${templeName}.`
+      )
     }
   }
 }
@@ -101,6 +111,7 @@ export function updateSoldierProduction(dt: number, deps: ProductionDeps): void 
     if (order.team === 'player') {
       const soldierName = getSoldierDefinition('player', order.variant).name
       playComplete()
+      playUnitReady(order.variant)
       deps.setStatus(rallyPoint ? `${soldierName} ready and moving to the spawn point.` : `${soldierName} ready outside the ${barracks.name}.`)
     }
   }

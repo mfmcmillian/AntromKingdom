@@ -1,6 +1,4 @@
 import {
-  AvatarModifierArea,
-  AvatarModifierType,
   Entity,
   InputAction,
   InputModifier,
@@ -31,7 +29,6 @@ const EDGE_SCROLL_MARGIN = 10
 const FOCUS_CLAMP_MARGIN = 6
 
 let topDownCameraEntity: Entity | null = null
-let hideAvatarEntity: Entity | null = null
 let topDownActive = false
 // Ground point at the center of the view. This is "the camera" as far as the game is concerned.
 const focus = { x: SCENE.center, z: SCENE.center }
@@ -52,32 +49,16 @@ export function setCameraFocus(x: number, z: number): void {
   applyFocusToCamera()
 }
 
-export function toggleTopDownView(): void {
-  if (topDownActive) {
-    disableTopDownView()
-  } else {
-    enableTopDownView()
-  }
-}
-
 export function enableTopDownView(): void {
   if (topDownActive) return
-
-  // Start the view where the avatar is standing.
-  const playerTransform = Transform.getOrNull(engine.PlayerEntity)
-  const start = playerTransform ? playerTransform.position : Vector3.create(SCENE.center, 0, SCENE.center)
-  focus.x = clamp(start.x, FOCUS_CLAMP_MARGIN, SCENE.size - FOCUS_CLAMP_MARGIN)
-  focus.z = clamp(start.z, FOCUS_CLAMP_MARGIN, SCENE.size - FOCUS_CLAMP_MARGIN)
 
   const cameraEntity = getOrCreateTopDownCamera()
   Transform.getMutable(cameraEntity).position = getCameraPositionForFocus()
   MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: cameraEntity })
 
-  // The camera is free-flying now: freeze the avatar and hide it.
   InputModifier.createOrReplace(engine.PlayerEntity, {
     mode: InputModifier.Mode.Standard({ disableAll: true })
   })
-  createAvatarHideArea()
 
   topDownActive = true
 }
@@ -90,7 +71,6 @@ export function disableTopDownView(): void {
   if (mainCamera) mainCamera.virtualCameraEntity = undefined
 
   InputModifier.deleteFrom(engine.PlayerEntity)
-  removeAvatarHideArea()
 }
 
 function getOrCreateTopDownCamera(): Entity {
@@ -105,29 +85,6 @@ function getOrCreateTopDownCamera(): Entity {
     defaultTransition: { transitionMode: VirtualCamera.Transition.Time(0.6) }
   })
   return topDownCameraEntity
-}
-
-function createAvatarHideArea(): void {
-  if (hideAvatarEntity) return
-
-  hideAvatarEntity = engine.addEntity()
-  Transform.create(hideAvatarEntity, {
-    position: Vector3.create(SCENE.center, 0, SCENE.center)
-  })
-  // Oversized on purpose: must swallow every possible avatar position,
-  // including spawn fringes and below-terrain glitches.
-  AvatarModifierArea.create(hideAvatarEntity, {
-    area: Vector3.create(SCENE.size * 10, 1000, SCENE.size * 10),
-    modifiers: [AvatarModifierType.AMT_HIDE_AVATARS],
-    excludeIds: []
-  })
-}
-
-function removeAvatarHideArea(): void {
-  if (!hideAvatarEntity) return
-
-  engine.removeEntity(hideAvatarEntity)
-  hideAvatarEntity = null
 }
 
 function getCameraPositionForFocus(): Vector3 {
