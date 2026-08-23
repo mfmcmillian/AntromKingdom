@@ -326,6 +326,8 @@ export type PublicProfile = {
   manaTip: boolean
   /** Kept the Sovereign frame from the old 24/24 unlock. */
   sovereignLegacy?: boolean
+  /** Completed campaign mission ids. Rides the profile book so LAND deploys persist them. */
+  campaignCompleted?: string[]
 }
 
 export type ProfileBook = {

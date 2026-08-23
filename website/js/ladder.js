@@ -6,8 +6,8 @@
 // campaign saves and skirmish results.
 // ---------------------------------------------------------------------------
 
-const LADDER_ENDPOINT = 'https://decentracraft-nine.vercel.app/api/ladder'
-const BOARDS_ENDPOINT = 'https://decentracraft-nine.vercel.app/api/boards'
+const LADDER_ENDPOINT = '/api/ladder'
+const BOARDS_ENDPOINT = '/api/boards'
 const CAMPAIGN_MISSION_COUNT = 24
 
 ;(function initBoards() {
@@ -38,9 +38,12 @@ const CAMPAIGN_MISSION_COUNT = 24
   const OFFLINE =
     'The live feed is not wired up yet — current standings are always visible in-game from the title screen LEADERBOARDS button.'
 
-  let currentTab = 'multiplayer'
+  // Campaign is the board with live traffic; ranked may be empty for a long time.
+  let currentTab = 'campaign'
   let ranked = null
   let boards = null
+  let rankedFailed = false
+  let boardsFailed = false
 
   function shortAddress(address) {
     return address && address.length > 10 ? address.slice(0, 6) + '..' + address.slice(-4) : address || ''
@@ -50,7 +53,7 @@ const CAMPAIGN_MISSION_COUNT = 24
     table.hidden = true
     note.hidden = false
     note.textContent = text
-    if (updatedEl) updatedEl.textContent = offline ? '' : updatedEl.textContent
+    if (updatedEl && offline) updatedEl.textContent = ''
   }
 
   function fillRows(entries, cellsFor) {
@@ -82,18 +85,18 @@ const CAMPAIGN_MISSION_COUNT = 24
   }
 
   function render() {
-    if (intro) intro.innerHTML = INTROS[currentTab] || INTROS.multiplayer
+    if (intro) intro.innerHTML = INTROS[currentTab] || INTROS.campaign
     tabs.forEach((tab) => {
       tab.classList.toggle('is-active', tab.getAttribute('data-board') === currentTab)
     })
 
     if (currentTab === 'multiplayer') {
       setHead(['#', 'Commander', 'Rating', 'W', 'L', 'Win %'])
-      const entries = ranked && Array.isArray(ranked.entries) ? ranked.entries.slice(0, 50) : []
-      if (!ranked) {
+      if (rankedFailed) {
         setNote(OFFLINE, true)
         return
       }
+      const entries = ranked && Array.isArray(ranked.entries) ? ranked.entries.slice(0, 50) : []
       if (entries.length === 0) {
         setNote(EMPTY.multiplayer, false)
         return
@@ -110,17 +113,22 @@ const CAMPAIGN_MISSION_COUNT = 24
           winRate
         ]
       })
-      if (updatedEl && ranked.updated) {
+      if (updatedEl && ranked && ranked.updated) {
         updatedEl.textContent = 'Last updated ' + new Date(ranked.updated).toLocaleString()
       }
       return
     }
 
-    const list = currentTab === 'campaign' ? boards && boards.campaign : boards && boards.skirmish
-    if (!boards) {
+    if (boardsFailed) {
       setNote(OFFLINE, true)
       return
     }
+    if (!boards) {
+      setNote(EMPTY[currentTab] || EMPTY.campaign, false)
+      return
+    }
+
+    const list = currentTab === 'campaign' ? boards.campaign : boards.skirmish
 
     if (currentTab === 'campaign') {
       setHead(['#', 'Commander', 'Missions'])
@@ -161,21 +169,31 @@ const CAMPAIGN_MISSION_COUNT = 24
 
   tabs.forEach((tab) => {
     tab.addEventListener('click', () => {
-      currentTab = tab.getAttribute('data-board') || 'multiplayer'
+      currentTab = tab.getAttribute('data-board') || 'campaign'
       render()
     })
   })
 
+  /** 404 = empty board (not offline). Network / 5xx = feed failure. */
   function loadJson(url) {
-    return fetch(url, { cache: 'no-store' }).then((response) => {
+    return fetch(url, { cache: 'no-store' }).then(async (response) => {
+      if (response.status === 404) return null
       if (!response.ok) throw new Error('HTTP ' + response.status)
       return response.json()
     })
   }
 
   Promise.allSettled([loadJson(LADDER_ENDPOINT), loadJson(BOARDS_ENDPOINT)]).then((results) => {
-    if (results[0].status === 'fulfilled') ranked = results[0].value
-    if (results[1].status === 'fulfilled') boards = results[1].value
+    if (results[0].status === 'fulfilled') {
+      ranked = results[0].value
+    } else {
+      rankedFailed = true
+    }
+    if (results[1].status === 'fulfilled') {
+      boards = results[1].value
+    } else {
+      boardsFailed = true
+    }
     render()
   })
 })()

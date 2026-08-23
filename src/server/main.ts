@@ -45,6 +45,9 @@ const lobbies: LobbyConfig[] = createDefaultLobbies()
 
 /** Players currently in the scene (lowercase addresses). */
 const present = new Set<string>()
+/** Completed campaign mission ids, keyed by lowercase wallet. */
+const campaignByPlayer = new Map<string, string[]>()
+const worldCampaign = new Map<string, string[]>()
 
 // --- Ranked ladder state ------------------------------------------------------
 
@@ -108,6 +111,28 @@ function sanitizeDisplayName(name: unknown, fallback: string): string {
   if (typeof name !== 'string') return fallback
   const trimmed = name.trim().slice(0, 24)
   return trimmed || fallback
+}
+
+function sanitizeCampaignIds(ids: unknown): string[] {
+  if (!Array.isArray(ids)) return []
+  const unique: string[] = []
+  for (const id of ids) {
+    if (typeof id !== 'string' || unique.includes(id)) continue
+    if (!/^(vanguard|aethyr|myriad)-\d+$/.test(id)) continue
+    unique.push(id)
+  }
+  return unique.slice(0, 32)
+}
+
+function unionCampaignIds(...lists: Array<string[] | undefined>): string[] {
+  const merged: string[] = []
+  for (const list of lists) {
+    if (!list) continue
+    for (const id of list) {
+      if (!merged.includes(id)) merged.push(id)
+    }
+  }
+  return sanitizeCampaignIds(merged)
 }
 
 /** All rated players, keyed by lowercase wallet address. */
@@ -393,8 +418,12 @@ export function startServer(): void {
     void (async () => {
       try {
         const url = await getBoardsPushUrl()
-        await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: json })
-        console.log('[Server] boards pushed to website endpoint')
+        const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: json })
+        if (!response.ok) {
+          console.log(`[Server] boards website push failed: HTTP ${response.status}`)
+          return
+        }
+        console.log(`[Server] boards pushed to website endpoint (${boards.campaign.length} campaign, ${boards.skirmish.length} skirmish)`)
       } catch (error) {
         console.log(`[Server] boards website push failed: ${error}`)
       }
@@ -522,8 +551,11 @@ export function startServer(): void {
             bio: Math.max(0, row.rankedRaceWins?.bio ?? 0)
           },
           manaTip: row.manaTip === true,
-          sovereignLegacy: row.sovereignLegacy === true || row.frame === 'sovereign'
+          sovereignLegacy: row.sovereignLegacy === true || row.frame === 'sovereign',
+          campaignCompleted: Array.isArray(row.campaignCompleted) ? sanitizeCampaignIds(row.campaignCompleted) : undefined
         })
+        const loadedMissions = sanitizeCampaignIds(row.campaignCompleted)
+        if (loadedMissions.length > 0) campaignByPlayer.set(address, loadedMissions)
       }
       publishProfiles()
       console.log(`[Server] profiles loaded: ${publicProfiles.size}`)
@@ -909,34 +941,10 @@ export function startServer(): void {
     room.send('commandRelayed', { lobbyId: lobby.id, seat: data.seat, sender, json: data.json })
   })
 
-  // --- Campaign progress: per-wallet save, echoed back to that player --------
+  // --- Campaign progress: world book + profile book (LAND-safe), player Storage optional --------
   const CAMPAIGN_PLAYER_KEY = 'campaign-v1'
-  const campaignByPlayer = new Map<string, string[]>()
-  /** Addresses whose last Storage.player.get threw. Never cache that as []. */
-  const campaignLoadFailed = new Set<string>()
+  const CAMPAIGN_BOOK_KEY = 'campaign-players-v1'
   const campaignChain = new Map<string, Promise<void>>()
-
-  function sanitizeCampaignIds(ids: unknown): string[] {
-    if (!Array.isArray(ids)) return []
-    const unique: string[] = []
-    for (const id of ids) {
-      if (typeof id !== 'string' || unique.includes(id)) continue
-      if (!/^(vanguard|aethyr|myriad)-\d+$/.test(id)) continue
-      unique.push(id)
-    }
-    return unique.slice(0, 32)
-  }
-
-  function unionCampaignIds(...lists: Array<string[] | undefined>): string[] {
-    const merged: string[] = []
-    for (const list of lists) {
-      if (!list) continue
-      for (const id of list) {
-        if (!merged.includes(id)) merged.push(id)
-      }
-    }
-    return sanitizeCampaignIds(merged)
-  }
 
   function enqueueCampaign(address: string, work: () => Promise<void>): void {
     const previous = campaignChain.get(address) ?? Promise.resolve()
@@ -959,21 +967,112 @@ export function startServer(): void {
     return unionCampaignIds(ids)
   }
 
+  function snapshotCampaign(address: string): string[] {
+    return unionCampaignIds(
+      campaignByPlayer.get(address),
+      worldCampaign.get(address),
+      publicProfiles.get(address)?.campaignCompleted,
+      inferredCampaign(address)
+    )
+  }
+
+  function saveCampaignBook(): void {
+    const players: Record<string, string[]> = {}
+    for (const [address, ids] of worldCampaign) {
+      if (ids.length > 0) players[address] = ids
+    }
+    try {
+      Storage.set(CAMPAIGN_BOOK_KEY, { players, updated: Date.now() }).catch((error: unknown) => {
+        console.log(`[Server] campaign book storage save failed: ${error}`)
+      })
+    } catch (error) {
+      console.log(`[Server] campaign book storage save failed: ${error}`)
+    }
+  }
+
+  async function loadCampaignBook(): Promise<void> {
+    try {
+      const stored = await Storage.get<{ players?: Record<string, unknown> }>(CAMPAIGN_BOOK_KEY)
+      if (!stored?.players) return
+      for (const [address, ids] of Object.entries(stored.players)) {
+        const completed = sanitizeCampaignIds(ids)
+        if (completed.length === 0) continue
+        const key = address.toLowerCase()
+        worldCampaign.set(key, completed)
+        campaignByPlayer.set(key, unionCampaignIds(campaignByPlayer.get(key), completed))
+      }
+      console.log(`[Server] campaign book loaded: ${worldCampaign.size} commanders`)
+    } catch (error) {
+      console.log(`[Server] campaign book storage load failed: ${error}`)
+    }
+  }
+
+  function persistCampaignMirrors(address: string, completed: string[]): void {
+    try {
+      Storage.player.set(address, CAMPAIGN_PLAYER_KEY, { completed }).catch((error: unknown) => {
+        console.log(`[Server] campaign storage save failed for ${address}: ${error}`)
+      })
+    } catch (error) {
+      console.log(`[Server] campaign storage save failed for ${address}: ${error}`)
+    }
+    void (async () => {
+      try {
+        const url = await getCampaignPushUrl()
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ address, completed })
+        })
+        if (!response.ok) {
+          console.log(`[Server] campaign website push failed for ${address}: HTTP ${response.status}`)
+          return
+        }
+        console.log(`[Server] campaign pushed to website for ${address}: ${completed.length} missions`)
+      } catch (error) {
+        console.log(`[Server] campaign website push failed for ${address}: ${error}`)
+      }
+    })()
+  }
+
+  /** Write missions to the same world/profile path that already survives LAND. Never waits on player Storage. */
+  function commitCampaign(address: string, extra?: string[]): string[] {
+    const merged = unionCampaignIds(snapshotCampaign(address), extra)
+    const previous = campaignByPlayer.get(address) ?? []
+    const profile = getOrCreateProfile(address, nameFor(address))
+    const alreadyStored =
+      previous.length === merged.length &&
+      merged.every((id) => previous.includes(id)) &&
+      (profile.campaignCompleted?.length ?? 0) === merged.length &&
+      merged.every((id) => (profile.campaignCompleted ?? []).includes(id)) &&
+      (worldCampaign.get(address)?.length ?? 0) === merged.length
+    campaignByPlayer.set(address, merged)
+    worldCampaign.set(address, merged)
+    profile.campaignCompleted = merged
+    // Publish only on change: the client re-uploads when it sees a list missing
+    // its local missions, so an unconditional echo here would ping-pong forever.
+    if (alreadyStored) return merged
+    publishCampaignProgress(address, merged, true)
+    if (merged.length > 0) upsertCampaignBoard(address, merged.length)
+    saveCampaignBook()
+    publishProfiles()
+    saveProfiles()
+    persistCampaignMirrors(address, merged)
+    return merged
+  }
+
   function restoreWipedCampaigns(): void {
-    const addresses = new Set<string>([...publicProfiles.keys(), ...campaignBoard.keys()])
+    const addresses = new Set<string>([...publicProfiles.keys(), ...campaignBoard.keys(), ...worldCampaign.keys()])
     for (const address of addresses) {
       const inferred = inferredCampaign(address)
-      if (inferred.length === 0) continue
-      enqueueCampaign(address, async () => {
-        const read = await readStoredCampaign(address)
-        const merged = unionCampaignIds(campaignByPlayer.get(address), read.completed, inferred)
-        campaignByPlayer.set(address, merged)
-        if (!read.ok) return
-        if (merged.length <= read.completed.length) return
-        saveCampaignProgress(address, merged)
-        upsertCampaignBoard(address, merged.length)
-        console.log(`[Server] restored campaign for ${address}: ${read.completed.length} -> ${merged.length}`)
-      })
+      const current = snapshotCampaign(address)
+      if (inferred.length === 0 && current.length === 0) continue
+      const merged = unionCampaignIds(current, inferred)
+      if (merged.length === 0) continue
+      if (merged.length === current.length && merged.every((id) => current.includes(id)) && worldCampaign.get(address)?.length === merged.length) {
+        continue
+      }
+      commitCampaign(address, merged)
+      console.log(`[Server] restored campaign for ${address}: ${current.length} -> ${merged.length}`)
     }
   }
 
@@ -982,11 +1081,15 @@ export function startServer(): void {
   }
 
   function pushCampaignOnArrive(address: string): void {
+    const immediate = snapshotCampaign(address)
+    campaignByPlayer.set(address, immediate)
+    publishCampaignProgress(address, immediate, true)
     enqueueCampaign(address, async () => {
       const read = await readStoredCampaign(address)
       const merged = unionCampaignIds(campaignByPlayer.get(address), read.completed, inferredCampaign(address))
-      campaignByPlayer.set(address, merged)
-      publishCampaignProgress(address, merged, read.ok)
+      if (merged.length <= immediate.length) return
+      commitCampaign(address, merged)
+      console.log(`[Server] campaign arrived for ${address}: ${immediate.length} -> ${merged.length}`)
     })
   }
 
@@ -1002,48 +1105,23 @@ export function startServer(): void {
     }
   }
 
-  async function readStoredCampaign(address: string): Promise<{ completed: string[]; ok: boolean }> {
+  /** Best-effort recovery of older saves. Runs off the hot path; a hung player Storage only stalls this address's chain. */
+  async function readStoredCampaign(address: string): Promise<{ completed: string[] }> {
     const fromSite = await readWebsiteCampaign(address)
+    let fromPlayer: string[] = []
     try {
       const stored = await Storage.player.get<{ completed?: unknown }>(address, CAMPAIGN_PLAYER_KEY)
-      campaignLoadFailed.delete(address)
-      return { completed: unionCampaignIds(sanitizeCampaignIds(stored?.completed), fromSite), ok: true }
+      fromPlayer = sanitizeCampaignIds(stored?.completed)
     } catch (error) {
       console.log(`[Server] campaign storage load failed for ${address}: ${error}`)
-      campaignLoadFailed.add(address)
-      return { completed: fromSite, ok: fromSite.length > 0 }
     }
+    return { completed: unionCampaignIds(fromPlayer, fromSite, worldCampaign.get(address)) }
   }
 
-  /** Prefer a fresh storage read. Used by portraits so unlocks see the unioned list. */
-  async function loadCampaignProgress(address: string): Promise<string[]> {
-    const read = await readStoredCampaign(address)
-    const merged = unionCampaignIds(campaignByPlayer.get(address), read.completed, inferredCampaign(address))
+  function loadCampaignProgress(address: string): string[] {
+    const merged = snapshotCampaign(address)
     campaignByPlayer.set(address, merged)
     return merged
-  }
-
-  function saveCampaignProgress(address: string, completed: string[]): void {
-    campaignByPlayer.set(address, completed)
-    try {
-      Storage.player.set(address, CAMPAIGN_PLAYER_KEY, { completed }).catch((error: unknown) => {
-        console.log(`[Server] campaign storage save failed for ${address}: ${error}`)
-      })
-    } catch (error) {
-      console.log(`[Server] campaign storage save failed for ${address}: ${error}`)
-    }
-    void (async () => {
-      try {
-        const url = await getCampaignPushUrl()
-        await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ address, completed })
-        })
-      } catch (error) {
-        console.log(`[Server] campaign website push failed for ${address}: ${error}`)
-      }
-    })()
   }
 
   room.onMessage('campaignSave', (data, context) => {
@@ -1062,21 +1140,8 @@ export function startServer(): void {
     }
 
     if (incomingName) rememberDisplayName(sender, incomingName)
-
-    enqueueCampaign(sender, async () => {
-      const read = await readStoredCampaign(sender)
-      const merged = unionCampaignIds(campaignByPlayer.get(sender), read.completed, incoming, inferredCampaign(sender))
-      campaignByPlayer.set(sender, merged)
-      publishCampaignProgress(sender, merged, read.ok)
-      if (merged.length > 0) upsertCampaignBoard(sender, merged.length)
-      if (!read.ok) {
-        console.log(`[Server] campaign persist skipped for ${sender}: storage load still failing`)
-        return
-      }
-      const unchanged = merged.length === read.completed.length && merged.every((id) => read.completed.includes(id))
-      if (unchanged) return
-      saveCampaignProgress(sender, merged)
-    })
+    const merged = commitCampaign(sender, incoming)
+    console.log(`[Server] campaign save ${sender}: ${merged.length} missions`)
   })
 
   const RACE_PREFIX: Record<RaceId, string> = { human: 'vanguard', alien: 'aethyr', bio: 'myriad' }
@@ -1133,8 +1198,9 @@ export function startServer(): void {
     let portrait: PortraitId | '' = ''
     let frame: FrameId = 'iron'
     let name = ''
+    let incomingCompleted: string[] | undefined
     try {
-      const parsed = JSON.parse(data.json) as { portrait?: unknown; frame?: unknown; name?: unknown }
+      const parsed = JSON.parse(data.json) as { portrait?: unknown; frame?: unknown; name?: unknown; completed?: unknown }
       if (typeof parsed.portrait === 'string' && PORTRAITS.some((item) => item.id === parsed.portrait)) {
         portrait = parsed.portrait as PortraitId
       }
@@ -1142,28 +1208,33 @@ export function startServer(): void {
         frame = parsed.frame as FrameId
       }
       name = sanitizeDisplayName(parsed.name, '')
+      if (Array.isArray(parsed.completed)) incomingCompleted = sanitizeCampaignIds(parsed.completed)
     } catch {
       return
     }
 
-    enqueueCampaign(sender, async () => {
-      await loadCampaignProgress(sender)
-      if (name) rememberDisplayName(sender, name)
-      const profile = getOrCreateProfile(sender, nameFor(sender))
-      const keepPortrait = portrait || profile.portrait
-      if (keepPortrait && !isPortraitAllowed(sender, keepPortrait, profile)) {
-        const restored = unionCampaignIds(campaignByPlayer.get(sender), inferredCampaign(sender), campaignIdsForPortrait(keepPortrait))
-        campaignByPlayer.set(sender, restored)
-        if (restored.length > 0) {
-          saveCampaignProgress(sender, restored)
-          upsertCampaignBoard(sender, restored.length)
-        }
-      }
-      if (portrait && isPortraitAllowed(sender, portrait, profile)) profile.portrait = portrait
-      if (isFrameAllowed(sender, frame, profile)) profile.frame = frame
+    if (name) rememberDisplayName(sender, name)
+    const isNewProfile = !publicProfiles.has(sender)
+    if (incomingCompleted) commitCampaign(sender, incomingCompleted)
+    else loadCampaignProgress(sender)
+    const profile = getOrCreateProfile(sender, nameFor(sender))
+    const beforePortrait = profile.portrait
+    const beforeFrame = profile.frame
+    const beforeName = profile.name
+    const keepPortrait = portrait || profile.portrait
+    if (keepPortrait && !isPortraitAllowed(sender, keepPortrait, profile)) {
+      const restored = unionCampaignIds(campaignByPlayer.get(sender), inferredCampaign(sender), campaignIdsForPortrait(keepPortrait))
+      if (restored.length > 0) commitCampaign(sender, restored)
+    }
+    if (portrait && isPortraitAllowed(sender, portrait, profile)) profile.portrait = portrait
+    if (isFrameAllowed(sender, frame, profile)) profile.frame = frame
+    // Republish only on change - an unconditional publish re-triggers every
+    // client's profile pull, which answers with another profileUpdate: a loop.
+    const changed = isNewProfile || profile.portrait !== beforePortrait || profile.frame !== beforeFrame || profile.name !== beforeName
+    if (changed) {
       publishProfiles()
       saveProfiles()
-    })
+    }
   })
 
   room.onMessage('manaTip', (_data, context) => {
@@ -1178,7 +1249,9 @@ export function startServer(): void {
     console.log(`[Server] mana tip: ${profile.name} unlocked The Patron`)
   })
 
-  void loadProfiles().then(() => restoreWipedCampaigns())
+  void loadProfiles()
+    .then(() => loadCampaignBook())
+    .then(() => restoreWipedCampaigns())
 
   console.log(`[Server] ready (protocol v${PROTOCOL_VERSION}, ${lobbies.length} rooms)`)
 }

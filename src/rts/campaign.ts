@@ -517,10 +517,16 @@ let boundWallet = ''
 
 type CampaignPersistHook = (completed: string[]) => void
 let persistHook: CampaignPersistHook | undefined
+let progressListener: (() => void) | undefined
 
 /** Server/session registers this so a win is written to player storage. */
 export function setCampaignPersistHook(hook: CampaignPersistHook): void {
   persistHook = hook
+}
+
+/** UI registers this so the campaign picker jumps to the next mission after a load. */
+export function setCampaignProgressListener(listener: () => void): void {
+  progressListener = listener
 }
 
 export function getCampaignProgress(): CampaignProgress {
@@ -602,12 +608,14 @@ export function markCampaignMissionComplete(id: string): void {
   if (!mergeCompleted([id])) return
   writeLocalCampaignProgress()
   persistHook?.(progress.completed.slice())
+  progressListener?.()
 }
 
 /** Merge a saved list into memory (local cache or server). Does not re-upload. */
 export function applyCampaignProgress(completed: string[]): void {
   if (!mergeCompleted(completed)) return
   writeLocalCampaignProgress()
+  progressListener?.()
 }
 
 export function isCampaignCleared(race: RaceId): boolean {

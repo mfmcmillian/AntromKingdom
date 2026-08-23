@@ -1,7 +1,7 @@
-// Live v1.3.3 numbers from src/rts (races, config, upgrades, campaign, maps, combat).
+// Live v3.0.1 numbers from src/rts (races, config, upgrades, campaign, maps, combat).
 // DPS is derived in balance.js as damage / attackRate (default rate 1).
 
-const BALANCE_VERSION = '1.3.3'
+const BALANCE_VERSION = '3.0.1'
 
 const RACE_META = {
   human: {

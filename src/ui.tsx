@@ -120,6 +120,7 @@ import {
   getNextCampaignMissionAfter,
   isCampaignMissionCompleted,
   isCampaignMissionUnlocked,
+  setCampaignProgressListener,
   type CampaignMission
 } from './rts/campaign'
 import {
@@ -327,6 +328,11 @@ function closeBriefingVoice(): void {
   stopBriefing()
 }
 let campaignSelectedMissionId = getNextCampaignMission(gameState.playerRace).id
+setCampaignProgressListener(() => {
+  const selected = getCampaignMission(campaignSelectedMissionId)
+  if (selected && !isCampaignMissionCompleted(selected.id)) return
+  campaignSelectedMissionId = getNextCampaignMission(gameState.playerRace).id
+})
 
 // Screen-transition fade: snaps to black on every screen change, holds a beat
 // while the next screen stages itself (camera moves, showcase builds), then

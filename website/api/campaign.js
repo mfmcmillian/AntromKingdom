@@ -26,11 +26,16 @@ async function redisGet(config) {
 }
 
 async function redisSet(config, value) {
-  await fetch(`${config.url}/set/${REDIS_KEY}`, {
+  const response = await fetch(`${config.url}/set/${REDIS_KEY}`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${config.token}` },
+    headers: { Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(value)
   })
+  if (!response.ok) {
+    throw new Error(`redis set failed: HTTP ${response.status}`)
+  }
+  const data = await response.json()
+  if (data.error) throw new Error(`redis set failed: ${data.error}`)
 }
 
 function sanitizeIds(ids) {

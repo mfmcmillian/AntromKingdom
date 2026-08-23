@@ -58,9 +58,13 @@ const matchStartListeners: MatchStartListener[] = []
 
 let started = false
 let sourceWait = 0
+let sourcesTimedOut = false
 let campaignHydrated = false
 let campaignSaveAllowed = false
 let campaignHydrateWait = 0
+/** Last payloads sent, so server echoes can never ping-pong into a message loop. */
+let lastSentCampaignJson = ''
+let lastSentProfileJson = ''
 let pendingCampaignPush:
   | { address: string; completed: string[]; ready: boolean }
   | undefined
@@ -153,11 +157,14 @@ function sessionSystem(dt: number): void {
 
   if (!isStateSyncronized()) return
 
-  sourceWait += dt
-  if (sourceWait > 12) {
-    markCosmeticSourceReady('campaign')
-    markCosmeticSourceReady('profiles')
-    tryPublishProfile()
+  if (!sourcesTimedOut) {
+    sourceWait += dt
+    if (sourceWait > 12) {
+      sourcesTimedOut = true
+      markCosmeticSourceReady('campaign')
+      markCosmeticSourceReady('profiles')
+      tryPublishProfile()
+    }
   }
 
   // Pull room-list updates published by the server.
@@ -214,6 +221,9 @@ function sessionSystem(dt: number): void {
             sovereignLegacy: mine.sovereignLegacy === true
           })
           restoreEquippedCosmetics(mine.portrait, mine.frame)
+          if (Array.isArray(mine.campaignCompleted)) {
+            applyServerCampaign(mine.address, mine.campaignCompleted.filter((id): id is string => typeof id === 'string'), true)
+          }
         }
         markCosmeticSourceReady('profiles')
         tryPublishProfile()
@@ -353,13 +363,15 @@ function sendProfileUpdate(): void {
   if (myAddress === '') return
   if (!areCosmeticSourcesReady()) return
   const rankedWins = getRankedEntry(myAddress)?.wins ?? 0
-  room.send('profileUpdate', {
-    json: JSON.stringify({
-      portrait: getEquippedPortraitId(),
-      frame: getEquippedFrameId(rankedWins),
-      name: myName
-    })
+  const json = JSON.stringify({
+    portrait: getEquippedPortraitId(),
+    frame: getEquippedFrameId(rankedWins),
+    name: myName,
+    completed: getCampaignProgress().completed
   })
+  if (json === lastSentProfileJson) return
+  lastSentProfileJson = json
+  room.send('profileUpdate', { json })
 }
 
 /** Tell the server this wallet finished a 100 MANA tip so The Patron can unlock. */
@@ -455,7 +467,10 @@ function sendRequest(request: LobbyRequest): void {
 function sendCampaignSave(): void {
   if (myAddress === '') return
   if (!campaignSaveAllowed) return
-  room.send('campaignSave', { json: JSON.stringify({ completed: getCampaignProgress().completed, name: myName }) })
+  const json = JSON.stringify({ completed: getCampaignProgress().completed, name: myName })
+  if (json === lastSentCampaignJson) return
+  lastSentCampaignJson = json
+  room.send('campaignSave', { json })
 }
 
 function applyServerCampaign(address: string, completed: string[], ready: boolean): void {
@@ -466,13 +481,15 @@ function applyServerCampaign(address: string, completed: string[], ready: boolea
   if (address !== myAddress) return
   applyCampaignProgress(completed)
   if (ready) markCampaignHydrated()
+  // Upload only missions the server list is missing; identical payloads are
+  // deduped in sendCampaignSave so echoes can never loop.
+  if (campaignSaveAllowed && getCampaignProgress().completed.some((id) => !completed.includes(id))) {
+    sendCampaignSave()
+  }
 }
 
 function markCampaignHydrated(): void {
-  if (campaignHydrated) {
-    sendCampaignSave()
-    return
-  }
+  if (campaignHydrated) return
   campaignHydrated = true
   campaignSaveAllowed = true
   markCosmeticSourceReady('campaign')
