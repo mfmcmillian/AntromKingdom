@@ -63,8 +63,12 @@ const ELO_K = 32
 const DEFAULT_LEADERBOARD_PUSH_URL = 'https://decentracraft-nine.vercel.app/api/ladder'
 const DEFAULT_BOARDS_PUSH_URL = 'https://decentracraft-nine.vercel.app/api/boards'
 const DEFAULT_CAMPAIGN_PUSH_URL = 'https://decentracraft-nine.vercel.app/api/campaign'
-const DEFAULT_DISCORD_JOIN_WEBHOOK =
-  'https://discord.com/api/webhooks/1538574204855656458/py8wHhVdyELkNeTgLSn3ExV5Kuqm2dhWegyeHrzlVFMpc4xhdCjdDLNYvAfBNf_XNwB_'
+/**
+ * Join notices go through the website (website/api/join.js), which holds the
+ * Discord webhook in a Vercel env var. This code is public; a webhook URL
+ * committed here was scraped from GitHub and spammed.
+ */
+const DEFAULT_JOIN_RELAY_URL = 'https://decentracraft-nine.vercel.app/api/join'
 const JOIN_NOTIFY_COOLDOWN_MS = 120000
 const JOIN_NOTIFY_NAME_WAIT_S = 4
 const BOARDS_STORAGE_KEY = 'leaderboards-v1'
@@ -95,11 +99,11 @@ async function getCampaignPushUrl(): Promise<string> {
   }
 }
 
-async function getDiscordJoinWebhook(): Promise<string> {
+async function getJoinRelayUrl(): Promise<string> {
   try {
-    return (await EnvVar.get('DISCORD_JOIN_WEBHOOK')) || DEFAULT_DISCORD_JOIN_WEBHOOK
+    return (await EnvVar.get('JOIN_RELAY_URL')) || DEFAULT_JOIN_RELAY_URL
   } catch {
-    return DEFAULT_DISCORD_JOIN_WEBHOOK
+    return DEFAULT_JOIN_RELAY_URL
   }
 }
 
@@ -295,23 +299,12 @@ export function startServer(): void {
     const online = present.size
     void (async () => {
       try {
-        const url = await getDiscordJoinWebhook()
+        const url = await getJoinRelayUrl()
         if (!url) return
         const response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            username: 'DecentraCraft',
-            embeds: [
-              {
-                title: 'Player entered the scene',
-                description: `**${name}**\n\`${address}\``,
-                color: 0x3d7eff,
-                footer: { text: `${online} in scene` },
-                timestamp: new Date().toISOString()
-              }
-            ]
-          })
+          body: JSON.stringify({ game: 'decentracraft', name, address, online })
         })
         if (!response.ok) console.log(`[Server] discord join notify failed: ${response.status}`)
       } catch (error) {
