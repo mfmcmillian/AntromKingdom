@@ -4,10 +4,14 @@
 // The scenes' servers are deployed as public code, so they cannot hold the
 // webhook URL themselves (the last one was scraped from GitHub and spammed).
 // It lives here in the DISCORD_JOIN_WEBHOOK env var, and this endpoint only
-// ever posts one fixed shape: a name, a wallet address and a head count. No
-// links, no images, no renaming the poster.
+// ever posts one fixed shape: a name, a wallet address, a head count and,
+// when the scene knows it, the explorer the player arrived with. No links, no
+// images, no renaming the poster.
 //
-//   POST { game: 'decentracraft' | 'antrom', name, address, online }
+//   POST { game: 'decentracraft' | 'antrom', name, address, online, platform?, agent? }
+//
+// `platform` is the explorer's own word: desktop, mobile, vr or web
+// (getExplorerInformation); `agent` its name and version.
 // ---------------------------------------------------------------------------
 
 const GAMES = {
@@ -36,6 +40,18 @@ function shortAddress(address) {
   return `${address.slice(0, 6)}…${address.slice(-4)}`
 }
 
+const PLATFORMS = new Set(['desktop', 'mobile', 'vr', 'web'])
+
+function cleanPlatform(raw) {
+  const value = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
+  return PLATFORMS.has(value) ? value : ''
+}
+
+function cleanAgent(raw) {
+  if (typeof raw !== 'string') return ''
+  return raw.replace(/[^\w .:/+-]/g, '').trim().slice(0, 40)
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -53,6 +69,8 @@ export default async function handler(req, res) {
   if (!/^0x[0-9a-f]{40}$/.test(address)) return res.status(400).json({ error: 'bad address' })
   const online = Math.max(0, Math.min(999, Math.floor(Number(body.online) || 0)))
   const name = cleanName(body.name) || shortAddress(address)
+  const platform = cleanPlatform(body.platform)
+  const agent = cleanAgent(body.agent)
 
   const now = Date.now()
   burst = burst.filter((t) => now - t < BURST_WINDOW_MS)
@@ -71,9 +89,9 @@ export default async function handler(req, res) {
         embeds: [
           {
             title: 'Player entered the scene',
-            description: `**${name}**\n\`${address}\``,
+            description: `**${name}**${platform ? ` · ${platform}` : ''}\n\`${address}\``,
             color: game.color,
-            footer: { text: `${online} in scene` },
+            footer: { text: `${online} in scene${agent ? ` · ${agent}` : ''}` },
             timestamp: new Date(now).toISOString()
           }
         ]
