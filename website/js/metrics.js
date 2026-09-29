@@ -181,7 +181,7 @@
 
     $('foot').textContent = `${days[0].day} to ${last} · ${days.length} day${days.length === 1 ? '' : 's'} shown of ${all.length} on record` +
       (meta.version ? ` · game ${meta.version}` : '') + (meta.updated ? ` · updated ${new Date(meta.updated).toLocaleString()}` : '') +
-      ' · days are UTC · a return inside 30 minutes is the same session · developers are not counted'
+      ' · days are UTC · a return inside 30 minutes is the same session · everyone counts, developers included'
   }
 
   function retentionRows(days, byDay) {
