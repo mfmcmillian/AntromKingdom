@@ -1,14 +1,16 @@
 // ---------------------------------------------------------------------------
 // /api/metrics — the day counters behind the metrics dashboard (metrics.html).
 //
-//   POST  (from a game's server)  — body { game, version, updated, days: [...] }
+//   POST  (from a game's server)  — body { game, version, updated, days: [...], heroes: [...] }
 //                                   with the METRICS_KEY in x-metrics-key.
 //   GET   ?game=antrom            — the last stored summary for that game.
 //
-// The summary carries no addresses: one row of counters per UTC day (players,
-// sessions, funnel, runs, raid, economy). Stored in the same Upstash Redis
-// the ladder uses, one key per game, with an in-memory fallback for testing.
-// Writes need the key; reads are open, the dashboard is meant to be shown.
+// `days` is one row of counters per UTC day (players, sessions, funnel, runs,
+// raid, economy) with no addresses; `heroes` is the leaderboard: a wallet, its
+// avatar name, its best champion and lifetime counts. Stored in the same
+// Upstash Redis the ladder uses, one key per game, with an in-memory fallback
+// for testing. Writes need the key; reads are open, the dashboard is meant to
+// be shown.
 // ---------------------------------------------------------------------------
 
 const GAMES = new Set(['antrom', 'decentracraft'])
@@ -53,6 +55,26 @@ function cleanDays(raw) {
   return rows.slice(-MAX_DAYS)
 }
 
+const MAX_HEROES = 500
+const HERO_NUMBERS = ['level', 'xp', 'totalXp', 'cleared', 'hardest', 'runs', 'clears', 'deaths', 'raidClears', 'sessions', 'seconds', 'first', 'last', 'coins', 'ranks']
+
+function cleanText(raw, max) {
+  return typeof raw === 'string' ? raw.replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, max) : ''
+}
+
+/** The leaderboard: a wallet, a name, a class, and numbers; nothing else gets through. */
+function cleanHeroes(raw) {
+  if (!Array.isArray(raw)) return []
+  const rows = []
+  for (const h of raw) {
+    if (!h || typeof h !== 'object' || !/^0x[0-9a-f]{40}$/.test(String(h.address))) continue
+    const row = { address: h.address, name: cleanText(h.name, 32), cid: cleanText(h.cid, 32), class: cleanText(h.class, 24) }
+    for (const key of HERO_NUMBERS) row[key] = Number.isFinite(h[key]) ? h[key] : 0
+    rows.push(row)
+  }
+  return rows.slice(0, MAX_HEROES)
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
@@ -91,7 +113,8 @@ export default async function handler(req, res) {
       version: typeof body.version === 'string' ? body.version.slice(0, 20) : '',
       updated: Number.isFinite(body.updated) ? body.updated : Date.now(),
       received: Date.now(),
-      days
+      days,
+      heroes: cleanHeroes(body.heroes)
     }
     const key = `metrics-${game}`
     try {

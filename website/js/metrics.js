@@ -9,6 +9,7 @@
   const $ = (id) => document.getElementById(id)
   const charts = {}
   let all = []
+  let heroes = []
   let meta = {}
 
   const GOLD = '#e6c465', GOLD_DIM = '#a08a3c', GREEN = '#5cb86a', RED = '#d1584f', CYAN = '#6fb8d6', MUTED = '#9aa5b4', LINE = '#243040'
@@ -184,6 +185,45 @@
       ' · days are UTC · a return inside 30 minutes is the same session · everyone counts, developers included'
   }
 
+  // ---- champions ---------------------------------------------------------
+  const shortAddress = (a) => a.slice(0, 6) + '…' + a.slice(-4)
+  const hours = (seconds) => (seconds >= 3600 ? (seconds / 3600).toFixed(1) + ' h' : Math.round(seconds / 60) + ' min')
+  function ago(ms) {
+    if (!ms) return '–'
+    const d = (Date.now() - ms) / 86400000
+    if (d < 1 / 24) return 'just now'
+    if (d < 1) return Math.round(d * 24) + ' h ago'
+    if (d < 30) return Math.round(d) + ' d ago'
+    return new Date(ms).toISOString().slice(0, 10)
+  }
+  const DIFFICULTY = ['–', 'Easy', 'Medium', 'Hard']
+
+  function renderHeroes() {
+    const key = $('heroSort').value
+    const rows = [...heroes]
+    const tie = (a, b) => num(b.totalXp) - num(a.totalXp) || num(b.seconds) - num(a.seconds)
+    rows.sort((a, b) => (key === 'level' ? num(b.level) - num(a.level) || num(b.xp) - num(a.xp) : num(b[key]) - num(a[key])) || tie(a, b))
+    const head = '<tr><th class="rank">#</th><th class="name">Champion</th><th class="cls">Class</th><th>Level</th><th>XP</th><th>Cleared</th><th>Hardest</th><th>Runs</th><th>Deaths</th><th>Colossus</th><th>Pit ranks</th><th>Coins</th><th>Played</th><th>Sessions</th><th>Last seen</th></tr>'
+    if (!rows.length) { $('heroes').innerHTML = head + '<tr><td colspan="15">No champions on record yet</td></tr>'; return }
+    $('heroes').innerHTML = head + rows.map((h, i) => `<tr${i < 3 ? ' class="podium"' : ''}>
+      <td class="rank">${i + 1}</td>
+      <td class="name" title="${escape(h.address)}">${escape(h.name || shortAddress(h.address))}<span class="addr">${escape(shortAddress(h.address))}</span></td>
+      <td class="cls">${escape(h.class || '–')}</td>
+      <td class="lvl">${num(h.level) || '–'}</td>
+      <td>${fmt(num(h.totalXp))}</td>
+      <td>${num(h.clears)} <span class="addr">${num(h.cleared)} lvl</span></td>
+      <td>${DIFFICULTY[Math.min(3, num(h.hardest))] || '–'}</td>
+      <td>${num(h.runs)}</td>
+      <td>${num(h.deaths)}</td>
+      <td>${num(h.raidClears)}</td>
+      <td>${num(h.ranks)}</td>
+      <td>${fmt(num(h.coins))}</td>
+      <td>${hours(num(h.seconds))}</td>
+      <td>${num(h.sessions)}</td>
+      <td>${ago(num(h.last))}</td>
+    </tr>`).join('')
+  }
+
   function retentionRows(days, byDay) {
     return [1, 3, 7, 14, 30].map((n) => {
       let cohort = 0, back = 0
@@ -225,24 +265,44 @@
     return rows
   }
 
+  function demoHeroes() {
+    const names = ['Aldric', 'Mira of the Pass', 'Grunwald', 'Seffa', 'Tobin', 'Ysolde', 'Barrow', 'Kestrel', 'Odo', 'Wren', 'Halvard', 'Ines']
+    const classes = ['Blade', 'Heavy', 'Scout', 'Striker']
+    let seed = 11
+    const rand = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280 }
+    return names.map((name, i) => {
+      const xp = Math.round(300 + rand() * 60000)
+      const level = Math.min(60, Math.floor(Math.sqrt(xp / 40)))
+      return {
+        address: '0x' + (i + 1).toString(16).padStart(40, '0'), name, cid: 'demo', class: classes[i % 4], level, xp, totalXp: xp + Math.round(rand() * 5000),
+        cleared: Math.min(3, Math.floor(rand() * 4)), hardest: Math.floor(rand() * 4), runs: Math.round(rand() * 80), clears: Math.round(rand() * 40), deaths: Math.round(rand() * 60),
+        raidClears: Math.floor(rand() * 3), sessions: Math.round(2 + rand() * 40), seconds: Math.round(rand() * 40 * 3600), first: Date.now() - rand() * 60 * 86400000,
+        last: Date.now() - rand() * 10 * 86400000, coins: Math.round(rand() * 900), ranks: Math.round(rand() * 30)
+      }
+    })
+  }
+
   // ---- boot --------------------------------------------------------------
   async function boot() {
     try {
       if (demo) {
-        all = demoDays(); meta = { version: 'demo' }
+        all = demoDays(); heroes = demoHeroes(); meta = { version: 'demo' }
       } else {
         const response = await fetch(`/api/metrics?game=${encodeURIComponent(game)}`, { cache: 'no-store' })
         if (response.status === 404) { $('empty').hidden = false; $('status').textContent = 'No data yet'; return }
         if (!response.ok) throw new Error('HTTP ' + response.status)
         const body = await response.json()
         all = (body.days || []).filter((d) => d && d.day).sort((a, b) => (a.day < b.day ? -1 : 1))
+        heroes = Array.isArray(body.heroes) ? body.heroes.filter((h) => h && h.address) : []
         meta = body
         if (all.length === 0) { $('empty').hidden = false; $('status').textContent = 'No data yet'; return }
       }
       $('status').textContent = demo ? 'Demo numbers' : `${all.length} day${all.length === 1 ? '' : 's'} on record`
       $('app').hidden = false
       render()
+      renderHeroes()
       $('window').addEventListener('change', render)
+      $('heroSort').addEventListener('change', renderHeroes)
     } catch (error) {
       $('status').textContent = 'Could not load: ' + error.message
     }

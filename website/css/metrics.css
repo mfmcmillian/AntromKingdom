@@ -76,6 +76,17 @@ main { padding: 22px 28px 40px; max-width: 1440px; margin: 0 auto; }
 .table th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
 .table.compact th, .table.compact td { padding: 4px 6px; font-size: 12px; }
 .scroll { max-height: 320px; overflow: auto; }
+.scroll.tall { max-height: 440px; }
+.champions { margin-bottom: 14px; }
+.panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.sorter { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.sorter select { margin-left: 8px; background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; font: inherit; }
+.table .rank { color: var(--muted); width: 32px; }
+.table .name, .table .cls { text-align: left; }
+.table .name { font-weight: 600; color: var(--text); max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.table .addr { color: var(--muted); font-size: 11px; font-weight: 400; margin-left: 6px; }
+.table .lvl { color: var(--gold); font-weight: 600; }
+.table tr.podium td { background: rgba(230, 196, 101, 0.05); }
 .bar { display: inline-block; height: 8px; background: var(--gold-dim); border-radius: 2px; vertical-align: middle; margin-right: 6px; }
 
 .list { list-style: none; padding: 0; margin: 10px 0 0; color: var(--muted); font-size: 12px; }

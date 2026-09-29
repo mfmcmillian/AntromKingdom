@@ -36,6 +36,29 @@
   <main id="app" hidden>
     <section class="cards" id="headline"></section>
 
+    <section class="panel champions">
+      <div class="panel-head">
+        <div>
+          <h2>Champions</h2>
+          <p class="hint">Every player the server has seen, by their most experienced champion. Lifetime numbers, not the window.</p>
+        </div>
+        <label class="sorter">Rank by
+          <select id="heroSort">
+            <option value="level">Level</option>
+            <option value="seconds">Time played</option>
+            <option value="clears">Dungeons cleared</option>
+            <option value="hardest">Hardest difficulty</option>
+            <option value="raidClears">Colossus kills</option>
+            <option value="deaths">Deaths</option>
+            <option value="ranks">Pit ranks</option>
+            <option value="coins">Coins held</option>
+            <option value="last">Last seen</option>
+          </select>
+        </label>
+      </div>
+      <div class="scroll tall"><table id="heroes" class="table compact"></table></div>
+    </section>
+
     <section class="grid two">
       <article class="panel">
         <h2>Players each day</h2>
