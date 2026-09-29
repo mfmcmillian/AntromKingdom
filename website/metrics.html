@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dungeons of Antrom — Metrics</title>
+  <meta name="description" content="Players, sessions, retention, the funnel, runs and the economy of Dungeons of Antrom, counted by its server each day." />
+  <meta name="robots" content="noindex" />
+  <link rel="icon" type="image/png" href="assets/logo-decentracraft.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/metrics.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="crest"></span>
+      <div>
+        <h1>Dungeons of Antrom</h1>
+        <p class="sub">What the server counted, day by day</p>
+      </div>
+    </div>
+    <div class="controls">
+      <label>Window
+        <select id="window">
+          <option value="7">7 days</option>
+          <option value="30" selected>30 days</option>
+          <option value="90">90 days</option>
+        </select>
+      </label>
+      <span id="status" class="status">Loading…</span>
+    </div>
+  </header>
+
+  <main id="app" hidden>
+    <section class="cards" id="headline"></section>
+
+    <section class="grid two">
+      <article class="panel">
+        <h2>Players each day</h2>
+        <p class="hint">New players and returning ones, with the trailing seven-day count.</p>
+        <canvas id="playersChart" height="220"></canvas>
+      </article>
+      <article class="panel">
+        <h2>Sessions</h2>
+        <p class="hint">How many, and how long they lasted on average.</p>
+        <canvas id="sessionsChart" height="220"></canvas>
+      </article>
+    </section>
+
+    <section class="grid three">
+      <article class="panel">
+        <h2>Retention</h2>
+        <p class="hint">Of players whose first visit was on a day in the window, the share back exactly N days later.</p>
+        <table id="retention" class="table"></table>
+      </article>
+      <article class="panel">
+        <h2>Platform</h2>
+        <p class="hint">Player-days by the explorer they arrived with, and how long its scene took to load.</p>
+        <canvas id="platformChart" height="180"></canvas>
+        <ul id="load" class="list"></ul>
+      </article>
+      <article class="panel">
+        <h2>Where they stop</h2>
+        <p class="hint">First-ever milestones reached in the window; each bar as a share of players who saw the title.</p>
+        <canvas id="funnelChart" height="260"></canvas>
+      </article>
+    </section>
+
+    <section class="grid two">
+      <article class="panel">
+        <h2>Dungeon runs</h2>
+        <p class="hint">Per level: how often it was entered, how it ended, and how long it took.</p>
+        <table id="runs" class="table"></table>
+      </article>
+      <article class="panel">
+        <h2>The Chained Colossus</h2>
+        <div class="cards small" id="raid"></div>
+        <h2 class="later">Progress and economy</h2>
+        <div class="cards small" id="economy"></div>
+      </article>
+    </section>
+
+    <section class="grid two">
+      <article class="panel">
+        <h2>Hero levels</h2>
+        <p class="hint">The level heroes were when their player left, over the window.</p>
+        <canvas id="levelsChart" height="200"></canvas>
+      </article>
+      <article class="panel">
+        <h2>Day by day</h2>
+        <div class="scroll"><table id="days" class="table compact"></table></div>
+      </article>
+    </section>
+
+    <footer class="foot" id="foot"></footer>
+  </main>
+
+  <div id="empty" class="empty" hidden>
+    <h2>Nothing counted yet</h2>
+    <p>The server posts its first day once it has been live for a minute with this build. Add <code>?demo=1</code> to the address to see the dashboard with made-up numbers.</p>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="js/metrics.js"></script>
+</body>
+</html>
